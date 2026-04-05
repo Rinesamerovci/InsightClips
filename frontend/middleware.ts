@@ -17,52 +17,33 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+          request.cookies.set({ name, value, ...options })
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+          response.cookies.set({ name, value, ...options })
         },
         remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          request.cookies.set({ name, value: '', ...options })
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          response.cookies.set({ name, value: '', ...options })
         },
       },
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
+  // Use getUser() for secure, server-side session validation
+  const { data: { user } } = await supabase.auth.getUser()
 
-  // 1. Protected Route Logic
-  if (!session && request.nextUrl.pathname.startsWith('/dashboard')) {
+  // 1. If no user, and trying to access dashboard -> Redirect to login
+  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 2. Auth User Logic (Redirect if already logged in)
-  if (session && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
+  // 2. If user exists, and trying to access login/register -> Redirect to dashboard
+  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
@@ -70,5 +51,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Correct matcher to cover all sub-routes
   matcher: ['/dashboard/:path*', '/login', '/register'],
 }

@@ -7,7 +7,7 @@ frontend/.env
 # Python (Backend)
 backend/venv/
 backend/__pycache__/
-backend/.env
+backend/.env.local
 
 # Media Files
 *.mp4

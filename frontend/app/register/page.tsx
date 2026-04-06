@@ -1,12 +1,16 @@
 "use client";
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { Zap, Mail, Lock, User, ArrowLeft, ChevronRight, Loader2, Info, CheckCircle2 } from 'lucide-react';
-import Link from 'next/link';
+import { useState } from "react";
+import { ArrowLeft, CheckCircle2, ChevronRight, Info, Loader2, Lock, Mail, User, Zap } from "lucide-react";
+import Link from "next/link";
+
+import { postJson } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
+
+type RegisterResponse = {
+  access_token: string;
+};
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [step, setStep] = useState(1); // 1: Form, 2: OTP, 3: Success Message
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,27 +25,24 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
 
-    const { data, error } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: { full_name: formData.name }
-      }
-    });
-
-    if (error) {
-      setError(error.message.toUpperCase());
+    if (formData.password.length < 8) {
+      setError("PASSWORD MUST BE AT LEAST 8 CHARACTERS.");
       setLoading(false);
-    } else {
-      const isExistingUser = data.user && data.user.identities && data.user.identities.length === 0;
+      return;
+    }
 
-      if (isExistingUser) {
-        setError("EMAIL ALREADY REGISTERED. PLEASE LOGIN.");
-        setLoading(false);
-      } else {
-        setStep(2);
-        setLoading(false);
-      }
+    try {
+      await postJson<RegisterResponse>("/auth/register", {
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+      });
+      setStep(3);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error ? caughtError.message : "Unable to create account.";
+      setError(message.toUpperCase());
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,8 +51,8 @@ export default function RegisterPage() {
    */
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError("");
+    setStep(3);
+    return;
     const token = otp.join("");
 
     const { error } = await supabase.auth.verifyOtp({

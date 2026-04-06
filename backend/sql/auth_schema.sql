@@ -1,0 +1,2 @@
+-- The live project uses public.profiles as the application user table.
+-- Apply backend/sql/schema_init.sql in Supabase SQL Editor for the current schema.

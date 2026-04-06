@@ -1,58 +1,101 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Zap, Mail, Lock, ChevronRight, Info, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, ChevronRight, Info, Loader2, Lock, Mail, Zap } from "lucide-react";
+
+import { postJson, storeBackendToken } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
+
+type LoginResponse = {
+  access_token: string;
+};
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const { syncBackendSession, user } = useAuth();
+  const [email, setEmail] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    return window.localStorage.getItem("rememberedEmail") ?? "";
+  });
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return Boolean(window.localStorage.getItem("rememberedEmail"));
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const successMessage = useMemo(
+    () =>
+      searchParams.get("registered") === "true"
+        ? "Account created. Sign in to open your dashboard."
+        : "",
+    [searchParams]
+  );
 
   /**
    * Leximi i të dhënave kur hapet faqja
    */
+
   useEffect(() => {
-    const savedEmail = localStorage.getItem("rememberedEmail");
-    if (savedEmail) {
-      setEmail(savedEmail);
-      setRememberMe(true);
+    if (user) {
+      router.replace("/dashboard");
     }
-  }, []);
+  }, [router, user]);
 
   /**
    * Logjika e Login
    */
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
+      email: normalizedEmail,
+      password,
     });
 
     if (error) {
-      setError(error.message === "Invalid login credentials" 
-        ? "ACCESS DENIED: INVALID NEURAL ID" 
-        : error.message.toUpperCase());
+      setError("Invalid email or password.");
       setLoading(false);
-    } else {
+      return;
+    }
+
+    try {
+      const backendAuth = await postJson<LoginResponse>("/auth/login", {
+        email: normalizedEmail,
+        password,
+      });
+
+      storeBackendToken(backendAuth.access_token);
+      await syncBackendSession();
+
       // Menaxhimi i Remember Me pas suksesit
       if (rememberMe) {
-        localStorage.setItem("rememberedEmail", email);
+        window.localStorage.setItem("rememberedEmail", normalizedEmail);
       } else {
-        localStorage.removeItem("rememberedEmail");
+        window.localStorage.removeItem("rememberedEmail");
       }
       
       // Refresh dhe dërgim te Dashboard
-      window.location.href = "/dashboard";
+      router.replace("/dashboard");
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error ? caughtError.message : "Unable to sign in.";
+      setError(message);
+      setLoading(false);
     }
   };
 
@@ -107,6 +150,12 @@ export default function LoginPage() {
               />
             </div>
           </div>
+
+          {successMessage && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 py-3 px-4 rounded-xl text-center">
+               <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300">{successMessage}</p>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 py-3 px-4 rounded-xl text-center">

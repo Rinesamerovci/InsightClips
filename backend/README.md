@@ -47,10 +47,16 @@
 
 - `GET /podcasts`
 
-## CLI Test Script
+## CLI Media Inspection
 
-Run the proof-of-concept duration script from the project root:
+Run the shared media inspection script from the project root:
 
 ```bash
 python scripts/test_audio_processing.py 15616403_3840_2160_60fps.mp4
+```
+
+Optional MIME validation:
+
+```bash
+python scripts/test_audio_processing.py 15616403_3840_2160_60fps.mp4 --mime-type video/mp4
 ```

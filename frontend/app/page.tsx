@@ -1,6 +1,5 @@
 "use client";
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { 
   Zap, 
@@ -16,20 +15,15 @@ import {
 } from 'lucide-react';
 
 export default function InsightClipsLanding() {
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeFeature, setActiveFeature] = useState(1);
 
-  // Ensure component is mounted for client-side features
   useEffect(() => {
-    setMounted(true);
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  if (!mounted) return null;
 
   const scrollToFeatures = () => {
     const element = document.getElementById('features-section');
@@ -175,7 +169,16 @@ export default function InsightClipsLanding() {
 /**
  * Interactive feature button used in the bento grid.
  */
-function ServiceButton({ icon, title, desc, tag, active, onClick }: any) {
+type ServiceButtonProps = {
+  icon: ReactNode;
+  title: string;
+  desc: string;
+  tag: string;
+  active: boolean;
+  onClick: () => void;
+};
+
+function ServiceButton({ icon, title, desc, tag, active, onClick }: ServiceButtonProps) {
   return (
     <button onClick={onClick} className={`group relative flex flex-col items-start text-left p-10 rounded-[2.5rem] border transition-all duration-700 overflow-hidden outline-none ${
       active ? 'bg-emerald-400 border-transparent shadow-2xl scale-[1.03] z-10' : 'bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]'
@@ -194,7 +197,12 @@ function ServiceButton({ icon, title, desc, tag, active, onClick }: any) {
 /**
  * Standardized stat display component.
  */
-function Stat({ val, label }: any) {
+type StatProps = {
+  val: string;
+  label: string;
+};
+
+function Stat({ val, label }: StatProps) {
   return (
     <div className="flex flex-col items-center text-center gap-2 transition-transform hover:scale-110">
       <div className="text-4xl font-black text-white italic tracking-tighter">{val}</div>
@@ -206,7 +214,12 @@ function Stat({ val, label }: any) {
 /**
  * Small utility icon for the footer links.
  */
-function FooterIcon({ icon, label }: any) {
+type FooterIconProps = {
+  icon: ReactNode;
+  label: string;
+};
+
+function FooterIcon({ icon, label }: FooterIconProps) {
   return (
     <div className="flex items-center gap-2 text-slate-700 hover:text-emerald-400 transition-colors cursor-pointer group">
       {icon}

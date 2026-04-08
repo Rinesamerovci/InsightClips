@@ -1,0 +1,1 @@
+"""InsightClips backend application package."""

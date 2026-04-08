@@ -8,3 +8,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+
+export type SupabaseUser = Awaited<
+  ReturnType<typeof supabase.auth.getUser>
+>["data"]["user"]

@@ -1,64 +1,135 @@
 'use client'
-import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useRouter } from 'next/navigation'
 
-// Initialize the Authentication Context
-const AuthContext = createContext<any>({})
+import { clearBackendToken, postJson, storeBackendToken } from '@/lib/api'
+import { supabase, type SupabaseUser } from '@/lib/supabase'
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<any>(null)
+type BackendAuthResponse = {
+  access_token: string
+  expires_at: string
+  token_type: 'bearer'
+  user: {
+    id: string
+    email: string
+    free_trial_used: boolean
+    created_at: string | null
+  }
+}
+
+type AuthContextValue = {
+  user: SupabaseUser | null
+  loading: boolean
+  backendToken: string | null
+  syncBackendSession: () => Promise<string | null>
+  signOut: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [backendToken, setBackendToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  useEffect(() => {
-    /**
-     * 1. Initial Session Check
-     * Verify if a valid session exists immediately when the application loads.
-     */
-    const getUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
-      setLoading(false)
+  const syncBackendSession = async (): Promise<string | null> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      clearBackendToken()
+      setBackendToken(null)
+      return null
     }
-    getUser()
 
-    /**
-     * 2. Auth State Listener
-     * Monitor real-time changes (Login, Logout, Password Recovery, etc.)
-     */
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Supabase Auth Event:", event) // Monitor this in the Browser Console (F12)
-      
-      const currentUser = session?.user ?? null
-      setUser(currentUser)
+    const verified = await postJson<BackendAuthResponse>('/auth/verify', {
+      supabase_token: session.access_token,
+    })
 
-      // Logic for successful login
-      if (event === 'SIGNED_IN') {
-        console.log("Login Successful! Synchronizing with Dashboard...")
-        /** * We use window.location.href here to ensure a hard refresh 
-         * and clear any potential Next.js route caching issues.
-         */
-        window.location.href = '/dashboard'
+    storeBackendToken(verified.access_token)
+    setBackendToken(verified.access_token)
+    return verified.access_token
+  }
+
+  const signOut = async (): Promise<void> => {
+    await supabase.auth.signOut()
+    clearBackendToken()
+    setBackendToken(null)
+    setUser(null)
+    router.replace('/login')
+  }
+
+  useEffect(() => {
+    let active = true
+
+    const bootstrap = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!active) {
+        return
       }
 
-      // Logic for signing out
-      if (event === 'SIGNED_OUT') {
-        console.log("User Signed Out! Redirecting to Portal Login...")
-        router.push('/login')
+      setUser(session?.user ?? null)
+
+      if (session?.access_token) {
+        try {
+          await syncBackendSession()
+        } catch {
+          clearBackendToken()
+          setBackendToken(null)
+        }
+      }
+
+      if (active) {
+        setLoading(false)
+      }
+    }
+
+    void bootstrap()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+
+      if (!session) {
+        clearBackendToken()
+        setBackendToken(null)
       }
     })
 
-    // Cleanup subscription on component unmount
-    return () => subscription.unsubscribe()
-  }, [router])
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider
+      value={{ user, loading, backendToken, syncBackendSession, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   )
 }
 
-// Custom hook to easily access auth state in any component
-export const useAuth = () => useContext(AuthContext)
+export const useAuth = (): AuthContextValue => {
+  const context = useContext(AuthContext)
+
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+
+  return context
+}

@@ -47,6 +47,11 @@
 
 - `GET /podcasts`
 
+### Upload
+
+- `POST /upload/calculate-price`
+- `POST /upload/prepare`
+
 ## CLI Media Inspection
 
 Run the shared media inspection script from the project root:
@@ -59,4 +64,12 @@ Optional MIME validation:
 
 ```bash
 python scripts/test_audio_processing.py 15616403_3840_2160_60fps.mp4 --mime-type video/mp4
+```
+
+## Test Coverage
+
+Run backend unit tests from the project root:
+
+```bash
+python -m unittest discover -s backend/tests -p "test_*.py"
 ```

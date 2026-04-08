@@ -1,3 +1,27 @@
+"""
+Media inspection and validation utilities for InsightClips.
+
+This module provides efficient, memory-safe media file inspection using ffprobe.
+It serves as the core foundation for the upload validation pipeline, extracting
+duration and format metadata without loading files into memory.
+
+Supported formats:
+- Audio: AAC, FLAC, MP3, M4A, WAV, WebM
+- Video: MP4, MOV, M4V, WebM
+
+Primary entry point: inspect_media()
+Error handling: All operations raise structured MediaInspectionError subclasses
+for API layer conversion into HTTP responses.
+
+Usage:
+    from app.utils.media import inspect_media, MediaInspectionError
+    
+    try:
+        result = inspect_media(Path("episode.mp4"))
+        print(f"Duration: {result.duration_minutes} minutes")
+    except MediaInspectionError as exc:
+        print(f"Error [{exc.code}]: {exc.detail}")
+"""
 from __future__ import annotations
 
 import json
@@ -38,10 +62,16 @@ SUPPORTED_EXTENSIONS: set[str] = {
 
 
 class MediaInspectionError(Exception):
-    def __init__(self, detail: str, code: str = "media_inspection_failed") -> None:
+    def __init__(
+        self,
+        detail: str,
+        code: str = "media_inspection_failed",
+        status_code: int = 422,
+    ) -> None:
         super().__init__(detail)
         self.detail = detail
         self.code = code
+        self.status_code = status_code
 
 
 class FFprobeNotAvailableError(MediaInspectionError):
@@ -49,6 +79,7 @@ class FFprobeNotAvailableError(MediaInspectionError):
         super().__init__(
             "ffprobe is not installed or not available on PATH.",
             code="ffprobe_not_available",
+            status_code=500,
         )
 
 
@@ -57,20 +88,47 @@ class MediaFileNotFoundError(MediaInspectionError):
         super().__init__(
             f"Media file not found: {file_path}",
             code="media_file_not_found",
+            status_code=404,
         )
 
 
 class UnsupportedMediaTypeError(MediaInspectionError):
     def __init__(self, detail: str) -> None:
-        super().__init__(detail, code="unsupported_media_type")
+        super().__init__(detail, code="unsupported_media_type", status_code=422)
 
 
 class CorruptMediaError(MediaInspectionError):
     def __init__(self, detail: str = "Unable to inspect media file.") -> None:
-        super().__init__(detail, code="corrupt_media")
+        super().__init__(detail, code="corrupt_media", status_code=422)
+
+
+def build_ffprobe_command(file_path: Path) -> list[str]:
+    return [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration,format_name",
+        "-of",
+        "json",
+        str(file_path),
+    ]
 
 
 def validate_media_type(filename: str, mime_type: str | None = None) -> str:
+    """
+    Validate media file by extension and/or MIME type.
+
+    Args:
+        filename: The file name or path to validate (e.g., "episode.mp4").
+        mime_type: Optional MIME type string (e.g., "video/mp4").
+
+    Returns:
+        A normalized format string (e.g., "mp4").
+
+    Raises:
+        UnsupportedMediaTypeError: If the file type is not supported.
+    """
     suffix = Path(filename).suffix.lower()
     normalized_mime = mime_type.lower().strip() if mime_type else None
 
@@ -103,17 +161,7 @@ def _resolve_file_path(file_path: Path) -> Path:
 def _probe_media(file_path: Path) -> dict:
     _ensure_ffprobe_available()
     resolved_path = _resolve_file_path(file_path)
-
-    command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration,format_name",
-        "-of",
-        "json",
-        str(resolved_path),
-    ]
+    command = build_ffprobe_command(resolved_path)
 
     try:
         result = subprocess.run(
@@ -127,6 +175,7 @@ def _probe_media(file_path: Path) -> dict:
         raise MediaInspectionError(
             "Timed out while inspecting the media file.",
             code="ffprobe_timeout",
+            status_code=504,
         ) from exc
 
     if result.returncode != 0:
@@ -140,6 +189,23 @@ def _probe_media(file_path: Path) -> dict:
 
 
 def get_duration_seconds(file_path: Path) -> float:
+    """
+    Extract duration in seconds from a media file.
+
+    Uses ffprobe to safely inspect the file without loading it into memory.
+    Rounds to 2 decimal places.
+
+    Args:
+        file_path: Path to the media file.
+
+    Returns:
+        Duration in seconds (e.g., 1842.42).
+
+    Raises:
+        FFprobeNotAvailableError: If ffprobe is not installed.
+        MediaFileNotFoundError: If the file does not exist.
+        CorruptMediaError: If duration cannot be detected or is invalid.
+    """
     payload = _probe_media(file_path)
     format_payload = payload.get("format", {})
 
@@ -159,6 +225,23 @@ def get_duration_seconds(file_path: Path) -> float:
 
 
 def get_duration_minutes(file_path: Path) -> float:
+    """
+    Extract duration in minutes from a media file.
+
+    Convenience wrapper around get_duration_seconds().
+    Rounds to 2 decimal places.
+
+    Args:
+        file_path: Path to the media file.
+
+    Returns:
+        Duration in minutes (e.g., 30.71).
+
+    Raises:
+        FFprobeNotAvailableError: If ffprobe is not installed.
+        MediaFileNotFoundError: If the file does not exist.
+        CorruptMediaError: If duration cannot be detected or is invalid.
+    """
     return round(get_duration_seconds(file_path) / 60, 2)
 
 
@@ -168,6 +251,33 @@ def inspect_media(
     filename: str | None = None,
     mime_type: str | None = None,
 ) -> MediaInspectionResult:
+    """
+    Perform full media inspection and return normalized metadata.
+
+    This is the primary entry point for media validation. It reads file metadata
+    efficiently via ffprobe without loading the file into memory. Validates the
+    file exists, is of a supported type, and contains valid duration information.
+
+    Args:
+        file_path: Path to the media file (local or staged).
+        filename: Optional filename to validate against (defaults to file_path.name).
+        mime_type: Optional MIME type for additional validation (e.g., "video/mp4").
+
+    Returns:
+        MediaInspectionResult with duration, format, and validation flags.
+
+    Raises:
+        FFprobeNotAvailableError: If ffprobe is not installed or on PATH.
+        MediaFileNotFoundError: If the file does not exist.
+        UnsupportedMediaTypeError: If the file type is not supported.
+        CorruptMediaError: If the file is corrupt or duration is invalid.
+        MediaInspectionError: For ffprobe timeout or other inspection failures.
+
+    Example:
+        >>> result = inspect_media(Path("episode.mp4"))
+        >>> print(f"Duration: {result.duration_minutes} min")
+        >>> print(f"Format: {result.detected_format}")
+    """
     resolved_path = _resolve_file_path(file_path)
     detected_format = validate_media_type(filename or resolved_path.name, mime_type)
     payload = _probe_media(resolved_path)

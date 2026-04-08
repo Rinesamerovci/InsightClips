@@ -1,6 +1,7 @@
 """Utility helpers for the backend."""
 
 from app.utils.media import (
+    build_ffprobe_command,
     CorruptMediaError,
     FFprobeNotAvailableError,
     MediaFileNotFoundError,
@@ -13,6 +14,7 @@ from app.utils.media import (
 )
 
 __all__ = [
+    "build_ffprobe_command",
     "CorruptMediaError",
     "FFprobeNotAvailableError",
     "MediaFileNotFoundError",

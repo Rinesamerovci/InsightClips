@@ -45,5 +45,9 @@ def upsert_profile(profile_id: str, email: str, full_name: str | None = None) ->
     return ProfileRecord.model_validate(rows[0])
 
 
+def mark_free_trial_used(profile_id: str) -> None:
+    service_supabase.table("profiles").update({"free_trial_used": True}).eq("id", profile_id).execute()
+
+
 def serialize_profile(profile: ProfileRecord) -> ProfileResponse:
     return ProfileResponse.model_validate(profile.model_dump())

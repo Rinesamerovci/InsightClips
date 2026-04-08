@@ -195,15 +195,19 @@ def prepare_upload(
 
     _assert_prepare_matches_quote(payload, calculated_response)
     final_status: UploadStatus = calculated_response.status
+    # Keep preflight "free_ready" for pricing, but persist guarded DB status.
+    persisted_status: UploadStatus = (
+        "ready_for_processing" if final_status == "free_ready" else final_status
+    )
     payment_status = _derive_payment_status(final_status)
-    storage_ready = final_status in {"free_ready", "ready_for_processing"}
-    checkout_required = final_status == "awaiting_payment"
+    storage_ready = persisted_status in {"ready_for_processing"}
+    checkout_required = persisted_status == "awaiting_payment"
 
     insert_payload = {
         "user_id": current_user.id,
         "title": payload.title,
         "duration": round(calculated_response.duration_seconds),
-        "status": final_status,
+        "status": persisted_status,
         "price": calculated_response.price,
         "payment_status": payment_status,
         "source_filename": payload.filename,
@@ -222,7 +226,7 @@ def prepare_upload(
 
     return UploadPrepareResponse(
         podcast_id=str(rows[0]["id"]),
-        status=final_status,
+        status=persisted_status,
         storage_ready=storage_ready,
         checkout_required=checkout_required,
         payment_status=payment_status,

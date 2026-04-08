@@ -8,11 +8,28 @@ from app.config import get_settings
 
 settings = get_settings()
 
-service_supabase: Client = create_client(
+
+class UnconfiguredSupabaseClient:
+    def __getattr__(self, name: str) -> object:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise RuntimeError(
+            "Supabase client is not configured. Set SUPABASE_URL and the corresponding key "
+            "environment variables before using database-backed services."
+        )
+
+
+def _create_supabase_client(url: str, key: str) -> Client | UnconfiguredSupabaseClient:
+    if not url or not key:
+        return UnconfiguredSupabaseClient()
+    return create_client(url, key)
+
+
+service_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(
     settings.supabase_url,
     settings.supabase_service_role_key or settings.supabase_anon_key,
 )
-public_supabase: Client = create_client(
+public_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(
     settings.supabase_url,
     settings.supabase_anon_key or settings.supabase_service_role_key,
 )

@@ -17,6 +17,14 @@ create table if not exists public.podcasts (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table if exists public.podcasts
+  add column if not exists price numeric(10, 2) not null default 0,
+  add column if not exists payment_status text not null default 'draft',
+  add column if not exists source_filename text,
+  add column if not exists storage_path text,
+  add column if not exists mime_type text,
+  add column if not exists detected_format text;
+
 alter table public.profiles enable row level security;
 alter table public.podcasts enable row level security;
 

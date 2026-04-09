@@ -17,6 +17,7 @@ from app.services.profile_service import get_profile_by_id, mark_free_trial_used
 
 FREE_TRIAL_MAX_MINUTES = 30
 ABSOLUTE_MAX_MINUTES = 120
+MAX_UPLOAD_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024
 SHORT_UPLOAD_PRICE = 1.0
 MEDIUM_UPLOAD_PRICE = 2.0
 LONG_UPLOAD_PRICE = 4.0
@@ -88,20 +89,32 @@ def determine_upload_price(duration_minutes: float, free_trial_used: bool) -> Up
 
 def _derive_payment_status(status: UploadStatus) -> str:
     if status == "free_ready":
-        return "free"
+        return "not_required"
     if status == "awaiting_payment":
-        return "unpaid"
+        return "pending"
     if status == "ready_for_processing":
         return "paid"
     if status == "blocked":
-        return "blocked"
-    return "draft"
+        return "failed"
+    return "pending"
 
 
 def calculate_upload_price(
     payload: UploadCalculatePriceRequest,
     current_user: AuthenticatedUser,
 ) -> UploadCalculatePriceResponse:
+    if payload.filesize_bytes > MAX_UPLOAD_FILE_SIZE_BYTES:
+        raise UploadWorkflowError(
+            "File exceeds allowed size limit.",
+            status_code=413,
+            code="file_too_large",
+        )
+    if not payload.storage_path:
+        raise UploadWorkflowError(
+            "storage_path is required for duration inspection.",
+            status_code=400,
+            code="missing_storage_path",
+        )
     inspection = inspect_staged_media(
         payload.storage_path,
         filename=payload.filename,
@@ -142,27 +155,59 @@ def prepare_upload(
     payload: UploadPrepareRequest,
     current_user: AuthenticatedUser,
 ) -> UploadPrepareResponse:
-    calculated_response = calculate_upload_price(
-        UploadCalculatePriceRequest(
-            filename=payload.filename,
-            filesize_bytes=payload.filesize_bytes,
-            mime_type=payload.mime_type,
-            storage_path=payload.storage_path,
-        ),
-        current_user,
-    )
+    if payload.storage_path:
+        if payload.filesize_bytes is None:
+            raise UploadWorkflowError(
+                "filesize_bytes is required when storage_path is provided.",
+                status_code=400,
+                code="missing_filesize_bytes",
+            )
+        calculated_response = calculate_upload_price(
+            UploadCalculatePriceRequest(
+                filename=payload.filename,
+                filesize_bytes=payload.filesize_bytes,
+                mime_type=payload.mime_type,
+                storage_path=payload.storage_path,
+            ),
+            current_user,
+        )
+    else:
+        if payload.duration_seconds is None or payload.price is None or payload.status is None:
+            raise UploadWorkflowError(
+                "duration_seconds, price, and status are required when storage_path is omitted.",
+                status_code=400,
+                code="missing_prepare_fields",
+            )
+
+        duration_minutes = round(payload.duration_seconds / 60, 2)
+        free_trial_used = _get_latest_free_trial_state(current_user)
+        price_decision = determine_upload_price(duration_minutes, free_trial_used)
+        calculated_response = UploadCalculatePriceResponse(
+            duration_seconds=round(payload.duration_seconds, 2),
+            duration_minutes=duration_minutes,
+            price=price_decision.price,
+            free_trial_available=price_decision.free_trial_available,
+            status=price_decision.status,
+            message=price_decision.message,
+            detected_format=None,
+            validation_flags={},
+        )
 
     _assert_prepare_matches_quote(payload, calculated_response)
     final_status: UploadStatus = calculated_response.status
+    # Keep preflight "free_ready" for pricing, but persist guarded DB status.
+    persisted_status: UploadStatus = (
+        "ready_for_processing" if final_status == "free_ready" else final_status
+    )
     payment_status = _derive_payment_status(final_status)
-    storage_ready = final_status in {"free_ready", "ready_for_processing"}
-    checkout_required = final_status == "awaiting_payment"
+    storage_ready = persisted_status in {"ready_for_processing"}
+    checkout_required = persisted_status == "awaiting_payment"
 
     insert_payload = {
         "user_id": current_user.id,
         "title": payload.title,
         "duration": round(calculated_response.duration_seconds),
-        "status": final_status,
+        "status": persisted_status,
         "price": calculated_response.price,
         "payment_status": payment_status,
         "source_filename": payload.filename,
@@ -181,7 +226,7 @@ def prepare_upload(
 
     return UploadPrepareResponse(
         podcast_id=str(rows[0]["id"]),
-        status=final_status,
+        status=persisted_status,
         storage_ready=storage_ready,
         checkout_required=checkout_required,
         payment_status=payment_status,

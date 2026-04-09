@@ -1,7 +1,14 @@
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BACKEND_DIR.parent
 
-load_dotenv()
+load_dotenv(ROOT_DIR / ".env.local")
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(BACKEND_DIR / ".env.local")
+load_dotenv(BACKEND_DIR / ".env")
 
 from app.config import get_settings
 from app.database import lifespan

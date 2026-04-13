@@ -209,7 +209,7 @@ function Stat({ val, label }: StatProps) {
       <div className="text-[10px] font-black text-slate-700 uppercase tracking-[0.3em]">{label}</div>
     </div>
   );
-}
+} 
 
 /**
  * Small utility icon for the footer links.

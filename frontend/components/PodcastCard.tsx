@@ -33,18 +33,28 @@ export function PodcastCard({ podcast }: { podcast: Podcast }) {
         : "bg-[#e9ece7] text-[#5f6f63]";
 
   return (
-    <article className="rounded-[2rem] border border-[#d9e5d3] bg-white p-6 shadow-[0_20px_50px_rgba(124,150,118,0.12)] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(124,150,118,0.16)]">
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
+    <article className="flex h-full min-w-0 flex-col rounded-[2rem] border border-[#d9e5d3] bg-white p-6 shadow-[0_20px_50px_rgba(124,150,118,0.12)] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(124,150,118,0.16)]">
+      <div className="mb-5 space-y-3">
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Podcast</p>
-          <h3 className="mt-2 text-xl font-semibold text-[#203328]">{podcast.title}</h3>
+          <h3
+            className="mt-2 text-xl font-semibold leading-8 text-[#203328]"
+            style={{
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 3,
+              overflow: "hidden",
+            }}
+          >
+            {podcast.title}
+          </h3>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusClassName}`}>
+        <span className={`inline-flex w-fit max-w-full rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusClassName}`}>
           {podcast.status}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 rounded-[1.5rem] bg-[#f4f7ef] p-4 text-sm text-[#526352]">
+      <div className="mt-auto grid grid-cols-2 gap-4 rounded-[1.5rem] bg-[#f4f7ef] p-4 text-sm text-[#526352]">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[#8aa084]">Duration</p>
           <p className="mt-1 font-medium text-[#203328]">{formatDuration(podcast.duration)}</p>

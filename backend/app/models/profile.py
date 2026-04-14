@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, HttpUrl
 
 
 class ProfileRecord(BaseModel):
@@ -23,3 +23,8 @@ class ProfileResponse(BaseModel):
     profile_picture_url: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str | None = None
+    profile_picture_url: HttpUrl | None = None

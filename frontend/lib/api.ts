@@ -79,7 +79,7 @@ export function clearBackendToken(): void {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT";
   body?: JsonRecord;
   token?: string | null;
 };
@@ -111,6 +111,10 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
 export async function postJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
   return requestJson<T>(path, { method: "POST", body, token });
+}
+
+export async function putJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "PUT", body, token });
 }
 
 export async function getJson<T>(path: string, token?: string | null): Promise<T> {

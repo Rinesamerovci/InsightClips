@@ -35,6 +35,17 @@ type PodcastsResponse = {
   is_mock: boolean;
 };
 
+function formatShortMonth(value: string | null): string {
+  if (!value) {
+    return "N/A";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { backendToken, loading: authLoading, signOut, syncBackendSession } = useAuth();
@@ -98,6 +109,12 @@ export default function DashboardPage() {
     );
   }
 
+  const completedCount = podcasts.filter((podcast) => podcast.status.toLowerCase() === "completed").length;
+  const processingCount = podcasts.filter((podcast) => podcast.status.toLowerCase().includes("process")).length;
+  const latestUpload = podcasts
+    .filter((podcast) => podcast.created_at)
+    .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())[0];
+
   return (
     <div className={darkMode ? "min-h-screen bg-[#1a211b] text-[#eff5eb]" : "min-h-screen bg-[#f4f7ef] text-[#203328]"}>
       <div className="mx-auto max-w-7xl px-6 py-8">
@@ -145,10 +162,44 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[320px_1fr]">
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[1.75rem] border border-[#d9e5d3] bg-white p-5 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Profile</p>
+            <p className="mt-3 text-3xl font-semibold text-[#203328]">
+              {profile?.full_name?.split(" ")[0] || "Creator"}
+            </p>
+            <p className="mt-2 text-sm text-[#5b6f5f]">{profile?.email || "No email found"}</p>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-[#d9e5d3] bg-white p-5 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Total podcasts</p>
+            <p className="mt-3 text-3xl font-semibold text-[#203328]">{podcasts.length}</p>
+            <p className="mt-2 text-sm text-[#5b6f5f]">
+              {isMock ? "Starter data visible" : "Items tied to your account"}
+            </p>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-[#d9e5d3] bg-white p-5 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Processing status</p>
+            <p className="mt-3 text-3xl font-semibold text-[#203328]">{processingCount}</p>
+            <p className="mt-2 text-sm text-[#5b6f5f]">{completedCount} completed and ready</p>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-[#d9e5d3] bg-white p-5 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Latest upload</p>
+            <p className="mt-3 text-3xl font-semibold text-[#203328]">
+              {formatShortMonth(latestUpload?.created_at ?? profile?.created_at ?? null)}
+            </p>
+            <p className="mt-2 text-sm text-[#5b6f5f]">
+              {latestUpload?.title ? latestUpload.title : "Upload your next episode"}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-8 lg:grid-cols-[320px_minmax(0,1fr)]">
           {profile ? <UserProfileCard profile={profile} /> : null}
 
-          <section>
+          <section className="min-w-0">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold">Your podcasts</h2>
@@ -163,7 +214,7 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <div className={podcasts.length === 1 ? "grid gap-5 md:grid-cols-1 xl:max-w-2xl" : "grid gap-5 md:grid-cols-2 2xl:grid-cols-3"}>
               {podcasts.map((podcast) => (
                 <PodcastCard key={podcast.id} podcast={podcast} />
               ))}

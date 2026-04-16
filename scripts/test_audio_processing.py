@@ -2,42 +2,34 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
+import sys
 from pathlib import Path
 
+BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
-def get_duration_seconds(file_path: Path) -> float:
-    if not shutil.which("ffprobe"):
-        raise RuntimeError("ffprobe is not installed or not available on PATH.")
-
-    command = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "json",
-        str(file_path),
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    payload = json.loads(result.stdout)
-    return float(payload["format"]["duration"])
+from app.utils.media import MediaInspectionError, inspect_media
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Read an .mp4 file and print its duration in seconds."
+        description="Inspect a local media file and print normalized duration metadata."
     )
-    parser.add_argument("file_path", type=Path, help="Path to the .mp4 file")
+    parser.add_argument("file_path", type=Path, help="Path to a local media file")
+    parser.add_argument(
+        "--mime-type",
+        dest="mime_type",
+        help="Optional MIME type to validate alongside the file extension.",
+    )
     args = parser.parse_args()
 
-    if not args.file_path.exists():
-        raise FileNotFoundError(f"File not found: {args.file_path}")
+    try:
+        inspection = inspect_media(args.file_path, mime_type=args.mime_type)
+    except MediaInspectionError as exc:
+        raise SystemExit(f"Error [{exc.code}]: {exc.detail}") from exc
 
-    duration_seconds = get_duration_seconds(args.file_path)
-    print(f"File: {args.file_path.name}, Duration: {duration_seconds:.2f}s")
+    print(json.dumps(inspection.model_dump(mode="json"), indent=2))
 
 
 if __name__ == "__main__":

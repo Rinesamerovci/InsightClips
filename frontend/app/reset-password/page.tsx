@@ -1,8 +1,11 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { ShieldCheck, Loader2, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle2, Loader2, Lock, ShieldAlert } from "lucide-react";
+
+import { supabase } from "@/lib/supabase";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -15,113 +18,167 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const checkSession = async () => {
-      // Verifikojmë nëse përdoruesi ka një session të vlefshëm nga OTP
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setSessionValid(true);
-      } else {
-        setSessionValid(false);
-      }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setSessionValid(Boolean(session));
     };
-    checkSession();
+
+    void checkSession();
   }, []);
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUpdatePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError("");
 
     if (password.length < 6) {
-      setError("PASSWORD TOO SHORT (MIN 6 CHARS)");
+      setError("Password must be at least 6 characters.");
       return;
     }
+
     if (password !== confirmPassword) {
-      setError("PASSWORDS DO NOT MATCH!");
+      setError("Passwords do not match.");
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await supabase.auth.updateUser({ password });
 
-    if (error) {
-      setError(error.message.toUpperCase());
+    if (updateError) {
+      setError(updateError.message);
       setLoading(false);
-    } else {
-      setSuccess(true);
-      await supabase.auth.signOut();
-      setTimeout(() => router.push('/login'), 3000);
+      return;
     }
+
+    setSuccess(true);
+    await supabase.auth.signOut();
+    setTimeout(() => router.push("/login"), 2500);
   };
 
-  if (sessionValid === null) return (
-    <div className="h-screen bg-[#02040a] flex flex-col items-center justify-center text-emerald-400 gap-4">
-      <Loader2 className="animate-spin" size={40} />
-      <span className="text-[10px] font-black uppercase tracking-[0.3em]">Syncing Neural Data...</span>
-    </div>
-  );
+  if (sessionValid === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f4f7ef]">
+        <Loader2 className="animate-spin text-[#4f6f52]" size={36} />
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#02040a] text-slate-300 flex items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-[500px] bg-emerald-500/5 blur-[120px] rounded-full -z-10" />
+    <div className="min-h-screen bg-[#f4f7ef] px-6 py-8 text-[#203328]">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col justify-center">
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-full border border-[#d9e5d3] bg-white px-4 py-3 text-sm font-medium text-[#4f6f52]"
+        >
+          <ArrowLeft size={16} />
+          Back to login
+        </Link>
 
-      <div className="w-full max-w-md bg-white/[0.02] border border-white/5 p-12 rounded-[3.5rem] backdrop-blur-3xl text-center">
-        {!sessionValid ? (
-          <div className="space-y-6">
-            <AlertCircle size={50} className="text-red-500 mx-auto" />
-            <h2 className="text-xl font-black text-white uppercase italic tracking-tighter">Access Denied</h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-loose italic">
-              Session expired. Please request a new security code.
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_0.95fr]">
+          <section className="rounded-[2rem] border border-[#d9e5d3] bg-[#d7e8d2] p-8 shadow-[0_20px_50px_rgba(124,150,118,0.12)] md:p-10">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Security update</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Set a new password and return safely.</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[#5b6f5f]">
+              Finish password recovery, then head back into the dashboard and Sprint 2 upload flow.
             </p>
-            <button onClick={() => router.push('/forgot-password')} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-400 hover:text-black transition-all">
-              Restart Recovery
-            </button>
-          </div>
-        ) : !success ? (
-          <>
-            <div className="mb-10">
-              <div className="w-14 h-14 bg-emerald-400/10 border border-emerald-400/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <ShieldCheck size={28} className="text-emerald-400" />
+          </section>
+
+          <section className="rounded-[2rem] border border-[#d9e5d3] bg-white p-8 shadow-[0_20px_50px_rgba(124,150,118,0.12)] md:p-10">
+            {!sessionValid ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[#e6b7b7] bg-[#fff4f4] text-[#934949]">
+                  <ShieldAlert size={38} />
+                </div>
+                <h2 className="mt-6 text-3xl font-semibold tracking-tight">Recovery session expired</h2>
+                <p className="mt-3 max-w-md text-sm leading-6 text-[#5b6f5f]">
+                  Please request a new password reset link and try again.
+                </p>
+                <Link
+                  href="/forgot-password"
+                  className="mt-8 inline-flex items-center justify-center rounded-full bg-[#4f6f52] px-6 py-4 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(79,111,82,0.25)]"
+                >
+                  Request new reset link
+                </Link>
               </div>
-              <h2 className="text-3xl font-black italic uppercase text-white tracking-tighter leading-none">New Password</h2>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-3 italic">Override existing security key</p>
-            </div>
+            ) : !success ? (
+              <>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">New password</p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight">Update password</h2>
+                </div>
 
-            <form onSubmit={handleUpdatePassword} className="space-y-5">
-              <div className="relative group text-left">
-                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-emerald-400" size={18} />
-                <input 
-                  type="password" required placeholder="NEW PASSWORD" 
-                  value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/40 border border-white/5 p-5 pl-14 rounded-2xl outline-none text-white focus:border-emerald-400/30 transition-all font-bold text-xs tracking-widest" 
-                />
+                <form className="mt-8 space-y-5" onSubmit={handleUpdatePassword}>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#35553c]" htmlFor="password">
+                      New password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7c9676]" size={18} />
+                      <input
+                        id="password"
+                        required
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="At least 6 characters"
+                        className="w-full rounded-2xl border border-[#d9e5d3] bg-[#f9fbf7] py-4 pl-12 pr-4 text-sm outline-none transition focus:border-[#4f6f52] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#35553c]" htmlFor="confirmPassword">
+                      Confirm password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7c9676]" size={18} />
+                      <input
+                        id="confirmPassword"
+                        required
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Repeat your password"
+                        className="w-full rounded-2xl border border-[#d9e5d3] bg-[#f9fbf7] py-4 pl-12 pr-4 text-sm outline-none transition focus:border-[#4f6f52] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  {error ? (
+                    <div className="rounded-[1.25rem] border border-[#e6b7b7] bg-[#fff4f4] px-4 py-3 text-sm text-[#934949]">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#4f6f52] px-5 py-4 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(79,111,82,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      "Update password"
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-8 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[#b9d6b4] bg-[#eef8eb] text-[#2e5b33]">
+                  <CheckCircle2 size={38} />
+                </div>
+                <h2 className="mt-6 text-3xl font-semibold tracking-tight">Password updated</h2>
+                <p className="mt-3 max-w-md text-sm leading-6 text-[#5b6f5f]">
+                  Your password was changed successfully. Redirecting you back to login.
+                </p>
               </div>
-
-              <div className="relative group text-left">
-                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-emerald-400" size={18} />
-                <input 
-                  type="password" required placeholder="CONFIRM PASSWORD" 
-                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-black/40 border border-white/5 p-5 pl-14 rounded-2xl outline-none text-white focus:border-emerald-400/30 transition-all font-bold text-xs tracking-widest" 
-                />
-              </div>
-
-              {error && <p className="text-red-500 text-[9px] font-black uppercase tracking-widest">{error}</p>}
-
-              <button disabled={loading} className="w-full bg-emerald-400 text-black p-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] flex items-center justify-center gap-3 hover:shadow-[0_0_30px_rgba(52,211,153,0.2)] transition-all active:scale-95 disabled:opacity-50 mt-4">
-                {loading ? "UPDATING CORE..." : "Confirm Update"}
-              </button>
-            </form>
-          </>
-        ) : (
-          <div className="py-6 space-y-6 animate-in fade-in zoom-in duration-500">
-            <div className="w-20 h-20 bg-emerald-400/10 rounded-full flex items-center justify-center mx-auto border border-emerald-400/20 shadow-[0_0_40px_rgba(52,211,153,0.1)]">
-              <CheckCircle2 size={40} className="text-emerald-400" />
-            </div>
-            <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Access Restored</h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-relaxed italic">
-              Identity updated successfully. <br/>Redirecting to portal...
-            </p>
-          </div>
-        )}
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

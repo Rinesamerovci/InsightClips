@@ -2,6 +2,8 @@ const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "h
 const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
 
 export const BACKEND_TOKEN_KEY = "insightclips_backend_token";
+export const FRONTEND_UPLOAD_PREFLIGHT_MODE =
+  process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "live";
 
 type JsonRecord = Record<string, unknown>;
 export type UploadState =
@@ -57,6 +59,54 @@ export type PrepareUploadResponse = {
 type UploadRequestOptions = {
   token?: string | null;
   useMock?: boolean;
+};
+
+export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
+
+export type UploadPricePayload = {
+  file: File;
+  filename: string;
+  filesize_bytes: number;
+  mime_type?: string | null;
+  detected_duration_seconds?: number | null;
+  mock?: boolean;
+};
+
+export type UploadPriceResponse = {
+  duration_seconds: number;
+  duration_minutes: number;
+  price: number;
+  currency: "USD";
+  free_trial_available: boolean;
+  status: UploadPreflightStatus;
+  message: string;
+  detected_format?: string | null;
+  validation_flags?: Record<string, boolean>;
+  upload_reference: string;
+  is_mock?: boolean;
+};
+
+export type PrepareUploadPayload = {
+  title: string;
+  filename: string;
+  filesize_bytes: number;
+  mime_type?: string | null;
+  duration_seconds?: number;
+  price?: number;
+  status?: UploadPreflightStatus;
+  upload_reference: string;
+  mock?: boolean;
+};
+
+export type PrepareUploadResponse = {
+  podcast_id: string;
+  status: "draft" | "free_ready" | "awaiting_payment" | "ready_for_processing" | "blocked";
+  storage_ready: boolean;
+  checkout_required: boolean;
+  payment_status: string;
+  price: number;
+  currency: "USD";
+  is_mock?: boolean;
 };
 
 export function getStoredBackendToken(): string | null {

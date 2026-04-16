@@ -1,145 +1,127 @@
 "use client";
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { Zap, Mail, ChevronRight, Loader2, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Loader2, Mail, ShieldCheck } from "lucide-react";
+
+import { supabase } from "@/lib/supabase";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [step, setStep] = useState(1); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendReset = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-
-    if (error) {
-      setError(error.message.toUpperCase());
-      setLoading(false);
-    } else {
-      setStep(2);
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    const token = otp.join("");
-
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'recovery',
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
     });
 
-    if (error) {
-      setError("INVALID OR EXPIRED CODE");
-      setLoading(false);
+    if (resetError) {
+      setError(resetError.message);
     } else {
-      router.push('/reset-password');
+      setSuccess(true);
     }
-  };
 
-  const handleOtpChange = (element: HTMLInputElement, index: number) => {
-    if (isNaN(Number(element.value))) return false;
-    const newOtp = [...otp];
-    newOtp[index] = element.value;
-    setOtp(newOtp);
-    if (element.value !== "" && element.nextSibling) {
-      (element.nextSibling as HTMLInputElement).focus();
-    }
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#02040a] text-slate-300 flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden">
-      
-      {/* Aesthetic Background */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-[500px] bg-emerald-500/5 blur-[120px] rounded-full -z-10" />
-
-      {/* NAVIGATION: BACK TO PORTAL (Jashtë kartës, lart majtas) */}
-      <div className="absolute top-10 left-10">
-        <Link href="/login" className="group flex items-center gap-3 text-emerald-400/50 hover:text-emerald-400 transition-all">
-          <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em]">Back to Login</span>
+    <div className="min-h-screen bg-[#f4f7ef] px-6 py-8 text-[#203328]">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col justify-center">
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-full border border-[#d9e5d3] bg-white px-4 py-3 text-sm font-medium text-[#4f6f52]"
+        >
+          <ArrowLeft size={16} />
+          Back to login
         </Link>
-      </div>
 
-      {/* Main Card */}
-      <div className="w-full max-w-md bg-white/[0.02] border border-white/5 p-12 rounded-[3.5rem] backdrop-blur-3xl shadow-2xl text-center relative">
-        <div className="mb-10">
-          <div className="w-14 h-14 bg-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(52,211,153,0.2)] transition-transform hover:scale-110 duration-500">
-            <Zap size={28} className="text-black" fill="currentColor" />
-          </div>
-          <h2 className="text-3xl font-black italic uppercase text-white tracking-tighter leading-none">
-            {step === 1 ? "Reset Access" : "Verify OTP"}
-          </h2>
-          <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-600 mt-4 italic">
-            {step === 1 ? "Enter email for security uplink" : `Security code sent to ${email}`}
-          </p>
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_0.95fr]">
+          <section className="rounded-[2rem] border border-[#d9e5d3] bg-[#d7e8d2] p-8 shadow-[0_20px_50px_rgba(124,150,118,0.12)] md:p-10">
+            <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Account recovery</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Request a secure password reset.</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[#5b6f5f]">
+              We&apos;ll send you a recovery link so you can set a new password and continue back into
+              the dashboard and upload flow.
+            </p>
+          </section>
+
+          <section className="rounded-[2rem] border border-[#d9e5d3] bg-white p-8 shadow-[0_20px_50px_rgba(124,150,118,0.12)] md:p-10">
+            {!success ? (
+              <>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Reset email</p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight">Send recovery link</h2>
+                </div>
+
+                <form className="mt-8 space-y-5" onSubmit={handleSendReset}>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#35553c]" htmlFor="email">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7c9676]" size={18} />
+                      <input
+                        id="email"
+                        required
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full rounded-2xl border border-[#d9e5d3] bg-[#f9fbf7] py-4 pl-12 pr-4 text-sm outline-none transition focus:border-[#4f6f52] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  {error ? (
+                    <div className="rounded-[1.25rem] border border-[#e6b7b7] bg-[#fff4f4] px-4 py-3 text-sm text-[#934949]">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#4f6f52] px-5 py-4 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(79,111,82,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      "Send reset link"
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="flex flex-col items-center py-8 text-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[#b9d6b4] bg-[#eef8eb] text-[#2e5b33]">
+                  <ShieldCheck size={38} />
+                </div>
+                <h2 className="mt-6 text-3xl font-semibold tracking-tight">Check your email</h2>
+                <p className="mt-3 max-w-md text-sm leading-6 text-[#5b6f5f]">
+                  We sent a recovery link to your email address. Open it to continue to the reset page.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/login")}
+                  className="mt-8 inline-flex items-center justify-center rounded-full bg-[#4f6f52] px-6 py-4 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(79,111,82,0.25)]"
+                >
+                  Return to login
+                </button>
+              </div>
+            )}
+          </section>
         </div>
-
-        {step === 1 ? (
-          <form onSubmit={handleSendOtp} className="space-y-6">
-            <div className="relative group text-left">
-              <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-emerald-400 transition-colors" size={18} />
-              <input 
-                type="email" required placeholder="EMAIL ADDRESS" 
-                value={email} onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-black/40 border border-white/5 p-5 pl-14 rounded-2xl outline-none text-white focus:border-emerald-400/30 transition-all font-bold text-xs tracking-widest placeholder:text-slate-800" 
-              />
-            </div>
-            
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 py-3 px-4 rounded-xl text-center">
-                <p className="text-[9px] font-black uppercase tracking-widest text-red-400">{error}</p>
-              </div>
-            )}
-
-            <button disabled={loading} className="w-full bg-emerald-400 text-black p-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] flex items-center justify-center gap-3 hover:shadow-[0_0_40px_rgba(52,211,153,0.3)] transition-all active:scale-95 disabled:opacity-50 mt-4">
-              {loading ? <Loader2 className="animate-spin" size={18} /> : <>Request Code <ChevronRight size={18} /></>}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyOtp} className="space-y-8">
-            <div className="flex justify-between gap-2">
-              {otp.map((data, index) => (
-                <input 
-                  key={index} type="text" maxLength={1} value={data} 
-                  onChange={e => handleOtpChange(e.target, index)}
-                  className="w-12 h-16 bg-black/40 border border-white/5 rounded-xl text-center text-xl font-black text-emerald-400 outline-none focus:border-emerald-400 transition-all" 
-                />
-              ))}
-            </div>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 py-3 px-4 rounded-xl text-center">
-                <p className="text-[9px] font-black uppercase tracking-widest text-red-400">{error}</p>
-              </div>
-            )}
-
-            <button disabled={loading} className="w-full bg-emerald-400 text-black p-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.2em] flex items-center justify-center gap-3 transition-all active:scale-95">
-              {loading ? "VERIFYING..." : "Validate Access"}
-            </button>
-            
-            <button type="button" onClick={() => setStep(1)} className="text-[9px] font-black uppercase tracking-widest text-slate-600 hover:text-white transition-colors">
-              Wrong Email?
-            </button>
-          </form>
-        )}
-      </div>
-
-      {/* Branding Footer */}
-      <div className="absolute bottom-10 opacity-20 text-[8px] font-black uppercase tracking-[0.5em] flex items-center gap-2">
-        Neural Protocol v3.0
       </div>
     </div>
   );

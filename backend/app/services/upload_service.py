@@ -14,6 +14,7 @@ from app.models.upload import (
 )
 from app.services.media_service import inspect_staged_media
 from app.services.profile_service import get_profile_by_id, mark_free_trial_used
+from app.utils.media import validate_media_type
 
 FREE_TRIAL_MAX_MINUTES = 30
 ABSOLUTE_MAX_MINUTES = 120
@@ -109,29 +110,45 @@ def calculate_upload_price(
             status_code=413,
             code="file_too_large",
         )
-    if not payload.storage_path:
-        raise UploadWorkflowError(
-            "storage_path is required for duration inspection.",
-            status_code=400,
-            code="missing_storage_path",
+
+    detected_format = validate_media_type(payload.filename, payload.mime_type)
+
+    if payload.storage_path:
+        inspection = inspect_staged_media(
+            payload.storage_path,
+            filename=payload.filename,
+            mime_type=payload.mime_type,
         )
-    inspection = inspect_staged_media(
-        payload.storage_path,
-        filename=payload.filename,
-        mime_type=payload.mime_type,
-    )
+        duration_seconds = inspection.duration_seconds
+        duration_minutes = inspection.duration_minutes
+        validation_flags = inspection.validation_flags
+        detected_format = inspection.detected_format
+    elif payload.duration_seconds is not None:
+        duration_seconds = round(payload.duration_seconds, 2)
+        duration_minutes = round(duration_seconds / 60, 2)
+        validation_flags = {
+            "client_duration_provided": True,
+            "mime_type_supported": True,
+        }
+    else:
+        raise UploadWorkflowError(
+            "Either storage_path or duration_seconds is required for duration inspection.",
+            status_code=400,
+            code="missing_duration_source",
+        )
+
     free_trial_used = _get_latest_free_trial_state(current_user)
-    price_decision = determine_upload_price(inspection.duration_minutes, free_trial_used)
+    price_decision = determine_upload_price(duration_minutes, free_trial_used)
 
     return UploadCalculatePriceResponse(
-        duration_seconds=inspection.duration_seconds,
-        duration_minutes=inspection.duration_minutes,
+        duration_seconds=duration_seconds,
+        duration_minutes=duration_minutes,
         price=price_decision.price,
         free_trial_available=price_decision.free_trial_available,
         status=price_decision.status,
         message=price_decision.message,
-        detected_format=inspection.detected_format,
-        validation_flags=inspection.validation_flags,
+        detected_format=detected_format,
+        validation_flags=validation_flags,
     )
 
 
@@ -162,6 +179,7 @@ def prepare_upload(
                 status_code=400,
                 code="missing_filesize_bytes",
             )
+
         calculated_response = calculate_upload_price(
             UploadCalculatePriceRequest(
                 filename=payload.filename,
@@ -195,12 +213,11 @@ def prepare_upload(
 
     _assert_prepare_matches_quote(payload, calculated_response)
     final_status: UploadStatus = calculated_response.status
-    # Keep preflight "free_ready" for pricing, but persist guarded DB status.
     persisted_status: UploadStatus = (
         "ready_for_processing" if final_status == "free_ready" else final_status
     )
     payment_status = _derive_payment_status(final_status)
-    storage_ready = persisted_status in {"ready_for_processing"}
+    storage_ready = persisted_status == "ready_for_processing"
     checkout_required = persisted_status == "awaiting_payment"
 
     insert_payload = {

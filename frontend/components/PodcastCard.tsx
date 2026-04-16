@@ -24,23 +24,43 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
+function formatStatus(status: string): string {
+  return status
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export function PodcastCard({ podcast }: { podcast: Podcast }) {
   const statusClassName =
     podcast.status === "completed"
       ? "bg-[#dff0db] text-[#35553c]"
       : podcast.status === "processing"
         ? "bg-[#fff3d8] text-[#8a6b1f]"
-        : "bg-[#e9ece7] text-[#5f6f63]";
+        : podcast.status === "ready_for_processing"
+          ? "bg-[#d8efe6] text-[#2f6a56]"
+          : podcast.status === "awaiting_payment"
+            ? "bg-[#fff3d8] text-[#8a6b1f]"
+            : podcast.status === "blocked"
+              ? "bg-[#fff0f0] text-[#9d4b4b]"
+              : podcast.status === "free_ready"
+                ? "bg-[#dff0db] text-[#35553c]"
+                : "bg-[#e9ece7] text-[#5f6f63]";
 
   return (
     <article className="rounded-[2rem] border border-[#d9e5d3] bg-white p-6 shadow-[0_20px_50px_rgba(124,150,118,0.12)] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(124,150,118,0.16)]">
       <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-[0.25em] text-[#7c9676]">Podcast</p>
-          <h3 className="mt-2 text-xl font-semibold text-[#203328]">{podcast.title}</h3>
+          <h3 className="mt-2 break-words text-xl font-semibold leading-9 text-[#203328]">
+            {podcast.title}
+          </h3>
         </div>
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusClassName}`}>
-          {podcast.status}
+        <span
+          className={`max-w-[10rem] shrink-0 rounded-full px-3 py-1 text-center text-xs font-semibold ${statusClassName}`}
+          title={formatStatus(podcast.status)}
+        >
+          {formatStatus(podcast.status)}
         </span>
       </div>
 

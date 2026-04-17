@@ -14,7 +14,7 @@ import {
 import { PodcastCard } from "@/components/PodcastCard";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { useAuth } from "@/context/AuthContext";
-import { getJson } from "@/lib/api";
+import { analyzePodcast, getJson, getPodcastAnalysis, type AnalysisSummary } from "@/lib/api";
 
 type ProfileResponse = {
   id: string; email: string; full_name: string | null;
@@ -26,6 +26,14 @@ type Podcast = {
   status: string; created_at: string | null; updated_at: string | null;
 };
 type PodcastsResponse = { podcasts: Podcast[]; is_mock: boolean };
+
+function isDoneStatus(status: string) {
+  return ["done", "completed", "ready_for_processing"].includes(status);
+}
+
+function isProcessingStatus(status: string) {
+  return ["processing", "queued"].includes(status);
+}
 
 /* ─────────────────────── design tokens ─────────────────────── */
 const T = {
@@ -156,13 +164,25 @@ export default function DashboardPage() {
   const [isMock,    setIsMock]    = useState(false);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState("");
-  const [dark,      setDark]      = useState(() => typeof window !== "undefined" ? window.localStorage.getItem("insightclips-theme") === "dark" : true);
+  const [dark,      setDark]      = useState(true);
+  const [mounted,   setMounted]   = useState(false);
   const [activeTab, setActiveTab] = useState<"all"|"processing"|"done">("all");
   const [collapsed, setCollapsed] = useState(false);
+  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
+  const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
 
   const t = dark ? T.dark : T.light;
 
-  useEffect(() => { window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light"); }, [dark]);
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    if (savedTheme) setDark(savedTheme === "dark");
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+  }, [dark, mounted]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -176,6 +196,17 @@ export default function DashboardPage() {
           getJson<PodcastsResponse>("/podcasts", token),
         ]);
         setProfile(p); setPodcasts(pod.podcasts); setIsMock(pod.is_mock);
+        const analysisEntries = await Promise.all(
+          pod.podcasts.map(async (podcast) => {
+            try {
+              const summary = await getPodcastAnalysis(podcast.id, token);
+              return [podcast.id, summary] as const;
+            } catch {
+              return [podcast.id, null] as const;
+            }
+          })
+        );
+        setAnalysisByPodcast(Object.fromEntries(analysisEntries));
       } catch (e) { setError(e instanceof Error ? e.message : "Unable to load."); }
       finally { setLoading(false); }
     };
@@ -183,16 +214,43 @@ export default function DashboardPage() {
   }, [authLoading, backendToken, router, syncBackendSession]);
 
   const totalDur   = podcasts.reduce((a, p) => a + (p.duration || 0), 0);
-  const processing = podcasts.filter(p => p.status === "processing").length;
-  const done       = podcasts.filter(p => p.status === "done").length;
+  const processing = podcasts.filter(p => isProcessingStatus(p.status)).length;
+  const done       = podcasts.filter(p => isDoneStatus(p.status)).length;
   const filtered   = podcasts.filter(p =>
-    activeTab === "all" ? true : activeTab === "processing" ? p.status === "processing" : p.status === "done"
+    activeTab === "all"
+      ? true
+      : activeTab === "processing"
+        ? isProcessingStatus(p.status)
+        : isDoneStatus(p.status)
   );
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
 
+  const runAnalysis = async (podcastId: string) => {
+    try {
+      setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: true }));
+      setError("");
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) { router.replace("/login"); return; }
+      const result = await analyzePodcast(podcastId, {}, token);
+      setAnalysisByPodcast((current) => ({
+        ...current,
+        [podcastId]: {
+          podcast_id: result.podcast_id,
+          total_scored_segments: result.total_segments_analyzed,
+          highest_score: result.top_scoring_segments[0]?.virality_score ?? 0,
+          top_segments: result.top_scoring_segments,
+        },
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to run analysis.");
+    } finally {
+      setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: false }));
+    }
+  };
+
   /* ── loading screen ── */
-  if (loading || authLoading) return (
+  if (!mounted || loading || authLoading) return (
     <div style={{ display:"flex", minHeight:"100vh", alignItems:"center", justifyContent:"center", background: dark ? T.dark.bg : T.light.bg }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
@@ -804,7 +862,12 @@ export default function DashboardPage() {
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
                       {filtered.map((podcast,i) => (
                         <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
-                          <PodcastCard podcast={podcast}/>
+                          <PodcastCard
+                            podcast={podcast}
+                            analysis={analysisByPodcast[podcast.id]}
+                            analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
+                            onAnalyze={() => void runAnalysis(podcast.id)}
+                          />
                         </div>
                       ))}
                     </div>

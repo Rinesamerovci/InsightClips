@@ -86,6 +86,50 @@ export type UploadPriceResponse = {
   is_mock?: boolean;
 };
 
+export type AnalysisWord = {
+  word: string;
+  start: number;
+  end: number;
+  confidence: number;
+};
+
+export type AnalyzePodcastPayload = {
+  transcription?: {
+    transcript_text: string;
+    duration_seconds: number;
+    detected_language: string;
+    words: AnalysisWord[];
+    model_used: string;
+    processing_time_seconds: number;
+  };
+  transcription_model?: string;
+};
+
+export type ScoreSegment = {
+  segment_start_seconds: number;
+  segment_end_seconds: number;
+  duration_seconds: number;
+  virality_score: number;
+  transcript_snippet: string;
+  sentiment: "positive" | "neutral" | "negative";
+  keywords: string[];
+};
+
+export type AnalysisResult = {
+  podcast_id: string;
+  total_segments_analyzed: number;
+  top_scoring_segments: ScoreSegment[];
+  average_score: number;
+  processing_time_seconds: number;
+};
+
+export type AnalysisSummary = {
+  podcast_id: string;
+  total_scored_segments: number;
+  highest_score: number;
+  top_segments: ScoreSegment[];
+};
+
 export type PrepareUploadPayload = {
   title: string;
   filename: string;
@@ -250,4 +294,19 @@ export async function prepareUpload(
   }
 
   return postJson<PrepareUploadResponse>("/upload/prepare", payload, options.token);
+}
+
+export async function analyzePodcast(
+  podcastId: string,
+  payload: AnalyzePodcastPayload,
+  token?: string | null,
+): Promise<AnalysisResult> {
+  return postJson<AnalysisResult>(`/podcasts/${podcastId}/analyze`, payload as JsonRecord, token);
+}
+
+export async function getPodcastAnalysis(
+  podcastId: string,
+  token?: string | null,
+): Promise<AnalysisSummary> {
+  return getJson<AnalysisSummary>(`/podcasts/${podcastId}/analysis`, token);
 }

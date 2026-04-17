@@ -11,6 +11,7 @@ class PodcastRecord(BaseModel):
     title: str
     duration: int
     status: str
+    storage_path: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -21,6 +22,7 @@ class PodcastResponse(BaseModel):
     title: str
     duration: int
     status: str
+    storage_path: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

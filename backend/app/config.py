@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET"))
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
+    openai_api_key: str = Field(default="", validation_alias=AliasChoices("OPENAI_API_KEY"))
+    openai_transcription_timeout_seconds: int = Field(
+        default=300,
+        validation_alias=AliasChoices("OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS"),
+    )
+    transcription_chunk_duration_seconds: int = Field(
+        default=600,
+        validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
+    )
 
 
 @lru_cache(maxsize=1)

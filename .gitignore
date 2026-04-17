@@ -23,3 +23,7 @@ backend/.env.local
 .DS_Store
 Thumbs.db
 venv/
+
+# Local test and transcription chunk artifacts
+.tmp-tests/
+insightclips-transcription-*/

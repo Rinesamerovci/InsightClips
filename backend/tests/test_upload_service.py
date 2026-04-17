@@ -107,7 +107,7 @@ class UploadServiceTests(unittest.TestCase):
                         )
 
         self.assertEqual(response.podcast_id, "podcast-123")
-        self.assertEqual(response.status, "free_ready")
+        self.assertEqual(response.status, "ready_for_processing")
         self.assertTrue(response.storage_ready)
         self.assertFalse(response.checkout_required)
         mark_free_trial_used_mock.assert_called_once_with("user-123")

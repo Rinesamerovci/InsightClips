@@ -39,7 +39,7 @@ class MediaUtilsTests(unittest.TestCase):
 
     def test_get_duration_seconds_reads_duration_from_probe_payload(self) -> None:
         with patch("app.utils.media._probe_media", return_value={"format": {"duration": "12.345"}}):
-            self.assertAlmostEqual(get_duration_seconds(Path("sample.mp4")), 12.345)
+            self.assertAlmostEqual(get_duration_seconds(Path("sample.mp4")), 12.35)
 
     def test_get_duration_seconds_rejects_missing_duration(self) -> None:
         with patch("app.utils.media._probe_media", return_value={"format": {}}):

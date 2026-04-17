@@ -6,6 +6,16 @@ type Podcast = {
   created_at: string | null;
 };
 
+type AnalysisSummary = {
+  total_scored_segments: number;
+  highest_score: number;
+  top_segments?: Array<{
+    transcript_snippet: string;
+    virality_score: number;
+    sentiment: string;
+  }>;
+};
+
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
@@ -31,7 +41,25 @@ function formatStatus(status: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export function PodcastCard({ podcast }: { podcast: Podcast }) {
+function clipSnippet(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 88) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 85).trim()}...`;
+}
+
+export function PodcastCard({
+  podcast,
+  analysis,
+  analysisLoading = false,
+  onAnalyze,
+}: {
+  podcast: Podcast;
+  analysis?: AnalysisSummary | null;
+  analysisLoading?: boolean;
+  onAnalyze?: () => void;
+}) {
   const statusClassName =
     podcast.status === "completed"
       ? "bg-[#dff0db] text-[#35553c]"
@@ -73,6 +101,61 @@ export function PodcastCard({ podcast }: { podcast: Podcast }) {
           <p className="text-xs uppercase tracking-[0.2em] text-[#8aa084]">Uploaded</p>
           <p className="mt-1 font-medium text-[#203328]">{formatDate(podcast.created_at)}</p>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-[1.25rem] border border-[#d9e5d3] bg-[#fbfdf8] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#8aa084]">Virality Analysis</p>
+            {analysis ? (
+              <p className="mt-1 text-sm font-medium text-[#203328]">
+                Top score {analysis.highest_score.toFixed(1)} · {analysis.total_scored_segments} segments
+              </p>
+            ) : (
+              <p className="mt-1 text-sm font-medium text-[#526352]">
+                {analysisLoading ? "Analyzing..." : "No analysis saved yet"}
+              </p>
+            )}
+          </div>
+          {!analysis && onAnalyze ? (
+            <button
+              type="button"
+              onClick={onAnalyze}
+              disabled={analysisLoading}
+              className="rounded-full bg-[#dff0db] px-4 py-2 text-xs font-semibold text-[#35553c] transition hover:bg-[#cfe9c9] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {analysisLoading ? "Running..." : "Analyze"}
+            </button>
+          ) : null}
+          {analysis && !analysisLoading ? (
+            <span className="rounded-full bg-[#edf8e8] px-4 py-2 text-xs font-semibold text-[#3f7543]">
+              Analyzed
+            </span>
+          ) : null}
+        </div>
+
+        {analysis?.top_segments?.length ? (
+          <div className="mt-4 space-y-2">
+            {analysis.top_segments.slice(0, 3).map((segment, index) => (
+              <div
+                key={`${segment.virality_score}-${index}`}
+                className="rounded-2xl border border-[#e2ecd9] bg-white/90 px-3 py-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7c9676]">
+                    Segment {index + 1}
+                  </span>
+                  <span className="rounded-full bg-[#f0f7ea] px-2.5 py-1 text-[11px] font-semibold text-[#35553c]">
+                    {segment.virality_score.toFixed(1)}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#314535]">
+                  {clipSnippet(segment.transcript_snippet)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   );

@@ -26,3 +26,8 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}

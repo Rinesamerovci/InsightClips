@@ -1,4 +1,5 @@
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+const configuredBackendUrl =
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
 const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
 
 export const BACKEND_TOKEN_KEY = "insightclips_backend_token";
@@ -178,10 +179,27 @@ export function clearBackendToken(): void {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: JsonRecord;
   token?: string | null;
 };
+
+function buildBackendCandidates(): string[] {
+  const candidates = [configuredBackendUrl];
+
+  try {
+    const parsed = new URL(configuredBackendUrl);
+    if (parsed.hostname === "localhost") {
+      candidates.push(`${parsed.protocol}//127.0.0.1${parsed.port ? `:${parsed.port}` : ""}`);
+    } else if (parsed.hostname === "127.0.0.1") {
+      candidates.push(`${parsed.protocol}//localhost${parsed.port ? `:${parsed.port}` : ""}`);
+    }
+  } catch {
+    return candidates;
+  }
+
+  return [...new Set(candidates)];
+}
 
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -192,20 +210,30 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     headers.Authorization = `Bearer ${options.token}`;
   }
 
-  const response = await fetch(`${backendUrl}${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let lastError: Error | null = null;
 
-  const payload = (await response.json().catch(() => ({}))) as JsonRecord;
+  for (const backendUrl of buildBackendCandidates()) {
+    try {
+      const response = await fetch(`${backendUrl}${path}`, {
+        method: options.method ?? "GET",
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
 
-  if (!response.ok) {
-    const detail = typeof payload.detail === "string" ? payload.detail : "Request failed.";
-    throw new Error(detail);
+      const payload = (await response.json().catch(() => ({}))) as JsonRecord;
+
+      if (!response.ok) {
+        const detail = typeof payload.detail === "string" ? payload.detail : "Request failed.";
+        throw new Error(detail);
+      }
+
+      return payload as T;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Request failed.");
+    }
   }
 
-  return payload as T;
+  throw lastError ?? new Error("Request failed.");
 }
 
 export async function postJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
@@ -214,6 +242,10 @@ export async function postJson<T>(path: string, body: JsonRecord, token?: string
 
 export async function getJson<T>(path: string, token?: string | null): Promise<T> {
   return requestJson<T>(path, { method: "GET", token });
+}
+
+export async function patchJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "PATCH", body, token });
 }
 
 function buildMockUploadPrice(payload: UploadPriceRequest): UploadPriceResponse {

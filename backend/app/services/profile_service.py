@@ -49,5 +49,16 @@ def mark_free_trial_used(profile_id: str) -> None:
     service_supabase.table("profiles").update({"free_trial_used": True}).eq("id", profile_id).execute()
 
 
+def update_profile(profile_id: str, full_name: str | None = None) -> ProfileRecord:
+    response = (
+        service_supabase.table("profiles")
+        .update({"full_name": full_name})
+        .eq("id", profile_id)
+        .execute()
+    )
+    rows = response.data or []
+    return ProfileRecord.model_validate(rows[0])
+
+
 def serialize_profile(profile: ProfileRecord) -> ProfileResponse:
     return ProfileResponse.model_validate(profile.model_dump())

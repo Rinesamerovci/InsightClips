@@ -6,11 +6,12 @@ frontend/.env
 
 # Python (Backend)
 backend/venv/
-backend/__pycache__/
-backend/app/**/__pycache__/
+backend/**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.log
+.pytest_cache/
 backend/.env.local
 
 # Media Files
@@ -22,3 +23,7 @@ backend/.env.local
 .DS_Store
 Thumbs.db
 venv/
+
+# Local test and transcription chunk artifacts
+.tmp-tests/
+insightclips-transcription-*/

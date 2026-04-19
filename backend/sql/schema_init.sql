@@ -40,7 +40,7 @@ alter table if exists public.podcasts
 
 alter table if exists public.podcasts
   add constraint podcasts_status_check check (
-    status in ('draft', 'awaiting_payment', 'ready_for_processing', 'blocked')
+    status in ('draft', 'awaiting_payment', 'ready_for_processing', 'processing', 'done', 'blocked')
   );
 
 alter table if exists public.podcasts

@@ -17,6 +17,7 @@ from app.services.transcription_service import (  # noqa: E402
     AudioQualityError,
     LanguageNotSupportedError,
     TranscriptionError,
+    _build_local_whisper_words,
     _request_transcription,
     transcribe_media,
 )
@@ -176,6 +177,24 @@ class TranscriptionServiceTests(unittest.TestCase):
 
         with self.assertRaises(APITimeoutError):
             _request_transcription(client, self.media_path, model="whisper-1")
+
+    def test_build_local_whisper_words_falls_back_to_segment_timings(self) -> None:
+        payload = {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 2.0,
+                    "text": "Hello there general kenobi",
+                }
+            ]
+        }
+
+        words = _build_local_whisper_words(payload)
+
+        self.assertEqual(len(words), 4)
+        self.assertEqual(words[0].word, "Hello")
+        self.assertGreater(words[-1].end, words[-1].start)
+        self.assertAlmostEqual(words[0].start, 0.0, places=3)
 
 
 if __name__ == "__main__":

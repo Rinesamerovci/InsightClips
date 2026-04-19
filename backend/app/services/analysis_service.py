@@ -159,7 +159,7 @@ def transcribe_podcast_media_for_user(podcast_id: str, user_id: str, *, model: s
         raise AnalysisError(exc.detail, status_code=exc.status_code) from exc
 
 
-def get_analysis_summary_for_podcast(podcast_id: str) -> AnalysisSummary:
+def get_analysis_summary_for_podcast(podcast_id: str) -> AnalysisSummary | None:
     response = (
         service_supabase.table("scores")
         .select("podcast_id,segment_start_sec,segment_end_sec,virality_score,transcript_snippet,sentiment,keywords")
@@ -168,6 +168,9 @@ def get_analysis_summary_for_podcast(podcast_id: str) -> AnalysisSummary:
         .execute()
     )
     rows = response.data or []
+    if not rows:
+        return None
+
     segments = [
         ScoreSegment(
             segment_start_seconds=float(item["segment_start_sec"]),

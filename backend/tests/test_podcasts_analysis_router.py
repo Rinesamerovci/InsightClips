@@ -42,10 +42,12 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.analyze_and_score")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_analyze_podcast_returns_analysis_result(
         self,
         podcast_belongs_mock,
+        update_status_mock,
         analyze_and_score_mock,
         build_analysis_result_mock,
         persist_analysis_result_mock,
@@ -91,6 +93,8 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertEqual(result.podcast_id, "podcast-123")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         analyze_and_score_mock.assert_called_once()
         build_analysis_result_mock.assert_called_once()
         self.assertEqual(len(background_tasks.tasks), 1)
@@ -101,10 +105,12 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.analyze_and_score")
     @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_analyze_podcast_can_transcribe_when_request_omits_transcription(
         self,
         podcast_belongs_mock,
+        update_status_mock,
         transcribe_podcast_mock,
         analyze_and_score_mock,
         build_analysis_result_mock,
@@ -131,6 +137,8 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         )
 
         self.assertEqual(result.podcast_id, "podcast-123")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
         analyze_and_score_mock.assert_called_once()
         self.assertEqual(len(background_tasks.tasks), 1)

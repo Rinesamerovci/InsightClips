@@ -56,3 +56,24 @@ def get_podcast_for_user(podcast_id: str, user_id: str) -> PodcastRecord | None:
     )
     rows = response.data or []
     return PodcastRecord.model_validate(rows[0]) if rows else None
+
+
+def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -> PodcastRecord | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    try:
+        (
+            service_supabase.table("podcasts")
+            .update({"status": status})
+            .eq("id", podcast_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception:
+        return None
+
+    try:
+        return get_podcast_for_user(podcast_id, user_id)
+    except Exception:
+        return None

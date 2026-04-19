@@ -66,6 +66,71 @@ class AnalysisServiceTests(unittest.TestCase):
             model_used="whisper-1",
             processing_time_seconds=1.1,
         )
+        sentences = [
+            "This exact hook helped us go from 0 to 10000 users in 30 days and changed our entire growth strategy forever.",
+            "Why did this strategy go viral because the story felt authentic surprising emotional and impossible to ignore for the audience watching it.",
+            "Here is the founder secret nobody tells you about audience growth and why this truth creates a stronger podcast hook every single time.",
+            "What made this podcast explode was a clear emotional hook a bold truth and a crazy story that kept the audience watching longer.",
+            "This behind the scenes mistake became our biggest growth breakthrough and turned a problem into a viral lesson for the entire team.",
+        ]
+        words: list[TranscriptWord] = []
+        cursor = 0.0
+        for sentence in sentences:
+            sentence_words = sentence.split()
+            for token in sentence_words:
+                end = cursor + 0.48
+                words.append(TranscriptWord(word=token, start=round(cursor, 2), end=round(end, 2), confidence=0.9))
+                cursor = end + 0.08
+            cursor += 1.6
+
+        self.multi_segment_transcription = TranscriptionResult(
+            transcript_text=" ".join(sentences),
+            duration_seconds=round(words[-1].end, 2),
+            detected_language="en",
+            words=words,
+            model_used="whisper-1",
+            processing_time_seconds=1.5,
+        )
+
+    def _build_long_form_transcription(self) -> TranscriptionResult:
+        filler_sentence = (
+            "This section explains a practical workflow for teams building a podcast editing system with clear examples and repeatable guidance."
+        )
+        highlight_sentences = [
+            "This exact viral hook helped us go from 0 to 10000 users in 30 days and became our biggest growth breakthrough.",
+            "Why did this founder story explode because the emotional truth was surprising authentic and impossible for the audience to ignore.",
+            "Here is the secret nobody tells you about audience growth this bold mistake turned into our strongest podcast moment ever.",
+            "What made this episode go viral was a crazy behind the scenes lesson with a sharp hook a clear truth and a memorable payoff.",
+            "This strategy changed everything for our audience growth and revealed the exact algorithm lesson creators need to hear right now.",
+        ]
+
+        words: list[TranscriptWord] = []
+        cursor = 0.0
+
+        for segment_index in range(120):
+            sentence = highlight_sentences[segment_index // 24] if segment_index % 24 == 0 else filler_sentence
+            token_cursor = cursor
+            for token in sentence.split():
+                end = token_cursor + 0.42
+                words.append(
+                    TranscriptWord(
+                        word=token,
+                        start=round(token_cursor, 2),
+                        end=round(end, 2),
+                        confidence=0.9,
+                    )
+                )
+                token_cursor = end + 0.08
+            cursor += 30.0
+
+        return TranscriptionResult(
+            transcript_text=" ".join(highlight_sentences + [filler_sentence] * 8),
+            duration_seconds=3600.0,
+            detected_language="en",
+            words=words,
+            model_used="whisper-1",
+            processing_time_seconds=4.2,
+        )
 
     def test_analyze_and_score_returns_ranked_segments(self) -> None:
         segments = analyze_and_score("podcast-123", self.transcription)
@@ -94,8 +159,31 @@ class AnalysisServiceTests(unittest.TestCase):
     def test_analyze_and_score_rejects_missing_word_timestamps(self) -> None:
         empty_transcription = self.transcription.model_copy(update={"words": []})
 
-        with self.assertRaises(AnalysisError):
+        with self.assertRaises(AnalysisError) as exc_info:
             analyze_and_score("podcast-789", empty_transcription)
+
+        self.assertIn("word-level timestamps", exc_info.exception.detail)
+
+    def test_analyze_and_score_rejects_blank_podcast_id(self) -> None:
+        with self.assertRaises(AnalysisError) as exc_info:
+            analyze_and_score("   ", self.transcription)
+
+        self.assertEqual(exc_info.exception.status_code, 400)
+        self.assertIn("Podcast id is required", exc_info.exception.detail)
+
+    def test_multi_segment_analysis_surfaces_multiple_high_scoring_highlights(self) -> None:
+        segments = analyze_and_score("podcast-999", self.multi_segment_transcription)
+        result = build_analysis_result("podcast-999", segments, processing_time_seconds=0.35)
+
+        strong_segments = [segment for segment in result.top_scoring_segments if segment.virality_score >= 70]
+        self.assertGreaterEqual(len(strong_segments), 3)
+        self.assertLessEqual(len(result.top_scoring_segments), 5)
+        chronological_segments = sorted(
+            result.all_scored_segments,
+            key=lambda item: item.segment_start_seconds,
+        )
+        for previous, current in zip(chronological_segments, chronological_segments[1:]):
+            self.assertLessEqual(previous.segment_end_seconds, current.segment_start_seconds)
 
     def test_persist_analysis_result_writes_top_segments(self) -> None:
         result = build_analysis_result(
@@ -122,6 +210,21 @@ class AnalysisServiceTests(unittest.TestCase):
         payload = insert_mock.call_args.args[0]
         self.assertEqual(len(payload), len(result.all_scored_segments))
         self.assertEqual(payload[0]["podcast_id"], "podcast-123")
+
+    def test_sixty_minute_transcript_benchmark_and_top_segments(self) -> None:
+        long_transcription = self._build_long_form_transcription()
+
+        import time
+
+        started_at = time.perf_counter()
+        segments = analyze_and_score("podcast-60m", long_transcription)
+        elapsed = time.perf_counter() - started_at
+        result = build_analysis_result("podcast-60m", segments, processing_time_seconds=elapsed)
+
+        self.assertLess(elapsed, 300.0)
+        self.assertGreaterEqual(len(result.top_scoring_segments), 3)
+        strong_segments = [segment for segment in result.top_scoring_segments[:5] if segment.virality_score >= 70]
+        self.assertGreaterEqual(len(strong_segments), 3)
 
 
 if __name__ == "__main__":

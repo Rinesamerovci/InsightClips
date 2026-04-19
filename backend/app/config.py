@@ -49,10 +49,18 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET"))
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
-    openai_api_key: str = Field(default="", validation_alias=AliasChoices("OPENAI_API_KEY"))
-    openai_transcription_timeout_seconds: int = Field(
+    groq_api_key: str = Field(default="", validation_alias=AliasChoices("GROQ_API_KEY"))
+    transcription_api_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("GROQ_API_BASE_URL", "TRANSCRIPTION_API_BASE_URL"),
+    )
+    transcription_timeout_seconds: int = Field(
         default=300,
-        validation_alias=AliasChoices("OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS"),
+        validation_alias=AliasChoices(
+            "GROQ_TRANSCRIPTION_TIMEOUT_SECONDS",
+            "TRANSCRIPTION_TIMEOUT_SECONDS",
+            "OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS",
+        ),
     )
     transcription_chunk_duration_seconds: int = Field(
         default=600,

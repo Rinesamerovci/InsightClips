@@ -192,6 +192,40 @@ def get_analysis_summary_for_podcast(podcast_id: str) -> AnalysisSummary | None:
     )
 
 
+def get_scored_segments_for_podcast(podcast_id: str, *, limit: int | None = None) -> list[ScoreSegment]:
+    query = (
+        service_supabase.table("scores")
+        .select("podcast_id,segment_start_sec,segment_end_sec,virality_score,transcript_snippet,sentiment,keywords")
+        .eq("podcast_id", podcast_id)
+        .order("virality_score", desc=True)
+    )
+    if limit is not None:
+        query = query.limit(limit)
+    response = query.execute()
+    rows = response.data or []
+    return [
+        ScoreSegment(
+            segment_start_seconds=float(item["segment_start_sec"]),
+            segment_end_seconds=float(item["segment_end_sec"]),
+            duration_seconds=round(float(item["segment_end_sec"]) - float(item["segment_start_sec"]), 3),
+            virality_score=float(item["virality_score"]),
+            transcript_snippet=str(item["transcript_snippet"]),
+            sentiment=str(item["sentiment"]),
+            keywords=list(item.get("keywords") or []),
+        )
+        for item in rows
+    ]
+
+
+def score_segments_need_refresh(score_segments: list[ScoreSegment]) -> bool:
+    if not score_segments:
+        return True
+    return any(
+        segment.duration_seconds <= 0 or segment.duration_seconds > MAX_SEGMENT_DURATION
+        for segment in score_segments
+    )
+
+
 def _build_segment_candidates(transcription: TranscriptionResult) -> list[_SegmentCandidate]:
     candidates: list[_SegmentCandidate] = []
     current_words: list[TranscriptWord] = []
@@ -237,7 +271,11 @@ def _merge_short_neighbors(candidates: list[_SegmentCandidate]) -> list[_Segment
             merged.append(candidate)
             continue
         previous = merged[-1]
-        if previous.duration < MIN_SEGMENT_DURATION or candidate.duration < MIN_SEGMENT_DURATION:
+        combined_duration = round(candidate.end - previous.start, 3)
+        if (
+            (previous.duration < MIN_SEGMENT_DURATION or candidate.duration < MIN_SEGMENT_DURATION)
+            and combined_duration <= MAX_SEGMENT_DURATION
+        ):
             combined_words = previous.words + candidate.words
             merged[-1] = _SegmentCandidate(words=combined_words, snippet=_join_words(combined_words))
             continue

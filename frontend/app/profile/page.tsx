@@ -4,13 +4,14 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Moon, SunMedium, Shield, Star,
-  Calendar, Mail, ChevronRight, Headphones, Edit3, Bell, Globe, Check, X
+  ArrowLeft, Moon, SunMedium, Shield,
+  Calendar, Mail, Headphones, Edit3, Globe, Check, X
 } from "lucide-react";
 
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { useAuth } from "@/context/AuthContext";
-import { getJson } from "@/lib/api";
+import { getJson, patchJson } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 type ProfileResponse = {
   id: string; email: string; full_name: string | null;
@@ -65,6 +66,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewportWidth, setViewportWidth] = useState(1280);
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("insightclips-theme") === "dark";
@@ -74,10 +76,23 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const isMobile = viewportWidth < 780;
+  const isTablet = viewportWidth < 1040;
 
   useEffect(() => { 
     window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
   }, [dark]);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -89,7 +104,7 @@ export default function ProfilePage() {
         const data = await getJson<ProfileResponse>("/users/profile", token);
         setProfile(data);
         setNewName(data.full_name || "");
-      } catch (e) {
+      } catch {
         setError("Error loading profile data.");
       } finally { setLoading(false); }
     };
@@ -97,25 +112,55 @@ export default function ProfilePage() {
   }, [authLoading, backendToken, router, syncBackendSession]);
 
   const handleSaveName = async () => {
-    if (!backendToken || isSaving) return;
+    if (isSaving) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/users/profile`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${backendToken}`
-        },
-        body: JSON.stringify({ full_name: newName })
-      });
-
-      if (!res.ok) throw new Error("Update failed");
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      await patchJson<ProfileResponse>("/users/profile", { full_name: newName }, token);
 
       setProfile(prev => prev ? { ...prev, full_name: newName } : null);
       setIsEditing(false);
-    } catch (err) {
+    } catch {
       setError("Failed to save changes. Try again.");
     } finally { setIsSaving(false); }
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordLoading) return;
+    setError("");
+    setPasswordMessage("");
+
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+
+    if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      setError("New password must contain letters and numbers.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setPasswordLoading(true);
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (updateError) {
+      setError(updateError.message);
+    } else {
+      setPasswordMessage("Password was changed successfully.");
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+
+    setPasswordLoading(false);
   };
 
   const theme = useMemo(() => ({
@@ -143,10 +188,10 @@ export default function ProfilePage() {
     } as React.CSSProperties}>
       <style>{CSS}</style>
 
-      <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ maxWidth: "1100px", margin: "0 auto", padding: isMobile ? "24px 16px 32px" : "40px 24px" }}>
         
         {/* Header */}
-        <header className="a-up" style={{ display: "flex", justifyContent: "space-between", marginBottom: "40px" }}>
+        <header className="a-up" style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", gap: isMobile ? "14px" : "0", justifyContent: "space-between", marginBottom: "40px" }}>
           <Link href="/dashboard" className="glass-card" style={{ padding: "10px 20px", borderRadius: "50px", display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", color: "inherit", fontSize: "14px" }}>
             <ArrowLeft size={16} /> Dashboard
           </Link>
@@ -163,7 +208,7 @@ export default function ProfilePage() {
           </div>
 
           {isEditing ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", flexDirection: isMobile ? "column" : "row", gap: "12px" }}>
               <input 
                 className="hd edit-input" 
                 style={{ fontSize: "28px", fontWeight: 800 }} 
@@ -185,7 +230,7 @@ export default function ProfilePage() {
           )}
         </section>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isTablet ? "1fr" : "1fr 340px", gap: "24px" }}>
           
           <main style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div className="glass-card a-up" style={{ borderRadius: "24px", padding: "32px" }}>
@@ -209,15 +254,61 @@ export default function ProfilePage() {
 
           <aside style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div className="glass-card a-up" style={{ borderRadius: "24px", padding: "24px" }}>
-              <h3 className="hd" style={{ fontSize: "14px", opacity: 0.6, marginBottom: "16px" }}>SETTINGS</h3>
+              <h3 className="hd" style={{ fontSize: "14px", opacity: 0.6, marginBottom: "16px" }}>PROFILE</h3>
               <button onClick={() => setIsEditing(true)} className="action-row" style={{ width: "100%", cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                   <Edit3 size={16} color="#5a9e3a" /> <span>Edit Full Name</span>
                 </div>
-                <ChevronRight size={14} />
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#5a9e3a" }}>Edit</span>
               </button>
-              <div className="action-row" style={{ marginTop: "10px", opacity: 0.5 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}><Bell size={16} /> <span>Notifications</span></div>
+            </div>
+
+            <div className="glass-card a-up" style={{ borderRadius: "24px", padding: "24px" }}>
+              <h3 className="hd" style={{ fontSize: "14px", opacity: 0.6, marginBottom: "16px" }}>SECURITY</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {error && (
+                  <div style={{ color: "#ff4444", fontSize: "13px", lineHeight: 1.5 }}>
+                    {error}
+                  </div>
+                )}
+                {passwordMessage && (
+                  <div style={{ color: "#5a9e3a", fontSize: "13px", lineHeight: 1.5 }}>
+                    {passwordMessage}
+                  </div>
+                )}
+                <div className="action-row" style={{ cursor: "default" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <Shield size={16} color="#5a9e3a" /> <span>Password update</span>
+                  </div>
+                </div>
+                <input
+                  className="edit-input"
+                  type="password"
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  style={{ maxWidth: "100%" }}
+                />
+                <input
+                  className="edit-input"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  style={{ maxWidth: "100%" }}
+                />
+                <button onClick={() => void handleChangePassword()} className="action-row" style={{ width: "100%", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <Shield size={16} color="#5a9e3a" /> <span>Save new password</span>
+                  </div>
+                  <span style={{ fontSize: "12px", fontWeight: 600, color: "#5a9e3a" }}>
+                    {passwordLoading ? "Saving..." : "Update"}
+                  </span>
+                </button>
+                <div className="action-row" style={{ opacity: 0.75, cursor: "default" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}><Globe size={16} color="#5a9e3a" /> <span>Password rules</span></div>
+                  <span style={{ fontSize: "12px" }}>8+ chars, letters, numbers</span>
+                </div>
               </div>
             </div>
 
@@ -235,8 +326,6 @@ export default function ProfilePage() {
             </div>
           </aside>
         </div>
-
-        {error && <div style={{ color: "#ff4444", textAlign: "center", marginTop: "20px" }}>{error}</div>}
       </div>
     </div>
   );

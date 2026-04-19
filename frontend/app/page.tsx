@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
-  Zap,
   Shield,
-  Sparkles,
   Globe,
   Cpu,
   Layers,
@@ -54,23 +53,45 @@ const theme = {
   },
 };
 
+const THEME_STORAGE_KEY = "ic-theme";
+
+function subscribeTheme(callback: () => void) {
+  const handler = (event: Event) => {
+    const storageEvent = event as StorageEvent;
+    if (storageEvent.type === "storage" && storageEvent.key && storageEvent.key !== THEME_STORAGE_KEY) {
+      return;
+    }
+    callback();
+  };
+
+  window.addEventListener("storage", handler);
+  window.addEventListener("ic-theme-change", handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener("ic-theme-change", handler);
+  };
+}
+
+function getThemeSnapshot() {
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function getThemeServerSnapshot() {
+  return "dark";
+}
+
 export default function InsightClipsLanding() {
   const [scrolled,       setScrolled]       = useState(false);
   const [activeFeature,  setActiveFeature]  = useState(1);
-  const [isDark,         setIsDark]         = useState(true);
-  const [mounted,        setMounted]        = useState(false);
+  const currentTheme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+  const isDark = currentTheme === "dark";
 
   const t = isDark ? theme.dark : theme.light;
 
   useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem("ic-theme");
-    if (saved) setIsDark(saved === "dark");
-  }, []);
-
-  useEffect(() => {
-    if (mounted) localStorage.setItem("ic-theme", isDark ? "dark" : "light");
-  }, [isDark, mounted]);
+    localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
+  }, [isDark]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -78,8 +99,6 @@ export default function InsightClipsLanding() {
     handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  if (!mounted) return null;
 
   return (
     <div
@@ -171,14 +190,18 @@ export default function InsightClipsLanding() {
             onClick={() => window.scrollTo({top:0,behavior:"smooth"})}
             style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}
           >
-            <div style={{
-              width:38, height:38,
-              background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
-              borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center",
-              boxShadow:`0 4px 20px ${t.accent}35`,
-            }}>
-              <Zap size={18} color={isDark ? "#0D1008" : "#fff"} fill="currentColor" />
-            </div>
+            <Image
+              src="/insightclips-logo.svg"
+              alt="InsightClips logo"
+              width={38}
+              height={38}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                boxShadow: `0 4px 20px ${t.accent}35`,
+              }}
+            />
             <span style={{
               fontFamily:"'DM Serif Display', serif",
               fontSize:20, fontStyle:"italic", color:t.text, letterSpacing:"-.02em",
@@ -214,7 +237,11 @@ export default function InsightClipsLanding() {
             <button
               className="theme-toggle"
               style={{ background: isDark ? `${t.accentDark}55` : `${t.accentLight}55`, border:`1px solid ${t.borderHover}` }}
-              onClick={() => setIsDark(!isDark)}
+              onClick={() => {
+                const nextTheme = isDark ? "light" : "dark";
+                window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+                window.dispatchEvent(new Event("ic-theme-change"));
+              }}
               aria-label="Toggle theme"
             >
               <div className="toggle-knob" style={{
@@ -519,13 +546,17 @@ export default function InsightClipsLanding() {
           display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:32,
         }}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{
-              width:34, height:34,
-              background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
-              borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center",
-            }}>
-              <Zap size={16} color={isDark?"#0D1008":"#fff"} fill="currentColor"/>
-            </div>
+            <Image
+              src="/insightclips-logo.svg"
+              alt="InsightClips logo"
+              width={34}
+              height={34}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+              }}
+            />
             <span style={{
               fontFamily:"'DM Serif Display', serif", fontSize:18,
               fontStyle:"italic", color:t.text, letterSpacing:"-.02em",

@@ -11,7 +11,6 @@ import {
 
 import { useAuth } from "@/context/AuthContext";
 import {
-  calculateUploadPrice, prepareUpload,
   type PrepareUploadResponse, type UploadPriceResponse, type UploadState,
 } from "@/lib/api";
 
@@ -48,8 +47,8 @@ function validate(file: File): string|null {
 }
 
 /* ─── RESULT CARD ─── */
-type RCProps = { result:UploadPriceResponse; state:UploadState; prep:PrepareUploadResponse|null; dark:boolean; bord:string };
-function ResultCard({ result, state, prep, dark:d, bord }: RCProps) {
+type RCProps = { result:UploadPriceResponse; state:UploadState; prep:PrepareUploadResponse|null; dark:boolean };
+function ResultCard({ result, state, prep, dark:d }: RCProps) {
   const map = {
     free_ready:      { Icon:CheckCircle2, label:"Free upload available",  c:"#3a9e38", bg:d?"rgba(16,52,14,.9)":"rgba(220,252,210,.92)", bd:d?"rgba(58,158,56,.38)":"rgba(140,215,130,.65)" },
     awaiting_payment:{ Icon:CreditCard,   label:"Payment required",       c:"#9e8a20", bg:d?"rgba(52,42,6,.9)":"rgba(255,252,218,.92)",  bd:d?"rgba(158,135,32,.38)":"rgba(215,198,110,.65)" },
@@ -137,6 +136,7 @@ export default function UploadPage() {
   const [result, setResult] = useState<UploadPriceResponse|null>(null);
   const [prep, setPrep] = useState<PrepareUploadResponse|null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [uploadReference, setUploadReference] = useState<string | null>(null);
 
   const d = dark;
   const bg      = d?"#080f07":"#f2f8ee";
@@ -152,27 +152,95 @@ export default function UploadPage() {
     return { name:file.name, size:fmtBytes(file.size), type:file.type||ext(file.name).replace(".","").toUpperCase()||"Video" };
   }, [file]);
 
+  const runServerPreflight = async (f: File, token: string | null, mock: boolean) => {
+    const dur = await getDuration(f);
+    const formData = new FormData();
+    formData.set("file", f);
+    formData.set("filename", f.name);
+    if (f.type) formData.set("mime_type", f.type);
+    formData.set("detected_duration_seconds", String(dur));
+    if (mock) formData.set("mock", "true");
+
+    const response = await fetch("/api/upload/preflight", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to inspect file.");
+    }
+
+    const typedPayload = payload as UploadPriceResponse & { upload_reference?: string };
+    if (!typedPayload.upload_reference) {
+      throw new Error("Upload staging failed. No upload reference was returned.");
+    }
+
+    setUploadReference(typedPayload.upload_reference);
+    return typedPayload as UploadPriceResponse;
+  };
+
+  const runServerPrepare = async (
+    f: File,
+    quote: UploadPriceResponse,
+    token: string | null,
+    mock: boolean
+  ) => {
+    if (!uploadReference) {
+      throw new Error("Upload staging is missing. Please run the pre-flight check again.");
+    }
+
+    const response = await fetch("/api/upload/prepare", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        title: titleFrom(f.name),
+        filename: f.name,
+        filesize_bytes: f.size,
+        mime_type: f.type || undefined,
+        duration_seconds: quote.duration_seconds,
+        price: quote.price,
+        status: quote.status,
+        upload_reference: uploadReference,
+        mock,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to create record.");
+    }
+
+    return payload as PrepareUploadResponse;
+  };
+
   const runPreflight = async (override?: File) => {
     const f = override??file;
     if (!f) { setState("error"); setErr("Please select a file first."); return; }
     const ve = validate(f);
     if (ve) { setState("error"); setErr(ve); return; }
-    setState("checking"); setErr(""); setResult(null); setPrep(null);
+    setState("checking"); setErr(""); setResult(null); setPrep(null); setUploadReference(null);
     try {
       const mock = PREFLIGHT_MODE==="mock";
-      const dur  = await getDuration(f);
       const token = backendToken??(await syncBackendSession());
       if (!token&&!mock) { router.replace("/login"); return; }
-      const res = await calculateUploadPrice(
-        { filename:f.name, filesize_bytes:f.size, mime_type:f.type||undefined, duration_seconds:dur },
-        { token, useMock:mock }
-      );
+      const res = await runServerPreflight(f, token, mock);
       setResult(res); setState(res.status);
-    } catch(e) { setState("error"); setErr(e instanceof Error?e.message:"Unable to inspect file."); }
+    } catch(e) {
+      setResult(null);
+      setPrep(null);
+      setUploadReference(null);
+      setState("error");
+      setErr(e instanceof Error?e.message:"Unable to inspect file.");
+    }
   };
 
   const pickFile = (f: File|null) => {
-    setFile(f); setPrep(null); setResult(null); setErr("");
+    setFile(f); setPrep(null); setResult(null); setErr(""); setUploadReference(null);
     if (!f) { setState("idle"); return; }
     const ve = validate(f);
     if (ve) { setState("error"); setErr(ve); return; }
@@ -187,12 +255,12 @@ export default function UploadPage() {
       const mock = PREFLIGHT_MODE==="mock";
       const token = backendToken??(await syncBackendSession());
       if (!token&&!mock) { router.replace("/login"); return; }
-      setPrep(await prepareUpload({
-        title:titleFrom(file.name), filename:file.name,
-        filesize_bytes:file.size, mime_type:file.type||undefined,
-        duration_seconds:result.duration_seconds, price:result.price, status:result.status,
-      }, { token, useMock:mock }));
-    } catch(e) { setState("error"); setErr(e instanceof Error?e.message:"Unable to create record."); }
+      setPrep(await runServerPrepare(file, result, token, mock));
+    } catch(e) {
+      setPrep(null);
+      setState("error");
+      setErr(e instanceof Error?e.message:"Unable to create record.");
+    }
     finally { setPreparing(false); }
   };
 
@@ -546,7 +614,7 @@ export default function UploadPage() {
           {/* ── RESULT ── */}
           {result && (
             <div style={{ marginBottom:"16px" }}>
-              <ResultCard result={result} state={state} prep={prep} dark={d} bord={bord}/>
+              <ResultCard result={result} state={state} prep={prep} dark={d}/>
             </div>
           )}
 

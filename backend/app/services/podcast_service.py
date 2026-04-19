@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 
-from app.database import service_supabase
+from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.podcast import PodcastRecord, PodcastResponse
 
-PODCAST_COLUMNS = "id,user_id,title,duration,status,created_at,updated_at"
+PODCAST_COLUMNS = "id,user_id,title,duration,status,storage_path,created_at,updated_at"
 
 
 def _mock_podcasts(user_id: str) -> list[PodcastRecord]:
@@ -28,6 +28,9 @@ def _mock_podcasts(user_id: str) -> list[PodcastRecord]:
 
 
 def get_podcasts_for_user(user_id: str) -> tuple[list[PodcastResponse], bool]:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return [PodcastResponse.model_validate(item.model_dump()) for item in _mock_podcasts(user_id)], True
+
     response = (
         service_supabase.table("podcasts")
         .select(PODCAST_COLUMNS)
@@ -36,7 +39,41 @@ def get_podcasts_for_user(user_id: str) -> tuple[list[PodcastResponse], bool]:
         .execute()
     )
     rows = response.data or []
-    if not rows:
-        return [PodcastResponse.model_validate(item.model_dump()) for item in _mock_podcasts(user_id)], True
-
     return [PodcastResponse.model_validate(item) for item in rows], False
+
+
+def get_podcast_for_user(podcast_id: str, user_id: str) -> PodcastRecord | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    response = (
+        service_supabase.table("podcasts")
+        .select(PODCAST_COLUMNS)
+        .eq("id", podcast_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = response.data or []
+    return PodcastRecord.model_validate(rows[0]) if rows else None
+
+
+def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -> PodcastRecord | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    try:
+        (
+            service_supabase.table("podcasts")
+            .update({"status": status})
+            .eq("id", podcast_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception:
+        return None
+
+    try:
+        return get_podcast_for_user(podcast_id, user_id)
+    except Exception:
+        return None

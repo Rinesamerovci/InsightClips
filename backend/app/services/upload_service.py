@@ -41,7 +41,10 @@ class UploadPriceDecision:
 
 
 def _get_latest_free_trial_state(current_user: AuthenticatedUser) -> bool:
-    profile = get_profile_by_id(current_user.id)
+    try:
+        profile = get_profile_by_id(current_user.id)
+    except Exception:
+        return current_user.free_trial_used
     if profile:
         return profile.free_trial_used
     return current_user.free_trial_used

@@ -15,7 +15,7 @@ from app.services.analysis_service import (
     podcast_belongs_to_user,
     transcribe_podcast_media_for_user,
 )
-from app.services.podcast_service import get_podcasts_for_user
+from app.services.podcast_service import get_podcasts_for_user, update_podcast_status_for_user
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
 
@@ -41,6 +41,7 @@ async def analyze_podcast(
             detail="Podcast not found for the current user.",
         )
     started_at = time.perf_counter()
+    update_podcast_status_for_user(podcast_id, current_user.id, "processing")
     try:
         transcription = payload.transcription
         if transcription is None:
@@ -53,6 +54,7 @@ async def analyze_podcast(
         # Run CPU-bound semantic scoring off the event loop so the API remains responsive.
         scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
     except AnalysisError as exc:
+        update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     result = build_analysis_result(
@@ -60,6 +62,7 @@ async def analyze_podcast(
         scored_segments,
         processing_time_seconds=round(time.perf_counter() - started_at, 3),
     )
+    update_podcast_status_for_user(podcast_id, current_user.id, "done")
     background_tasks.add_task(persist_analysis_result, result)
     return result
 
@@ -74,4 +77,10 @@ async def get_podcast_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Podcast not found for the current user.",
         )
-    return get_analysis_summary_for_podcast(podcast_id)
+    summary = get_analysis_summary_for_podcast(podcast_id)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No analysis saved yet for this podcast.",
+        )
+    return summary

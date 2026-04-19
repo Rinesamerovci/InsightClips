@@ -240,13 +240,7 @@ def _transcribe_with_local_whisper(
     local_model_name = _resolve_local_whisper_model(requested_model)
     try:
         local_model = whisper.load_model(local_model_name)
-        payload = local_model.transcribe(
-            str(resolved_path),
-            language="en",
-            word_timestamps=True,
-            fp16=False,
-            verbose=False,
-        )
+        payload = _run_local_whisper_transcription(local_model, resolved_path)
     except Exception as exc:  # pragma: no cover - depends on local runtime/model weights
         raise TranscriptionError(
             f"Local Whisper transcription failed: {exc}",
@@ -300,6 +294,64 @@ def _build_local_whisper_words(payload: dict[str, Any]) -> list[TranscriptWord]:
                     confidence=_clamp_confidence(probability if probability is not None else 0.75),
                 )
             )
+    if words:
+        return words
+    return _build_segment_level_words(payload)
+
+
+def _run_local_whisper_transcription(local_model: Any, resolved_path: Path) -> dict[str, Any]:
+    try:
+        payload = local_model.transcribe(
+            str(resolved_path),
+            language="en",
+            word_timestamps=True,
+            fp16=False,
+            verbose=False,
+        )
+        return _coerce_mapping(payload)
+    except Exception:
+        payload = local_model.transcribe(
+            str(resolved_path),
+            language="en",
+            word_timestamps=False,
+            fp16=False,
+            verbose=False,
+        )
+        return _coerce_mapping(payload)
+
+
+def _build_segment_level_words(payload: dict[str, Any]) -> list[TranscriptWord]:
+    words: list[TranscriptWord] = []
+    for raw_segment in payload.get("segments") or []:
+        segment = _coerce_mapping(raw_segment)
+        segment_text = str(segment.get("text", "")).strip()
+        if not segment_text:
+            continue
+
+        tokens = [token for token in segment_text.split() if token.strip()]
+        if not tokens:
+            continue
+
+        start_seconds = _coerce_float(segment.get("start")) or 0.0
+        end_seconds = _coerce_float(segment.get("end"))
+        if end_seconds is None or end_seconds <= start_seconds:
+            end_seconds = start_seconds + max(0.2 * len(tokens), 0.6)
+
+        step = max((end_seconds - start_seconds) / max(len(tokens), 1), 0.05)
+        for index, token in enumerate(tokens):
+            word_start = round(start_seconds + (index * step), 3)
+            word_end = round(min(end_seconds, start_seconds + ((index + 1) * step)), 3)
+            if word_end <= word_start:
+                word_end = round(word_start + 0.05, 3)
+            words.append(
+                TranscriptWord(
+                    word=token,
+                    start=word_start,
+                    end=word_end,
+                    confidence=0.65,
+                )
+            )
+    return words
     return words
 
 

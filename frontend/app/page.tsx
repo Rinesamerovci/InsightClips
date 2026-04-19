@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -53,21 +53,44 @@ const theme = {
   },
 };
 
+const THEME_STORAGE_KEY = "ic-theme";
+
+function subscribeTheme(callback: () => void) {
+  const handler = (event: Event) => {
+    const storageEvent = event as StorageEvent;
+    if (storageEvent.type === "storage" && storageEvent.key && storageEvent.key !== THEME_STORAGE_KEY) {
+      return;
+    }
+    callback();
+  };
+
+  window.addEventListener("storage", handler);
+  window.addEventListener("ic-theme-change", handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener("ic-theme-change", handler);
+  };
+}
+
+function getThemeSnapshot() {
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function getThemeServerSnapshot() {
+  return "dark";
+}
+
 export default function InsightClipsLanding() {
   const [scrolled,       setScrolled]       = useState(false);
   const [activeFeature,  setActiveFeature]  = useState(1);
-  const [isDark,         setIsDark]         = useState(() => {
-    if (typeof window === "undefined") {
-      return true;
-    }
-    const saved = window.localStorage.getItem("ic-theme");
-    return saved ? saved === "dark" : true;
-  });
+  const currentTheme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+  const isDark = currentTheme === "dark";
 
   const t = isDark ? theme.dark : theme.light;
 
   useEffect(() => {
-    localStorage.setItem("ic-theme", isDark ? "dark" : "light");
+    localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
   }, [isDark]);
 
   useEffect(() => {
@@ -214,7 +237,11 @@ export default function InsightClipsLanding() {
             <button
               className="theme-toggle"
               style={{ background: isDark ? `${t.accentDark}55` : `${t.accentLight}55`, border:`1px solid ${t.borderHover}` }}
-              onClick={() => setIsDark(!isDark)}
+              onClick={() => {
+                const nextTheme = isDark ? "light" : "dark";
+                window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+                window.dispatchEvent(new Event("ic-theme-change"));
+              }}
               aria-label="Toggle theme"
             >
               <div className="toggle-knob" style={{

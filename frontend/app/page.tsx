@@ -1,229 +1,668 @@
 "use client";
-import { useEffect, useState, type ReactNode } from 'react';
-import Link from 'next/link';
-import { 
-  Zap, 
-  Shield, 
-  Sparkles, 
-  Globe, 
-  Cpu, 
-  Layers, 
-  BarChart3, 
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  Shield,
+  Globe,
+  Cpu,
+  Layers,
+  BarChart3,
   CheckCircle2,
   Play,
-  MoveRight
-} from 'lucide-react';
+  MoveRight,
+  Sun,
+  Moon,
+  ChevronDown,
+  ArrowUpRight,
+} from "lucide-react";
+
+/* ─────────────────────────────────────────────
+   COLOR TOKENS — pistachio palette
+   ───────────────────────────────────────────── */
+const theme = {
+  dark: {
+    bg:          "#0D1008",
+    bgCard:      "#141A0E",
+    bgCardHover: "#1A2213",
+    border:      "rgba(163,208,107,0.08)",
+    borderHover: "rgba(163,208,107,0.18)",
+    text:        "#E8F0DC",
+    textMuted:   "#7A9060",
+    textFaint:   "#3D5030",
+    accent:      "#A3D06B",
+    accentDark:  "#6E9C3A",
+    accentLight: "#C9E89A",
+    glowA:       "rgba(163,208,107,0.12)",
+    glowB:       "rgba(100,160,60,0.08)",
+  },
+  light: {
+    bg:          "#F5F8EE",
+    bgCard:      "#FFFFFF",
+    bgCardHover: "#EFF5E4",
+    border:      "rgba(100,140,60,0.12)",
+    borderHover: "rgba(100,140,60,0.28)",
+    text:        "#1A2510",
+    textMuted:   "#5A7040",
+    textFaint:   "#9AB878",
+    accent:      "#5A8C28",
+    accentDark:  "#3D6018",
+    accentLight: "#8BBF45",
+    glowA:       "rgba(140,190,60,0.15)",
+    glowB:       "rgba(100,160,50,0.10)",
+  },
+};
+
+const THEME_STORAGE_KEY = "ic-theme";
+
+function subscribeTheme(callback: () => void) {
+  const handler = (event: Event) => {
+    const storageEvent = event as StorageEvent;
+    if (storageEvent.type === "storage" && storageEvent.key && storageEvent.key !== THEME_STORAGE_KEY) {
+      return;
+    }
+    callback();
+  };
+
+  window.addEventListener("storage", handler);
+  window.addEventListener("ic-theme-change", handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener("ic-theme-change", handler);
+  };
+}
+
+function getThemeSnapshot() {
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+}
+
+function getThemeServerSnapshot() {
+  return "dark";
+}
 
 export default function InsightClipsLanding() {
-  const [scrolled, setScrolled] = useState(false);
-  const [activeFeature, setActiveFeature] = useState(1);
+  const [scrolled,       setScrolled]       = useState(false);
+  const [activeFeature,  setActiveFeature]  = useState(1);
+  const currentTheme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+  const isDark = currentTheme === "dark";
+
+  const t = isDark ? theme.dark : theme.light;
+
+  useEffect(() => {
+    localStorage.setItem(THEME_STORAGE_KEY, isDark ? "dark" : "light");
+  }, [isDark]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", handleScroll);
     handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const scrollToFeatures = () => {
-    const element = document.getElementById('features-section');
-    element?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   return (
-    <div className="min-h-screen bg-[#02040a] text-slate-300 font-sans selection:bg-emerald-400/30 selection:text-white overflow-x-hidden">
-      
-      {/* Background Decorative Elements */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 blur-[150px] rounded-full -z-10" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 blur-[150px] rounded-full -z-10" />
+    <div
+      style={{
+        backgroundColor: t.bg,
+        color: t.text,
+        fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
+        minHeight: "100vh",
+        overflowX: "hidden",
+        transition: "background-color 0.4s ease, color 0.4s ease",
+        position: "relative",
+      }}
+    >
+      {/* — Google Fonts import (injected once) — */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,700&family=DM+Serif+Display:ital@0;1&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::selection { background: ${t.accent}40; color: ${t.text}; }
+        html { scroll-behavior: smooth; }
 
-      {/* --- NAVIGATION --- */}
-      <nav className={`fixed top-0 w-full z-[100] transition-all duration-500 ${
-        scrolled ? 'py-4 backdrop-blur-xl bg-[#02040a]/90 border-b border-white/5 shadow-2xl' : 'py-8'
-      }`}>
-        <div className="max-w-7xl mx-auto px-8 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
-            <div className="w-10 h-10 bg-emerald-400 rounded-xl flex items-center justify-center group-hover:rotate-6 transition-all shadow-lg shadow-emerald-500/20">
-              <Zap size={20} className="text-black" fill="currentColor" />
-            </div>
-            <span className="text-xl font-black italic uppercase tracking-tighter text-white">
-              Insight<span className="text-emerald-400">Clips</span>
+        @keyframes float-slow  { 0%,100%{transform:translateY(0)}  50%{transform:translateY(-18px)} }
+        @keyframes pulse-glow  { 0%,100%{opacity:.5} 50%{opacity:1} }
+        @keyframes slide-up    { from{opacity:0;transform:translateY(32px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fade-in     { from{opacity:0} to{opacity:1} }
+        @keyframes spin-slow   { to{transform:rotate(360deg)} }
+        @keyframes blink       { 0%,100%{opacity:1} 50%{opacity:0} }
+
+        .hero-title   { animation: slide-up .9s cubic-bezier(.22,1,.36,1) both; }
+        .hero-sub     { animation: slide-up .9s .15s cubic-bezier(.22,1,.36,1) both; }
+        .hero-cta     { animation: slide-up .9s .28s cubic-bezier(.22,1,.36,1) both; }
+        .hero-badge   { animation: fade-in 1s .05s both; }
+        .float-orb    { animation: float-slow 7s ease-in-out infinite; }
+        .float-orb2   { animation: float-slow 9s 1s ease-in-out infinite; }
+        .spin-ring    { animation: spin-slow 20s linear infinite; }
+        .pulse        { animation: pulse-glow 2.5s ease-in-out infinite; }
+
+        .nav-link {
+          font-size: 11px; font-weight: 700; letter-spacing: .18em;
+          text-transform: uppercase; transition: color .25s;
+          text-decoration: none; background: none; border: none; cursor: pointer;
+        }
+        .card-feature { transition: transform .35s cubic-bezier(.22,1,.36,1), box-shadow .35s, background-color .35s, border-color .35s; }
+        .card-feature:hover { transform: translateY(-4px); }
+
+        .theme-toggle {
+          width: 52px; height: 28px; border-radius: 14px; position: relative;
+          cursor: pointer; border: none; padding: 0;
+          transition: background .35s;
+        }
+        .toggle-knob {
+          position: absolute; top: 4px; width: 20px; height: 20px;
+          border-radius: 50%; background: #fff;
+          transition: left .3s cubic-bezier(.34,1.56,.64,1), background .3s;
+          display: flex; align-items: center; justify-content: center;
+        }
+
+        .stat-item { transition: transform .3s; }
+        .stat-item:hover { transform: scale(1.06); }
+
+        .scroll-indicator { animation: float-slow 2.5s ease-in-out infinite; }
+
+        /* Divider lines */
+        .section-line {
+          height: 1px;
+          width: 100%;
+        }
+      `}</style>
+
+      {/* ── Ambient glows ── */}
+      <div style={{
+        position:"fixed", inset:0, pointerEvents:"none", zIndex:0,
+        background:`radial-gradient(ellipse 60% 50% at 15% 10%, ${t.glowA}, transparent),
+                    radial-gradient(ellipse 55% 45% at 85% 85%, ${t.glowB}, transparent)`,
+        transition:"background .5s",
+      }}/>
+
+      {/* ═══════════════════════════ NAV ═══════════════════════════ */}
+      <nav style={{
+        position:"fixed", top:0, width:"100%", zIndex:100,
+        padding: scrolled ? "14px 0" : "28px 0",
+        backdropFilter: scrolled ? "blur(20px) saturate(1.6)" : "none",
+        backgroundColor: scrolled ? (isDark ? "rgba(13,16,8,.88)" : "rgba(245,248,238,.88)") : "transparent",
+        borderBottom: scrolled ? `1px solid ${t.border}` : "1px solid transparent",
+        transition:"all .4s ease",
+      }}>
+        <div style={{ maxWidth:1280, margin:"0 auto", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          {/* Logo */}
+          <button
+            onClick={() => window.scrollTo({top:0,behavior:"smooth"})}
+            style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}
+          >
+            <Image
+              src="/insightclips-logo.svg"
+              alt="InsightClips logo"
+              width={38}
+              height={38}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                boxShadow: `0 4px 20px ${t.accent}35`,
+              }}
+            />
+            <span style={{
+              fontFamily:"'DM Serif Display', serif",
+              fontSize:20, fontStyle:"italic", color:t.text, letterSpacing:"-.02em",
+            }}>
+              Insight<span style={{ color:t.accent }}>Clips</span>
             </span>
-          </div>
+          </button>
 
-          <div className="hidden md:flex items-center gap-10">
-            <button onClick={scrollToFeatures} className="text-[10px] uppercase font-black tracking-[0.2em] text-white/40 hover:text-emerald-400 transition-colors">
+          {/* Center links */}
+          <div style={{ display:"flex", alignItems:"center", gap:40 }}>
+            <button
+              className="nav-link"
+              style={{ color:t.textMuted }}
+              onClick={() => document.getElementById("features-section")?.scrollIntoView({behavior:"smooth"})}
+            >
               Features
             </button>
-            <Link href="/login" className="text-[10px] uppercase font-black tracking-[0.2em] text-white/40 hover:text-white transition-colors">
-              Portal Login
+            <button
+              className="nav-link"
+              style={{ color:t.textMuted }}
+              onClick={() => document.getElementById("stats-section")?.scrollIntoView({behavior:"smooth"})}
+            >
+              Stats
+            </button>
+            <Link href="/login" className="nav-link" style={{ color:t.textMuted }}>
+              Sign In
             </Link>
-            <Link href="/register" className="bg-white text-black px-8 py-3 rounded-full text-[10px] uppercase font-black hover:bg-emerald-400 transition-all shadow-xl active:scale-95">
-              Get Started
+          </div>
+
+          {/* Right side */}
+          <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+            {/* Theme toggle */}
+            <button
+              className="theme-toggle"
+              style={{ background: isDark ? `${t.accentDark}55` : `${t.accentLight}55`, border:`1px solid ${t.borderHover}` }}
+              onClick={() => {
+                const nextTheme = isDark ? "light" : "dark";
+                window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+                window.dispatchEvent(new Event("ic-theme-change"));
+              }}
+              aria-label="Toggle theme"
+            >
+              <div className="toggle-knob" style={{
+                left: isDark ? 4 : 28,
+                background: isDark ? t.accentLight : t.accent,
+              }}>
+                {isDark
+                  ? <Moon size={11} color={t.accentDark} />
+                  : <Sun  size={11} color="#fff" />
+                }
+              </div>
+            </button>
+
+            <Link href="/register" style={{
+              background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
+              color: isDark ? "#0D1008" : "#fff",
+              padding:"10px 26px", borderRadius:100,
+              fontSize:11, fontWeight:700, letterSpacing:".15em", textTransform:"uppercase",
+              textDecoration:"none", display:"flex", alignItems:"center", gap:8,
+              boxShadow:`0 4px 24px ${t.accent}30`,
+              transition:"box-shadow .3s, transform .2s",
+            }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 6px 32px ${t.accent}55`)}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = `0 4px 24px ${t.accent}30`)}
+            >
+              Get Started <ArrowUpRight size={14} />
             </Link>
           </div>
         </div>
       </nav>
 
-      <main>
-        {/* --- HERO SECTION --- */}
-        <section className="relative h-screen flex flex-col items-center justify-center px-8 overflow-hidden">
-          <div className="max-w-5xl mx-auto text-center flex flex-col items-center z-10">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/5 mb-8 animate-pulse">
-              <Sparkles size={14} className="text-emerald-400" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Next-Gen Intelligence v3.0</span>
+      <main style={{ position:"relative", zIndex:1 }}>
+        {/* ═══════════════════════════ HERO ═══════════════════════════ */}
+        <section style={{
+          minHeight:"100vh", display:"flex", flexDirection:"column",
+          alignItems:"center", justifyContent:"center",
+          padding:"120px 40px 80px", textAlign:"center", position:"relative",
+        }}>
+          {/* Decorative ring */}
+          <div className="spin-ring" style={{
+            position:"absolute", width:600, height:600,
+            borderRadius:"50%",
+            border:`1px dashed ${t.accent}18`,
+            pointerEvents:"none",
+          }}/>
+          <div style={{
+            position:"absolute", width:400, height:400,
+            borderRadius:"50%",
+            border:`1px solid ${t.accent}12`,
+            pointerEvents:"none",
+          }}/>
+
+          {/* Float orbs */}
+          <div className="float-orb" style={{
+            position:"absolute", top:"18%", left:"8%",
+            width:220, height:220, borderRadius:"50%",
+            background:`radial-gradient(circle, ${t.accent}18, transparent 70%)`,
+            pointerEvents:"none",
+          }}/>
+          <div className="float-orb2" style={{
+            position:"absolute", bottom:"15%", right:"8%",
+            width:180, height:180, borderRadius:"50%",
+            background:`radial-gradient(circle, ${t.accentDark}22, transparent 70%)`,
+            pointerEvents:"none",
+          }}/>
+
+          <div style={{ maxWidth:900, position:"relative", zIndex:2 }}>
+            {/* Badge */}
+            <div className="hero-badge" style={{
+              display:"inline-flex", alignItems:"center", gap:8,
+              padding:"7px 18px", borderRadius:100,
+              border:`1px solid ${t.accent}30`,
+              background:`${t.accent}08`,
+              marginBottom:40,
+            }}>
+              <div className="pulse" style={{ width:6, height:6, borderRadius:"50%", background:t.accent }}/>
+              <span style={{ fontSize:10, fontWeight:700, letterSpacing:".22em", textTransform:"uppercase", color:t.accent }}>
+                Next-Gen Intelligence · v3.0
+              </span>
             </div>
 
-            <h1 className="text-6xl md:text-[100px] font-black tracking-tighter leading-[0.85] text-white uppercase italic mb-8">
-              High Impact <br />
-              <span className="text-slate-800">Low Effort.</span>
+            {/* Title */}
+            <h1 className="hero-title" style={{
+              fontFamily:"'DM Serif Display', serif",
+              fontSize:"clamp(52px,9vw,104px)",
+              lineHeight:.88, color:t.text,
+              letterSpacing:"-.04em", marginBottom:32,
+            }}>
+              High Impact.<br />
+              <em style={{ color:t.accent }}>Low Effort.</em>
             </h1>
 
-            <p className="max-w-xl mx-auto text-slate-400 text-base md:text-lg font-medium leading-relaxed italic mb-12 px-4">
-              Our AI engine identifies viral-worthy clips from your long-form videos with semantic precision. Ready for social media in one click.
+            {/* Subtitle */}
+            <p className="hero-sub" style={{
+              maxWidth:520, margin:"0 auto 48px",
+              fontSize:17, fontWeight:400, lineHeight:1.65,
+              color:t.textMuted, letterSpacing:"-.01em",
+            }}>
+              Our AI engine identifies viral-worthy clips from long-form videos with
+              semantic precision — ready for social media in a single click.
             </p>
 
-            <div className="flex flex-col md:flex-row items-center gap-6">
-              <Link href="/register" className="group bg-emerald-400 text-black px-12 py-5 rounded-2xl font-black text-xs uppercase tracking-widest hover:shadow-[0_0_50px_rgba(52,211,153,0.3)] transition-all flex items-center gap-4 active:scale-95 shadow-lg shadow-emerald-400/10">
-                Initiate Uplink <MoveRight size={18} className="group-hover:translate-x-2 transition-transform" />
+            {/* CTAs */}
+            <div className="hero-cta" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
+              <Link href="/register" style={{
+                background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
+                color: isDark ? "#0D1008" : "#fff",
+                padding:"16px 36px", borderRadius:14,
+                fontSize:12, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase",
+                textDecoration:"none", display:"flex", alignItems:"center", gap:10,
+                boxShadow:`0 8px 32px ${t.accent}38`,
+                transition:"all .3s",
+              }}>
+                Start for Free <MoveRight size={16} />
               </Link>
-              <button className="group flex items-center gap-4 px-10 py-5 rounded-2xl border border-white/5 bg-white/5 text-[10px] font-black uppercase tracking-[0.3em] text-white hover:bg-white/10 transition-all">
-                <div className="w-8 h-8 rounded-full bg-emerald-400/10 flex items-center justify-center">
-                  <Play size={14} className="text-emerald-400 ml-1" fill="currentColor" />
+
+              <button style={{
+                display:"flex", alignItems:"center", gap:12,
+                padding:"15px 28px", borderRadius:14,
+                border:`1px solid ${t.border}`,
+                background: isDark ? "rgba(255,255,255,.03)" : "rgba(0,0,0,.03)",
+                color:t.text, fontSize:12, fontWeight:600,
+                letterSpacing:".1em", textTransform:"uppercase", cursor:"pointer",
+                transition:"all .3s",
+              }}>
+                <div style={{
+                  width:32, height:32, borderRadius:"50%",
+                  background:`${t.accent}18`,
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                }}>
+                  <Play size={12} color={t.accent} fill={t.accent} style={{ marginLeft:2 }} />
                 </div>
-                Watch Briefing
+                Watch Demo
               </button>
             </div>
           </div>
 
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 opacity-20 animate-bounce">
-            <div className="w-1 h-10 bg-gradient-to-b from-emerald-400 to-transparent rounded-full" />
+          {/* Scroll hint */}
+          <div className="scroll-indicator" style={{
+            position:"absolute", bottom:36, left:"50%", transform:"translateX(-50%)",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:8,
+            color:t.textFaint,
+          }}>
+            <span style={{ fontSize:9, letterSpacing:".25em", textTransform:"uppercase", fontWeight:700 }}>Scroll</span>
+            <ChevronDown size={16} />
           </div>
         </section>
 
-        {/* --- INTERACTIVE BENTO GRID (FEATURES) --- */}
-        <section id="features-section" className="max-w-7xl mx-auto px-8 pb-40 pt-20">
-          <div className="grid md:grid-cols-3 gap-6">
-            <ServiceButton 
-              icon={<Cpu size={28} />} 
-              title="Semantic AI" 
-              desc="Analyzes voice tone and visual hooks to find the 'gold' moments."
-              tag="Engine"
-              active={activeFeature === 0}
-              onClick={() => setActiveFeature(0)}
-            />
-            <ServiceButton 
-              icon={<Layers size={28} />} 
-              title="Smart Cropping" 
-              desc="Auto-reframing for TikTok, Reels & Shorts with zero manual work."
-              tag="Output"
-              active={activeFeature === 1}
-              onClick={() => setActiveFeature(1)}
-            />
-            <ServiceButton 
-              icon={<BarChart3 size={28} />} 
-              title="Viral Score" 
-              desc="Engagement prediction using our proprietary neural ranking."
-              tag="Analytics"
-              active={activeFeature === 2}
-              onClick={() => setActiveFeature(2)}
-            />
+        {/* ═══════════════════════════ LOGOS BAND ═══════════════════════════ */}
+        <div style={{
+          borderTop:`1px solid ${t.border}`,
+          borderBottom:`1px solid ${t.border}`,
+          padding:"20px 40px",
+          background: isDark ? "rgba(255,255,255,.01)" : "rgba(0,0,0,.01)",
+        }}>
+          <div style={{
+            maxWidth:1280, margin:"0 auto",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:60,
+          }}>
+            {["TechCrunch", "Product Hunt", "Forbes", "Wired", "Y Combinator"].map(name => (
+              <span key={name} style={{
+                fontSize:11, fontWeight:700, letterSpacing:".2em",
+                textTransform:"uppercase", color:t.textFaint,
+              }}>{name}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══════════════════════════ FEATURES ═══════════════════════════ */}
+        <section id="features-section" style={{ maxWidth:1280, margin:"0 auto", padding:"120px 40px" }}>
+          {/* Section header */}
+          <div style={{ maxWidth:600, marginBottom:72 }}>
+            <span style={{
+              fontSize:10, fontWeight:700, letterSpacing:".25em",
+              textTransform:"uppercase", color:t.accent, display:"block", marginBottom:16,
+            }}>
+              — Core capabilities
+            </span>
+            <h2 style={{
+              fontFamily:"'DM Serif Display', serif",
+              fontSize:"clamp(36px,5vw,60px)",
+              lineHeight:1.05, letterSpacing:"-.04em", color:t.text,
+            }}>
+              Everything you need to go viral.
+            </h2>
+          </div>
+
+          {/* Feature grid */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:20 }}>
+            {[
+              {
+                icon:<Cpu size={24}/>,
+                title:"Semantic AI",
+                desc:"Analyses voice tone, cadence, and visual hooks simultaneously to surface only the moments that matter — the gold.",
+                tag:"Engine",
+                i:0,
+              },
+              {
+                icon:<Layers size={24}/>,
+                title:"Smart Cropping",
+                desc:"Automatic reframing for TikTok 9:16, Reels, and YouTube Shorts with face-tracking and subject detection built in.",
+                tag:"Output",
+                i:1,
+              },
+              {
+                icon:<BarChart3 size={24}/>,
+                title:"Viral Score",
+                desc:"Proprietary neural ranking model trained on 12M+ clips predicts engagement before you publish a single frame.",
+                tag:"Analytics",
+                i:2,
+              },
+            ].map(({ icon, title, desc, tag, i }) => (
+              <FeatureCard
+                key={i}
+                icon={icon}
+                title={title}
+                desc={desc}
+                tag={tag}
+                active={activeFeature === i}
+                isDark={isDark}
+                t={t}
+                onClick={() => setActiveFeature(i)}
+              />
+            ))}
           </div>
         </section>
 
-        {/* --- STATS SECTION --- */}
-        <section className="max-w-7xl mx-auto px-8 py-20 border-t border-white/5 bg-white/[0.01] rounded-[3rem] mb-40">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-12">
-            <Stat val="0.4s" label="Inference Latency" />
-            <Stat val="12M+" label="Clips Processed" />
-            <Stat val="99.9%" label="Uptime Record" />
-            <Stat val="MIT" label="Architecture" />
+        {/* ═══════════════════════════ STATS ═══════════════════════════ */}
+        <section id="stats-section" style={{
+          maxWidth:1280, margin:"0 auto 120px",
+          padding:"80px 60px", borderRadius:32,
+          border:`1px solid ${t.border}`,
+          background: isDark ? "rgba(255,255,255,.015)" : "rgba(0,0,0,.02)",
+          backdropFilter:"blur(4px)",
+        }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:40, textAlign:"center" }}>
+            {[
+              { val:"0.4s",  label:"Inference Latency" },
+              { val:"12M+",  label:"Clips Processed" },
+              { val:"99.9%", label:"Uptime" },
+              { val:"4.9★",  label:"User Rating" },
+            ].map(({ val, label }) => (
+              <div key={label} className="stat-item">
+                <div style={{
+                  fontFamily:"'DM Serif Display', serif",
+                  fontSize:"clamp(40px,5vw,64px)", letterSpacing:"-.04em",
+                  color:t.accent, lineHeight:1, marginBottom:10,
+                }}>{val}</div>
+                <div style={{
+                  fontSize:10, fontWeight:700, letterSpacing:".22em",
+                  textTransform:"uppercase", color:t.textMuted,
+                }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ═══════════════════════════ CTA BANNER ═══════════════════════════ */}
+        <section style={{
+          maxWidth:1280, margin:"0 auto 120px", padding:"0 40px",
+        }}>
+          <div style={{
+            padding:"80px 80px", borderRadius:32,
+            background:`linear-gradient(135deg, ${t.accentDark}22, ${t.accent}12)`,
+            border:`1px solid ${t.accent}25`,
+            display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:40,
+          }}>
+            <div>
+              <h2 style={{
+                fontFamily:"'DM Serif Display', serif",
+                fontSize:"clamp(32px,4vw,52px)", letterSpacing:"-.04em",
+                color:t.text, marginBottom:14, lineHeight:1.1,
+              }}>
+                Ready to transform<br/><em style={{ color:t.accent }}>your content?</em>
+              </h2>
+              <p style={{ color:t.textMuted, fontSize:15, lineHeight:1.6, maxWidth:420 }}>
+                Join 40,000+ creators using InsightClips to grow their audience every week.
+              </p>
+            </div>
+            <Link href="/register" style={{
+              background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
+              color: isDark ? "#0D1008" : "#fff",
+              padding:"18px 44px", borderRadius:14, flexShrink:0,
+              fontSize:12, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase",
+              textDecoration:"none", display:"flex", alignItems:"center", gap:10,
+              boxShadow:`0 8px 40px ${t.accent}40`,
+            }}>
+              Create Free Account <ArrowUpRight size={16} />
+            </Link>
           </div>
         </section>
       </main>
 
-      {/* --- FOOTER --- */}
-      <footer className="border-t border-white/5 py-16 bg-[#010206]">
-        <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex flex-col items-center md:items-start gap-4">
-            <div className="flex items-center gap-3">
-              <Zap size={20} className="text-emerald-400" fill="currentColor" />
-              <span className="text-lg font-bold uppercase italic tracking-tighter text-white">InsightClips</span>
-            </div>
-            <p className="text-[10px] font-black text-slate-700 uppercase tracking-[0.4em]">
-              © 2026 CLOUD SYSTEMS • CORE INSTANCE
-            </p>
+      {/* ═══════════════════════════ FOOTER ═══════════════════════════ */}
+      <footer style={{
+        borderTop:`1px solid ${t.border}`,
+        padding:"60px 40px",
+        background: isDark ? "rgba(0,0,0,.3)" : "rgba(0,0,0,.02)",
+      }}>
+        <div style={{
+          maxWidth:1280, margin:"0 auto",
+          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:32,
+        }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <Image
+              src="/insightclips-logo.svg"
+              alt="InsightClips logo"
+              width={34}
+              height={34}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+              }}
+            />
+            <span style={{
+              fontFamily:"'DM Serif Display', serif", fontSize:18,
+              fontStyle:"italic", color:t.text, letterSpacing:"-.02em",
+            }}>
+              Insight<span style={{color:t.accent}}>Clips</span>
+            </span>
           </div>
-          <div className="flex gap-8">
-             <FooterIcon icon={<Globe size={18} />} label="Global" />
-             <FooterIcon icon={<Shield size={18} />} label="Secure" />
-             <FooterIcon icon={<CheckCircle2 size={18} />} label="Online" />
+
+          <p style={{ fontSize:11, fontWeight:600, color:t.textFaint, letterSpacing:".2em", textTransform:"uppercase" }}>
+            © 2026 InsightClips · All rights reserved
+          </p>
+
+          <div style={{ display:"flex", gap:28 }}>
+            {[
+              { icon:<Globe size={16}/>,       label:"Global CDN" },
+              { icon:<Shield size={16}/>,      label:"SOC 2" },
+              { icon:<CheckCircle2 size={16}/>, label:"99.9% SLA" },
+            ].map(({ icon, label }) => (
+              <div key={label} style={{
+                display:"flex", alignItems:"center", gap:7,
+                color:t.textMuted, fontSize:11, fontWeight:600,
+                letterSpacing:".1em", textTransform:"uppercase", cursor:"default",
+              }}>
+                {icon} {label}
+              </div>
+            ))}
           </div>
         </div>
       </footer>
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none" />
     </div>
   );
 }
 
-/**
- * Interactive feature button used in the bento grid.
- */
-type ServiceButtonProps = {
-  icon: ReactNode;
-  title: string;
-  desc: string;
-  tag: string;
-  active: boolean;
-  onClick: () => void;
+/* ─────────────────────────────────────────────
+   FEATURE CARD
+   ───────────────────────────────────────────── */
+type FeatureCardProps = {
+  icon: ReactNode; title: string; desc: string;
+  tag: string; active: boolean; isDark: boolean;
+  t: typeof theme.dark; onClick: () => void;
 };
 
-function ServiceButton({ icon, title, desc, tag, active, onClick }: ServiceButtonProps) {
+function FeatureCard({ icon, title, desc, tag, active, isDark, t, onClick }: FeatureCardProps) {
   return (
-    <button onClick={onClick} className={`group relative flex flex-col items-start text-left p-10 rounded-[2.5rem] border transition-all duration-700 overflow-hidden outline-none ${
-      active ? 'bg-emerald-400 border-transparent shadow-2xl scale-[1.03] z-10' : 'bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]'
-    }`}>
-      <div className={`absolute -top-10 -right-10 w-40 h-40 blur-[60px] rounded-full transition-opacity duration-700 ${active ? 'bg-black/20 opacity-100' : 'bg-emerald-500/10 opacity-0 group-hover:opacity-100'}`} />
-      <div className={`mb-12 p-5 rounded-2xl transition-all duration-500 ${active ? 'bg-black text-emerald-400 rotate-6' : 'bg-emerald-400/10 text-emerald-400'}`}>
+    <button
+      className="card-feature"
+      onClick={onClick}
+      style={{
+        display:"flex", flexDirection:"column", alignItems:"flex-start", textAlign:"left",
+        padding:"44px 40px", borderRadius:28, cursor:"pointer",
+        border:`1px solid ${active ? t.accent + "50" : t.border}`,
+        background: active
+          ? `linear-gradient(135deg, ${t.accent}18, ${t.accentDark}10)`
+          : (isDark ? "rgba(255,255,255,.02)" : "rgba(0,0,0,.015)"),
+        boxShadow: active ? `0 8px 48px ${t.accent}20` : "none",
+        outline:"none",
+      }}
+    >
+      {/* Icon */}
+      <div style={{
+        width:52, height:52, borderRadius:16, marginBottom:32,
+        background: active ? `${t.accent}20` : `${t.accent}10`,
+        border:`1px solid ${active ? t.accent + "40" : t.accent + "15"}`,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        color: t.accent,
+        transition:"all .3s",
+      }}>
         {icon}
       </div>
-      <div className={`text-[10px] font-black uppercase tracking-[0.3em] mb-4 ${active ? 'text-black/50' : 'text-emerald-500/40'}`}>[{tag}]</div>
-      <h3 className={`text-2xl font-black italic uppercase tracking-tighter mb-4 ${active ? 'text-black' : 'text-white'}`}>{title}</h3>
-      <p className={`text-sm font-medium leading-relaxed italic ${active ? 'text-black/70' : 'text-slate-500'}`}>{desc}</p>
+
+      {/* Tag */}
+      <span style={{
+        fontSize:9, fontWeight:700, letterSpacing:".28em",
+        textTransform:"uppercase", color: active ? t.accent : t.textFaint,
+        marginBottom:12, display:"block",
+      }}>
+        {tag}
+      </span>
+
+      {/* Title */}
+      <h3 style={{
+        fontFamily:"'DM Serif Display', serif",
+        fontSize:26, letterSpacing:"-.03em", lineHeight:1.1,
+        color:t.text, marginBottom:16, fontStyle:"italic",
+      }}>
+        {title}
+      </h3>
+
+      {/* Description */}
+      <p style={{
+        fontSize:14, lineHeight:1.7, color:t.textMuted, fontWeight:400,
+      }}>
+        {desc}
+      </p>
+
+      {/* Bottom indicator */}
+      {active && (
+        <div style={{
+          marginTop:32, display:"flex", alignItems:"center", gap:6,
+          fontSize:10, fontWeight:700, letterSpacing:".2em",
+          textTransform:"uppercase", color:t.accent,
+        }}>
+          <div style={{ width:20, height:1, background:t.accent }}/>
+          Active
+        </div>
+      )}
     </button>
-  );
-}
-
-/**
- * Standardized stat display component.
- */
-type StatProps = {
-  val: string;
-  label: string;
-};
-
-function Stat({ val, label }: StatProps) {
-  return (
-    <div className="flex flex-col items-center text-center gap-2 transition-transform hover:scale-110">
-      <div className="text-4xl font-black text-white italic tracking-tighter">{val}</div>
-      <div className="text-[10px] font-black text-slate-700 uppercase tracking-[0.3em]">{label}</div>
-    </div>
-  );
-} 
-
-/**
- * Small utility icon for the footer links.
- */
-type FooterIconProps = {
-  icon: ReactNode;
-  label: string;
-};
-
-function FooterIcon({ icon, label }: FooterIconProps) {
-  return (
-    <div className="flex items-center gap-2 text-slate-700 hover:text-emerald-400 transition-colors cursor-pointer group">
-      {icon}
-      <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">{label}</span>
-    </div>
   );
 }

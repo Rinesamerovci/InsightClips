@@ -25,6 +25,5 @@ class ProfileResponse(BaseModel):
     updated_at: datetime | None = None
 
 
-class ProfileUpdateRequest(BaseModel):
+class UpdateProfileRequest(BaseModel):
     full_name: str | None = None
-    profile_picture_url: HttpUrl | None = None

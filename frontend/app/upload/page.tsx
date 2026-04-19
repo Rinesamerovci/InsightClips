@@ -47,8 +47,8 @@ function validate(file: File): string|null {
 }
 
 /* ─── RESULT CARD ─── */
-type RCProps = { result:UploadPriceResponse; state:UploadState; prep:PrepareUploadResponse|null; dark:boolean; bord:string };
-function ResultCard({ result, state, prep, dark:d, bord }: RCProps) {
+type RCProps = { result:UploadPriceResponse; state:UploadState; prep:PrepareUploadResponse|null; dark:boolean };
+function ResultCard({ result, state, prep, dark:d }: RCProps) {
   const map = {
     free_ready:      { Icon:CheckCircle2, label:"Free upload available",  c:"#3a9e38", bg:d?"rgba(16,52,14,.9)":"rgba(220,252,210,.92)", bd:d?"rgba(58,158,56,.38)":"rgba(140,215,130,.65)" },
     awaiting_payment:{ Icon:CreditCard,   label:"Payment required",       c:"#9e8a20", bg:d?"rgba(52,42,6,.9)":"rgba(255,252,218,.92)",  bd:d?"rgba(158,135,32,.38)":"rgba(215,198,110,.65)" },
@@ -230,7 +230,13 @@ export default function UploadPage() {
       if (!token&&!mock) { router.replace("/login"); return; }
       const res = await runServerPreflight(f, token, mock);
       setResult(res); setState(res.status);
-    } catch(e) { setState("error"); setErr(e instanceof Error?e.message:"Unable to inspect file."); }
+    } catch(e) {
+      setResult(null);
+      setPrep(null);
+      setUploadReference(null);
+      setState("error");
+      setErr(e instanceof Error?e.message:"Unable to inspect file.");
+    }
   };
 
   const pickFile = (f: File|null) => {
@@ -250,7 +256,11 @@ export default function UploadPage() {
       const token = backendToken??(await syncBackendSession());
       if (!token&&!mock) { router.replace("/login"); return; }
       setPrep(await runServerPrepare(file, result, token, mock));
-    } catch(e) { setState("error"); setErr(e instanceof Error?e.message:"Unable to create record."); }
+    } catch(e) {
+      setPrep(null);
+      setState("error");
+      setErr(e instanceof Error?e.message:"Unable to create record.");
+    }
     finally { setPreparing(false); }
   };
 
@@ -604,7 +614,7 @@ export default function UploadPage() {
           {/* ── RESULT ── */}
           {result && (
             <div style={{ marginBottom:"16px" }}>
-              <ResultCard result={result} state={state} prep={prep} dark={d} bord={bord}/>
+              <ResultCard result={result} state={state} prep={prep} dark={d}/>
             </div>
           )}
 

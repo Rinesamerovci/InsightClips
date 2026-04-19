@@ -131,24 +131,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ detail: "A media file is required." }, { status: 400 });
   }
 
-  const stagedUpload = await stageUploadFile(fileEntry);
-  const filename = String(formData.get("filename") || stagedUpload.filename);
-  const mimeType = String(formData.get("mime_type") || stagedUpload.mime_type || "").trim() || null;
-  const mockEnabled = String(formData.get("mock") || "").toLowerCase() === "true";
-  const detectedDurationSeconds = Number(formData.get("detected_duration_seconds") || 0);
-
-  if (mockEnabled) {
-    return NextResponse.json(
-      buildMockResponse({
-        uploadReference: stagedUpload.upload_reference,
-        filename,
-        mimeType,
-        detectedDurationSeconds,
-      })
-    );
-  }
-
   try {
+    const stagedUpload = await stageUploadFile(fileEntry);
+    const filename = String(formData.get("filename") || stagedUpload.filename);
+    const mimeType = String(formData.get("mime_type") || stagedUpload.mime_type || "").trim() || null;
+    const mockEnabled = String(formData.get("mock") || "").toLowerCase() === "true";
+    const detectedDurationSeconds = Number(formData.get("detected_duration_seconds") || 0);
+
+    if (mockEnabled) {
+      return NextResponse.json(
+        buildMockResponse({
+          uploadReference: stagedUpload.upload_reference,
+          filename,
+          mimeType,
+          detectedDurationSeconds,
+        })
+      );
+    }
+
     const response = await fetch(`${backendUrl}/upload/calculate-price`, {
       method: "POST",
       headers: {
@@ -178,9 +178,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       upload_reference: stagedUpload.upload_reference,
       is_mock: false,
     });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { detail: "Unable to reach the upload pre-flight service." },
+      {
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Unable to reach the upload pre-flight service.",
+      },
       { status: 502 }
     );
   }

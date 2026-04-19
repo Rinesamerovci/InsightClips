@@ -18,6 +18,11 @@ try:
 except ImportError:  # pragma: no cover - exercised through service error handling
     OpenAI = None
 
+try:
+    import whisper
+except ImportError:  # pragma: no cover - optional local fallback
+    whisper = None
+
 
 OPENAI_MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 PCM16_MONO_16KHZ_BYTES_PER_SECOND = 32_000
@@ -148,14 +153,48 @@ def transcribe_media(file_path: Path, model: str = "base") -> TranscriptionResul
         )
 
     inspection = inspect_media(resolved_path)
+    try:
+        resolved_model = resolve_transcription_model(model)
+        transcript_text, all_words, detected_language, model_used = _transcribe_with_openai(
+            resolved_path,
+            resolved_model=resolved_model,
+            duration_seconds=inspection.duration_seconds,
+        )
+    except TranscriptionError as exc:
+        if not _should_fallback_to_local_whisper(exc):
+            raise
+        transcript_text, all_words, detected_language, model_used = _transcribe_with_local_whisper(
+            resolved_path,
+            requested_model=model,
+        )
+
+    processing_time_seconds = round(time.perf_counter() - start_time, 3)
+    if not transcript_text:
+        raise AudioQualityError("Transcription result was empty after combining chunk output.")
+
+    return TranscriptionResult(
+        transcript_text=transcript_text,
+        duration_seconds=inspection.duration_seconds,
+        detected_language=detected_language,
+        words=sorted(all_words, key=lambda item: (item.start, item.end, item.word)),
+        model_used=model_used,
+        processing_time_seconds=processing_time_seconds,
+    )
+
+
+def _transcribe_with_openai(
+    resolved_path: Path,
+    *,
+    resolved_model: str,
+    duration_seconds: float,
+) -> tuple[str, list[TranscriptWord], str, str]:
     client = _build_openai_client()
-    resolved_model = resolve_transcription_model(model)
     prompt = ""
     transcript_parts: list[str] = []
     all_words: list[TranscriptWord] = []
     detected_language = "en"
 
-    with _open_transcription_chunks(resolved_path, inspection.duration_seconds) as chunks:
+    with _open_transcription_chunks(resolved_path, duration_seconds) as chunks:
         for chunk in chunks:
             payload = _request_transcription(
                 client,
@@ -185,19 +224,143 @@ def transcribe_media(file_path: Path, model: str = "base") -> TranscriptionResul
             detected_language = chunk_language
             prompt = payload["text"].strip()[-800:]
 
-    processing_time_seconds = round(time.perf_counter() - start_time, 3)
-    transcript_text = " ".join(part for part in transcript_parts if part).strip()
-    if not transcript_text:
-        raise AudioQualityError("Transcription result was empty after combining chunk output.")
+    return " ".join(part for part in transcript_parts if part).strip(), all_words, detected_language, resolved_model
 
-    return TranscriptionResult(
-        transcript_text=transcript_text,
-        duration_seconds=inspection.duration_seconds,
-        detected_language=detected_language,
-        words=sorted(all_words, key=lambda item: (item.start, item.end, item.word)),
-        model_used=resolved_model,
-        processing_time_seconds=processing_time_seconds,
-    )
+
+def _transcribe_with_local_whisper(
+    resolved_path: Path,
+    *,
+    requested_model: str,
+) -> tuple[str, list[TranscriptWord], str, str]:
+    if whisper is None:
+        raise WhisperNotAvailableError(
+            "Neither OpenAI transcription nor local Whisper is available in this environment."
+        )
+
+    local_model_name = _resolve_local_whisper_model(requested_model)
+    try:
+        local_model = whisper.load_model(local_model_name)
+        payload = _run_local_whisper_transcription(local_model, resolved_path)
+    except Exception as exc:  # pragma: no cover - depends on local runtime/model weights
+        raise TranscriptionError(
+            f"Local Whisper transcription failed: {exc}",
+            code="local_whisper_error",
+            status_code=502,
+        ) from exc
+
+    detected_language = _normalize_language(payload.get("language"))
+    if detected_language != "en":
+        raise LanguageNotSupportedError(payload.get("language") or "unknown")
+
+    transcript_text = str(payload.get("text", "")).strip()
+    if not transcript_text:
+        raise AudioQualityError("Local Whisper returned an empty transcription.")
+
+    words = _build_local_whisper_words(payload)
+    if not words:
+        raise AudioQualityError("Local Whisper did not return usable word-level timestamps.")
+
+    return transcript_text, words, detected_language, f"local-whisper-{local_model_name}"
+
+
+def _resolve_local_whisper_model(requested_model: str) -> str:
+    normalized = requested_model.strip().lower()
+    if normalized == "tiny":
+        return "tiny"
+    if normalized in {"base", "small", "medium"}:
+        return "tiny"
+    if normalized in SUPPORTED_API_MODELS:
+        return "tiny"
+    return "tiny"
+
+
+def _build_local_whisper_words(payload: dict[str, Any]) -> list[TranscriptWord]:
+    words: list[TranscriptWord] = []
+    for raw_segment in payload.get("segments") or []:
+        segment = _coerce_mapping(raw_segment)
+        for raw_word in segment.get("words") or []:
+            word_payload = _coerce_mapping(raw_word)
+            word_text = str(word_payload.get("word", "")).strip()
+            if not word_text:
+                continue
+            start_seconds = float(word_payload.get("start", 0.0))
+            end_seconds = float(word_payload.get("end", start_seconds))
+            probability = _coerce_float(word_payload.get("probability"))
+            words.append(
+                TranscriptWord(
+                    word=word_text,
+                    start=round(start_seconds, 3),
+                    end=round(end_seconds, 3),
+                    confidence=_clamp_confidence(probability if probability is not None else 0.75),
+                )
+            )
+    if words:
+        return words
+    return _build_segment_level_words(payload)
+
+
+def _run_local_whisper_transcription(local_model: Any, resolved_path: Path) -> dict[str, Any]:
+    try:
+        payload = local_model.transcribe(
+            str(resolved_path),
+            language="en",
+            word_timestamps=True,
+            fp16=False,
+            verbose=False,
+        )
+        return _coerce_mapping(payload)
+    except Exception:
+        payload = local_model.transcribe(
+            str(resolved_path),
+            language="en",
+            word_timestamps=False,
+            fp16=False,
+            verbose=False,
+        )
+        return _coerce_mapping(payload)
+
+
+def _build_segment_level_words(payload: dict[str, Any]) -> list[TranscriptWord]:
+    words: list[TranscriptWord] = []
+    for raw_segment in payload.get("segments") or []:
+        segment = _coerce_mapping(raw_segment)
+        segment_text = str(segment.get("text", "")).strip()
+        if not segment_text:
+            continue
+
+        tokens = [token for token in segment_text.split() if token.strip()]
+        if not tokens:
+            continue
+
+        start_seconds = _coerce_float(segment.get("start")) or 0.0
+        end_seconds = _coerce_float(segment.get("end"))
+        if end_seconds is None or end_seconds <= start_seconds:
+            end_seconds = start_seconds + max(0.2 * len(tokens), 0.6)
+
+        step = max((end_seconds - start_seconds) / max(len(tokens), 1), 0.05)
+        for index, token in enumerate(tokens):
+            word_start = round(start_seconds + (index * step), 3)
+            word_end = round(min(end_seconds, start_seconds + ((index + 1) * step)), 3)
+            if word_end <= word_start:
+                word_end = round(word_start + 0.05, 3)
+            words.append(
+                TranscriptWord(
+                    word=token,
+                    start=word_start,
+                    end=word_end,
+                    confidence=0.65,
+                )
+            )
+    return words
+    return words
+
+
+def _should_fallback_to_local_whisper(exc: TranscriptionError) -> bool:
+    return exc.code in {
+        "whisper_not_available",
+        "transcription_api_limit",
+        "transcription_api_connection_error",
+    }
 
 
 def _build_openai_client() -> Any:

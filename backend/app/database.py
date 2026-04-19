@@ -38,13 +38,17 @@ if settings.database_url:
         conninfo=settings.database_url,
         min_size=1,
         max_size=5,
-        kwargs={"autocommit": True},
+        kwargs={"autocommit": True, "connect_timeout": 3},
         open=False,
     )
 
 def open_db_pool() -> None:
-    if db_pool and db_pool.closed:
-        db_pool.open()
+    if not db_pool or not db_pool.closed:
+        return
+    try:
+        db_pool.open(wait=False)
+    except Exception:
+        return
 
 def close_db_pool() -> None:
     if db_pool and not db_pool.closed:
@@ -53,10 +57,13 @@ def close_db_pool() -> None:
 def run_db_healthcheck() -> bool:
     if not db_pool:
         return False
-    with db_pool.connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("select 1;")
-            return cursor.fetchone() == (1,)
+    try:
+        with db_pool.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select 1;")
+                return cursor.fetchone() == (1,)
+    except Exception:
+        return False
 
 @asynccontextmanager
 async def lifespan(_: object) -> Iterator[None]:

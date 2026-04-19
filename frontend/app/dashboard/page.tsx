@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,9 +13,8 @@ import {
 } from "lucide-react";
 
 import { PodcastCard } from "@/components/PodcastCard";
-import { UserProfileCard } from "@/components/UserProfileCard";
 import { useAuth } from "@/context/AuthContext";
-import { getJson } from "@/lib/api";
+import { analyzePodcast, getJson, getPodcastAnalysis, type AnalysisSummary } from "@/lib/api";
 
 type ProfileResponse = {
   id: string; email: string; full_name: string | null;
@@ -26,6 +26,34 @@ type Podcast = {
   status: string; created_at: string | null; updated_at: string | null;
 };
 type PodcastsResponse = { podcasts: Podcast[]; is_mock: boolean };
+
+function isDoneStatus(status: string) {
+  return ["done", "completed"].includes(status);
+}
+
+function isProcessingStatus(status: string) {
+  return ["processing", "queued"].includes(status);
+}
+
+function isPaymentStatus(status: string) {
+  return ["awaiting_payment"].includes(status);
+}
+
+function getEffectivePodcastStatus(
+  podcast: Podcast,
+  analysis: AnalysisSummary | null | undefined,
+  analysisLoading: boolean,
+) {
+  if (analysisLoading) {
+    return "processing";
+  }
+
+  if (analysis && analysis.total_scored_segments > 0) {
+    return "done";
+  }
+
+  return podcast.status;
+}
 
 /* ─────────────────────── design tokens ─────────────────────── */
 const T = {
@@ -156,13 +184,37 @@ export default function DashboardPage() {
   const [isMock,    setIsMock]    = useState(false);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState("");
-  const [dark,      setDark]      = useState(() => typeof window !== "undefined" ? window.localStorage.getItem("insightclips-theme") === "dark" : true);
-  const [activeTab, setActiveTab] = useState<"all"|"processing"|"done">("all");
+  const [dark,      setDark]      = useState(true);
+  const [mounted,   setMounted]   = useState(false);
+  const [activeTab, setActiveTab] = useState<"all"|"processing"|"payments"|"done">("all");
   const [collapsed, setCollapsed] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(1280);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
+  const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
 
   const t = dark ? T.dark : T.light;
+  const isMobile = viewportWidth < 900;
+  const isTablet = viewportWidth < 1180;
 
-  useEffect(() => { window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light"); }, [dark]);
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    if (savedTheme) setDark(savedTheme === "dark");
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    setMounted(true);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+  }, [dark, mounted]);
+
+  useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -176,23 +228,88 @@ export default function DashboardPage() {
           getJson<PodcastsResponse>("/podcasts", token),
         ]);
         setProfile(p); setPodcasts(pod.podcasts); setIsMock(pod.is_mock);
+        const analysisEntries = await Promise.all(
+          pod.podcasts.map(async (podcast) => {
+            try {
+              const summary = await getPodcastAnalysis(podcast.id, token);
+              return [podcast.id, summary] as const;
+            } catch {
+              return [podcast.id, null] as const;
+            }
+          })
+        );
+        setAnalysisByPodcast(Object.fromEntries(analysisEntries));
       } catch (e) { setError(e instanceof Error ? e.message : "Unable to load."); }
       finally { setLoading(false); }
     };
     void load();
   }, [authLoading, backendToken, router, syncBackendSession]);
 
+  const podcastsWithEffectiveStatus = podcasts.map((podcast) => ({
+    ...podcast,
+    status: getEffectivePodcastStatus(
+      podcast,
+      analysisByPodcast[podcast.id],
+      Boolean(analysisLoadingByPodcast[podcast.id]),
+    ),
+  }));
+
   const totalDur   = podcasts.reduce((a, p) => a + (p.duration || 0), 0);
-  const processing = podcasts.filter(p => p.status === "processing").length;
-  const done       = podcasts.filter(p => p.status === "done").length;
-  const filtered   = podcasts.filter(p =>
-    activeTab === "all" ? true : activeTab === "processing" ? p.status === "processing" : p.status === "done"
+  const processing = podcastsWithEffectiveStatus.filter(p => isProcessingStatus(p.status)).length;
+  const payments   = podcastsWithEffectiveStatus.filter(p => isPaymentStatus(p.status)).length;
+  const done       = podcastsWithEffectiveStatus.filter(p => isDoneStatus(p.status)).length;
+  const filtered   = podcastsWithEffectiveStatus.filter(p =>
+    activeTab === "all"
+      ? true
+      : activeTab === "processing"
+        ? isProcessingStatus(p.status)
+        : activeTab === "payments"
+          ? isPaymentStatus(p.status)
+        : isDoneStatus(p.status)
   );
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
 
+  const runAnalysis = async (podcastId: string) => {
+    try {
+      setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: true }));
+      setPodcasts((current) =>
+        current.map((podcast) =>
+          podcast.id === podcastId ? { ...podcast, status: "processing" } : podcast
+        )
+      );
+      setError("");
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) { router.replace("/login"); return; }
+      const result = await analyzePodcast(podcastId, {}, token);
+      setPodcasts((current) =>
+        current.map((podcast) =>
+          podcast.id === podcastId ? { ...podcast, status: "done" } : podcast
+        )
+      );
+      setAnalysisByPodcast((current) => ({
+        ...current,
+        [podcastId]: {
+          podcast_id: result.podcast_id,
+          total_scored_segments: result.total_segments_analyzed,
+          highest_score: result.top_scoring_segments[0]?.virality_score ?? 0,
+          top_segments: result.top_scoring_segments,
+        },
+      }));
+    } catch (e) {
+      setPodcasts((current) =>
+        current.map((podcast) =>
+          podcast.id === podcastId ? { ...podcast, status: "ready_for_processing" } : podcast
+        )
+      );
+      setError(e instanceof Error ? e.message : "Unable to run analysis.");
+    } finally {
+      setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: false }));
+    }
+  };
+
   /* ── loading screen ── */
-  if (loading || authLoading) return (
+  if (!mounted || loading || authLoading) return (
     <div style={{ display:"flex", minHeight:"100vh", alignItems:"center", justifyContent:"center", background: dark ? T.dark.bg : T.light.bg }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
@@ -304,15 +421,30 @@ export default function DashboardPage() {
         </div>
 
         {/* ═══════════════════════ SIDEBAR ═══════════════════════ */}
+        {isMobile && mobileNavOpen && (
+          <div
+            onClick={() => setMobileNavOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.35)",
+              backdropFilter: "blur(4px)",
+              zIndex: 45,
+            }}
+          />
+        )}
+
         <aside style={{
-          width: collapsed ? 68 : 240,
+          width: isMobile ? 240 : (collapsed ? 68 : 240),
           minHeight: "100vh",
           position: "fixed", top: 0, left: 0, zIndex: 50,
           background: t.sidebar,
           borderRight: `1px solid ${t.border}`,
           display: "flex", flexDirection: "column",
-          transition: "width .35s cubic-bezier(.22,1,.36,1)",
+          transition: "width .35s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.22,1,.36,1)",
           overflow: "hidden",
+          transform: isMobile ? (mobileNavOpen ? "translateX(0)" : "translateX(-100%)") : "translateX(0)",
+          boxShadow: isMobile && mobileNavOpen ? "0 24px 60px rgba(0,0,0,.24)" : "none",
         }}>
           {/* Logo */}
           <div style={{
@@ -322,14 +454,19 @@ export default function DashboardPage() {
             gap: 12, justifyContent: collapsed ? "center" : "flex-start",
             flexShrink: 0,
           }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              background: `linear-gradient(135deg, ${t.accent}, ${dark?"#3d6e24":"#5a9e3a"})`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: `0 4px 16px ${t.accentGlow}`,
-            }}>
-              <Zap size={16} color="#fff" fill="#fff"/>
-            </div>
+            <Image
+              src="/insightclips-logo.svg"
+              alt="InsightClips logo"
+              width={34}
+              height={34}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                flexShrink: 0,
+                boxShadow: `0 4px 16px ${t.accentGlow}`,
+              }}
+            />
             {!collapsed && (
               <div style={{ overflow:"hidden" }}>
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".22em", textTransform: "uppercase", color: t.accentLt, lineHeight: 1 }}>InsightClips</div>
@@ -395,7 +532,7 @@ export default function DashboardPage() {
 
         {/* ═══════════════════════ MAIN AREA ═══════════════════════ */}
         <div style={{
-          marginLeft: collapsed ? 68 : 240,
+          marginLeft: isMobile ? 0 : (collapsed ? 68 : 240),
           flex: 1, minHeight:"100vh",
           display:"flex", flexDirection:"column",
           transition:"margin-left .35s cubic-bezier(.22,1,.36,1)",
@@ -408,7 +545,7 @@ export default function DashboardPage() {
             background: t.topbar,
             backdropFilter: "blur(24px) saturate(1.5)",
             borderBottom: `1px solid ${t.border}`,
-            padding: "0 32px",
+            padding: isMobile ? "0 16px" : "0 32px",
             display: "flex", alignItems: "center", justifyContent: "space-between",
             height: 64,
             animation: "slideUp .5s .0s cubic-bezier(.22,1,.36,1) both",
@@ -416,7 +553,13 @@ export default function DashboardPage() {
             {/* Left — collapse toggle + breadcrumb */}
             <div style={{ display:"flex", alignItems:"center", gap: 16 }}>
               <button
-                onClick={() => setCollapsed(v => !v)}
+                onClick={() => {
+                  if (isMobile) {
+                    setMobileNavOpen((v) => !v);
+                  } else {
+                    setCollapsed((v) => !v);
+                  }
+                }}
                 className="icon-btn"
                 style={{
                   width: 34, height: 34, borderRadius: 9,
@@ -483,9 +626,11 @@ export default function DashboardPage() {
                     }
                   </div>
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: t.textSub }}>
-                  {dark ? "Dark" : "Light"}
-                </span>
+                {!isMobile && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: t.textSub }}>
+                    {dark ? "Dark" : "Light"}
+                  </span>
+                )}
               </button>
 
               {/* Bell */}
@@ -514,13 +659,13 @@ export default function DashboardPage() {
                 boxShadow: `0 6px 22px ${t.accentGlow}`,
               }}>
                 <Plus size={14} strokeWidth={2.5}/>
-                New upload
+                {isMobile ? "Upload" : "New upload"}
               </button>
             </div>
           </header>
 
           {/* ── PAGE CONTENT ── */}
-          <main style={{ padding: "32px 32px 60px", flex:1 }}>
+          <main style={{ padding: isMobile ? "20px 16px 40px" : "32px 32px 60px", flex:1 }}>
 
             {/* Welcome row */}
             <div style={{
@@ -541,14 +686,24 @@ export default function DashboardPage() {
               </h1>
               <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.6, fontWeight: 400 }}>
                 {podcasts.length > 0
-                  ? `${podcasts.length} episode${podcasts.length>1?"s":""} in your library${processing > 0 ? ` · ${processing} processing` : " · all done"}`
+                  ? `${podcasts.length} episode${podcasts.length>1?"s":""} in your library${
+                      processing > 0
+                        ? ` · ${processing} processing`
+                        : payments > 0
+                          ? ` · ${payments} awaiting payment`
+                          : done > 0
+                            ? ` · ${done} completed`
+                            : ""
+                    }`
                   : "Your workspace is ready — upload your first episode to begin."}
               </p>
             </div>
 
             {/* ── STATS GRID ── */}
             <div style={{
-              display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap: 16, marginBottom: 28,
+              display:"grid",
+              gridTemplateColumns: isMobile ? "1fr" : (isTablet ? "repeat(2,1fr)" : "repeat(4,1fr)"),
+              gap: 16, marginBottom: 28,
             }}>
               <div className="stat-card">
                 <StatCard icon={Mic2}       label="Podcasts"   value={podcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
@@ -562,10 +717,13 @@ export default function DashboardPage() {
               <div className="stat-card">
                 <StatCard icon={CheckCircle2} label="Completed" value={done}            sub="ready to export"        accent="#8a5a9e"  t={t} delay={.28}/>
               </div>
+              <div className="stat-card">
+                <StatCard icon={Clock}      label="Payments"  value={payments}        sub="waiting to continue"   accent="#c98a2d"  t={t} delay={.34}/>
+              </div>
             </div>
 
             {/* ── MAIN GRID: chart + library ── */}
-            <div style={{ display:"grid", gridTemplateColumns:"280px 1fr", gap: 20, alignItems:"start" }}>
+            <div style={{ display:"grid", gridTemplateColumns:isTablet ? "1fr" : "280px 1fr", gap: 20, alignItems:"start" }}>
 
               {/* Left col */}
               <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
@@ -705,7 +863,7 @@ export default function DashboardPage() {
               }}>
                 {/* Panel header */}
                 <div style={{ padding:"20px 24px 0", borderBottom:`1px solid ${t.borderSub}` }}>
-                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                  <div style={{ display:"flex", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", flexDirection:isMobile ? "column" : "row", gap:12, marginBottom:16 }}>
                     <div>
                       <h2 style={{
                         fontFamily:"'DM Serif Display',serif",
@@ -716,7 +874,7 @@ export default function DashboardPage() {
                         {isMock ? "Showing demo content" : `${podcasts.length} episode${podcasts.length!==1?"s":""} total`}
                       </p>
                     </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, width:isMobile ? "100%" : "auto", justifyContent:isMobile ? "space-between" : "flex-end" }}>
                       <button onClick={() => router.push("/upload")} className="upload-btn" style={{
                         display:"flex", alignItems:"center", gap:6,
                         padding:"8px 18px", borderRadius:100, border:"none",
@@ -741,7 +899,7 @@ export default function DashboardPage() {
 
                   {/* Tabs */}
                   <div style={{ display:"flex", gap:2 }}>
-                    {(["all","processing","done"] as const).map(tab => {
+                    {(["all","processing","payments","done"] as const).map(tab => {
                       const on = activeTab===tab;
                       return (
                         <button key={tab} onClick={()=>setActiveTab(tab)} className={`tab-btn${on?" on":""}`} style={{
@@ -754,6 +912,12 @@ export default function DashboardPage() {
                               marginLeft:6, background:t.accent, color:"#fff",
                               borderRadius:6, padding:"1px 6px", fontSize:10, fontWeight:700,
                             }}>{processing}</span>
+                          )}
+                          {tab==="payments" && payments>0 && (
+                            <span style={{
+                              marginLeft:6, background:"#c98a2d", color:"#fff",
+                              borderRadius:6, padding:"1px 6px", fontSize:10, fontWeight:700,
+                            }}>{payments}</span>
                           )}
                         </button>
                       );
@@ -801,10 +965,15 @@ export default function DashboardPage() {
                       )}
                     </div>
                   ) : (
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
                       {filtered.map((podcast,i) => (
                         <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
-                          <PodcastCard podcast={podcast}/>
+                          <PodcastCard
+                            podcast={podcast}
+                            analysis={analysisByPodcast[podcast.id]}
+                            analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
+                            onAnalyze={() => void runAnalysis(podcast.id)}
+                          />
                         </div>
                       ))}
                     </div>
@@ -814,7 +983,7 @@ export default function DashboardPage() {
             </div>
 
             {/* ── BOTTOM ROW ── */}
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginTop:20 }}>
+            <div style={{ display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr", gap:16, marginTop:20 }}>
               {/* Upload CTA banner */}
               <div
                 onClick={()=>router.push("/upload")}

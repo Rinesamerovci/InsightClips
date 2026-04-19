@@ -5,6 +5,11 @@ import { AuthProvider } from "@/context/AuthContext"; // Import the Authenticati
 export const metadata: Metadata = {
   title: "InsightClips",
   description: "AI-based podcast moment extractor",
+  icons: {
+    icon: "/insightclips-logo.svg",
+    shortcut: "/insightclips-logo.svg",
+    apple: "/insightclips-logo.svg",
+  },
 };
 
 export default function RootLayout({

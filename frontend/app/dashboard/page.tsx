@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -62,6 +62,7 @@ const T = {
     sidebar:  "#090e08",
     topbar:   "rgba(9,14,8,.92)",
     card:     "rgba(13,20,11,.88)",
+    cardAlt:  "rgba(16,24,13,.94)",
     cardSolid:"#0d140b",
     border:   "rgba(60,105,40,.38)",
     borderSub:"rgba(60,105,40,.18)",
@@ -80,6 +81,7 @@ const T = {
     sidebar:  "#e6f2df",
     topbar:   "rgba(240,248,235,.95)",
     card:     "rgba(255,255,255,.92)",
+    cardAlt:  "rgba(247,251,242,.95)",
     cardSolid:"#ffffff",
     border:   "rgba(140,200,110,.45)",
     borderSub:"rgba(140,200,110,.22)",
@@ -192,6 +194,9 @@ export default function DashboardPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsSeen, setNotificationsSeen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 900;
@@ -269,6 +274,82 @@ export default function DashboardPage() {
   );
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
+  const notifications = useMemo(() => {
+    const items: Array<{
+      id: string;
+      title: string;
+      description: string;
+      tone: "success" | "warning" | "info";
+      ctaHref?: string;
+      ctaLabel?: string;
+    }> = [];
+
+    podcastsWithEffectiveStatus.forEach((podcast) => {
+      const analysis = analysisByPodcast[podcast.id];
+
+      if (podcast.status === "processing") {
+        items.push({
+          id: `processing-${podcast.id}`,
+          title: "Analysis in progress",
+          description: `${podcast.title} is currently being processed.`,
+          tone: "info",
+          ctaHref: "/dashboard",
+          ctaLabel: "View status",
+        });
+      }
+
+      if (podcast.status === "awaiting_payment") {
+        items.push({
+          id: `payment-${podcast.id}`,
+          title: "Payment required",
+          description: `${podcast.title} is waiting for payment before processing can continue.`,
+          tone: "warning",
+          ctaHref: "/upload",
+          ctaLabel: "Resolve upload",
+        });
+      }
+
+      if (analysis && analysis.total_scored_segments > 0) {
+        items.push({
+          id: `analysis-${podcast.id}`,
+          title: "Analysis ready",
+          description: `${podcast.title} has ${analysis.total_scored_segments} scored moments ready for clips.`,
+          tone: "success",
+          ctaHref: `/clips?podcastId=${podcast.id}`,
+          ctaLabel: "Open clips",
+        });
+      }
+    });
+
+    if (!items.length) {
+      items.push({
+        id: "empty",
+        title: "No activity yet",
+        description: "Upload or analyze an episode and your recent activity will appear here.",
+        tone: "info",
+        ctaHref: "/upload",
+        ctaLabel: "Upload episode",
+      });
+    }
+
+    return items.slice(0, 6);
+  }, [analysisByPodcast, podcastsWithEffectiveStatus]);
+  const unreadCount = notificationsSeen ? 0 : notifications.filter((item) => item.id !== "empty").length;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!notificationsRef.current) return;
+      if (!notificationsRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    };
+
+    if (notificationsOpen) {
+      window.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [notificationsOpen]);
 
   const runAnalysis = async (podcastId: string) => {
     try {
@@ -389,6 +470,13 @@ export default function DashboardPage() {
           cursor:pointer; border:none; background:none; padding:0;
           position:relative;
         }
+        .notification-card {
+          transition: transform .22s cubic-bezier(.22,1,.36,1), border-color .22s;
+        }
+        .notification-card:hover {
+          transform: translateY(-2px);
+          border-color: ${t.border};
+        }
 
         .shimmer-name {
           background: linear-gradient(90deg, ${t.text} 0%, ${t.accent} 35%, ${t.accentLt} 55%, ${t.text} 100%);
@@ -479,7 +567,7 @@ export default function DashboardPage() {
           <nav style={{ flex: 1, padding: "16px 10px", display: "flex", flexDirection:"column", gap: 3 }}>
             <NavItem icon={LayoutDashboard} label="Overview"  href="/dashboard" active t={t} collapsed={collapsed}/>
             <NavItem icon={Library}         label="Library"   href="/podcasts"  t={t} collapsed={collapsed}/>
-            <NavItem icon={BarChart2}        label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
+            <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
           </nav>
@@ -634,20 +722,126 @@ export default function DashboardPage() {
               </button>
 
               {/* Bell */}
-              <button className="icon-btn" style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: "transparent",
-                border: `1px solid ${t.border}`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                color: t.textSub, position:"relative", cursor:"pointer",
-              }}>
-                <Bell size={15} strokeWidth={1.8}/>
-                <span style={{
-                  position:"absolute", top: 7, right: 7,
-                  width: 6, height: 6, borderRadius:"50%",
-                  background: t.accent, border:`1.5px solid ${t.bg}`,
-                }}/>
-              </button>
+              <div ref={notificationsRef} style={{ position:"relative" }}>
+                <button
+                  className="icon-btn"
+                  onClick={() => {
+                    setNotificationsOpen((value) => !value);
+                    setNotificationsSeen(true);
+                  }}
+                  style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: "transparent",
+                    border: `1px solid ${t.border}`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    color: t.textSub, position:"relative", cursor:"pointer",
+                  }}
+                >
+                  <Bell size={15} strokeWidth={1.8}/>
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position:"absolute", top: 6, right: 5,
+                      minWidth: 16, height: 16, borderRadius:999,
+                      background: t.accent, border:`1.5px solid ${t.bg}`,
+                      color:"#fff", fontSize:9, fontWeight:700,
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      padding:"0 4px",
+                    }}>
+                      {Math.min(unreadCount, 9)}
+                    </span>
+                  )}
+                </button>
+
+                {notificationsOpen && (
+                  <div
+                    style={{
+                      position:"absolute",
+                      top: 46,
+                      right: 0,
+                      width: isMobile ? 300 : 360,
+                      borderRadius: 18,
+                      border: `1px solid ${t.border}`,
+                      background: t.card,
+                      backdropFilter: "blur(24px)",
+                      boxShadow: "0 20px 60px rgba(0,0,0,.18)",
+                      padding: 14,
+                      zIndex: 80,
+                    }}
+                  >
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:4 }}>
+                          Notifications
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: t.text }}>Recent activity</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationsSeen(true)}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: t.accent,
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Mark all as read
+                      </button>
+                    </div>
+
+                    <div style={{ display:"grid", gap: 10 }}>
+                      {notifications.map((item) => {
+                        const toneColor =
+                          item.tone === "success"
+                            ? t.accent
+                            : item.tone === "warning"
+                              ? "#c98a2d"
+                              : t.textSub;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="notification-card"
+                            style={{
+                              borderRadius: 14,
+                              border: `1px solid ${t.borderSub}`,
+                              background: t.cardAlt,
+                              padding: 12,
+                            }}
+                          >
+                            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:6 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{item.title}</div>
+                              <div style={{ width: 8, height: 8, borderRadius:"50%", background: toneColor, flexShrink:0 }} />
+                            </div>
+                            <div style={{ fontSize: 12, lineHeight: 1.6, color: t.textSub }}>{item.description}</div>
+                            {item.ctaHref && item.ctaLabel && (
+                              <Link
+                                href={item.ctaHref}
+                                onClick={() => setNotificationsOpen(false)}
+                                style={{
+                                  display:"inline-flex",
+                                  alignItems:"center",
+                                  gap: 6,
+                                  marginTop: 10,
+                                  color: t.accent,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {item.ctaLabel}
+                                <ChevronRight size={13} />
+                              </Link>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Upload CTA */}
               <button onClick={() => router.push("/upload")} className="upload-btn" style={{
@@ -729,13 +923,16 @@ export default function DashboardPage() {
               <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
 
                 {/* Activity chart card */}
-                <div style={{
+                <div
+                  id="analytics"
+                  style={{
                   padding: "22px", borderRadius: 18,
                   border: `1px solid ${t.border}`,
                   background: t.card,
                   backdropFilter: "blur(20px)",
                   animation: "slideUp .55s .3s cubic-bezier(.22,1,.36,1) both",
-                }}>
+                }}
+                >
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom: 20 }}>
                     <div>
                       <div style={{ fontSize: 10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:6 }}>Weekly Uploads</div>
@@ -855,12 +1052,15 @@ export default function DashboardPage() {
               </div>
 
               {/* ── PODCAST LIBRARY PANEL ── */}
-              <div style={{
+              <div
+                id="library"
+                style={{
                 borderRadius:20, border:`1px solid ${t.border}`,
                 background:t.card, backdropFilter:"blur(20px)",
                 overflow:"hidden",
                 animation:"slideUp .55s .2s cubic-bezier(.22,1,.36,1) both",
-              }}>
+              }}
+              >
                 {/* Panel header */}
                 <div style={{ padding:"20px 24px 0", borderBottom:`1px solid ${t.borderSub}` }}>
                   <div style={{ display:"flex", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", flexDirection:isMobile ? "column" : "row", gap:12, marginBottom:16 }}>

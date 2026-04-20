@@ -43,14 +43,6 @@ GROQ_SUPPORTED_API_MODELS = {
     "whisper-large-v3-turbo",
 }
 
-ENGLISH_LANGUAGE_ALIASES = {
-    "en",
-    "en-us",
-    "en-gb",
-    "english",
-}
-
-
 class TranscriptionError(Exception):
     def __init__(
         self,
@@ -78,17 +70,6 @@ class AudioQualityError(TranscriptionError):
 class APITimeoutError(TranscriptionError):
     def __init__(self, detail: str = "Transcription request timed out.") -> None:
         super().__init__(detail, code="api_timeout", status_code=504)
-
-
-class LanguageNotSupportedError(TranscriptionError):
-    def __init__(self, language: str) -> None:
-        super().__init__(
-            f"Only English transcription is supported in Sprint 3. Detected language: {language}.",
-            code="language_not_supported",
-            status_code=422,
-        )
-
-
 @dataclass(frozen=True)
 class TranscriptionChunk:
     path: Path
@@ -203,8 +184,6 @@ def _transcribe_with_openai(
                 prompt=prompt,
             )
             chunk_language = _normalize_language(payload.get("language"))
-            if chunk_language != "en":
-                raise LanguageNotSupportedError(payload.get("language") or "unknown")
 
             if not payload.get("text", "").strip():
                 raise AudioQualityError("Transcription result was empty. The audio may be silent or too noisy.")
@@ -249,8 +228,6 @@ def _transcribe_with_local_whisper(
         ) from exc
 
     detected_language = _normalize_language(payload.get("language"))
-    if detected_language != "en":
-        raise LanguageNotSupportedError(payload.get("language") or "unknown")
 
     transcript_text = str(payload.get("text", "")).strip()
     if not transcript_text:
@@ -303,7 +280,6 @@ def _run_local_whisper_transcription(local_model: Any, resolved_path: Path) -> d
     try:
         payload = local_model.transcribe(
             str(resolved_path),
-            language="en",
             word_timestamps=True,
             fp16=False,
             verbose=False,
@@ -312,7 +288,6 @@ def _run_local_whisper_transcription(local_model: Any, resolved_path: Path) -> d
     except Exception:
         payload = local_model.transcribe(
             str(resolved_path),
-            language="en",
             word_timestamps=False,
             fp16=False,
             verbose=False,
@@ -568,8 +543,6 @@ def _map_openai_exception(exc: Exception) -> TranscriptionError:
         return WhisperNotAvailableError(
             "Groq authentication failed. Check GROQ_API_KEY."
         )
-    if error_name == "BadRequestError" and "language" in lowered_detail:
-        return LanguageNotSupportedError("unknown")
     if error_name == "APIConnectionError":
         return TranscriptionError(
             "Could not reach the Groq transcription API.",
@@ -585,12 +558,10 @@ def _map_openai_exception(exc: Exception) -> TranscriptionError:
 
 def _normalize_language(language: Any) -> str:
     if language is None:
-        return "en"
+        return "unknown"
 
     normalized = str(language).strip().lower()
-    if normalized in ENGLISH_LANGUAGE_ALIASES:
-        return "en"
-    return normalized
+    return normalized or "unknown"
 
 
 def _build_transcript_words(

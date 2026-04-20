@@ -15,7 +15,6 @@ from app.models.transcription import TranscriptWord  # noqa: E402
 from app.services.transcription_service import (  # noqa: E402
     APITimeoutError,
     AudioQualityError,
-    LanguageNotSupportedError,
     TranscriptionError,
     _build_local_whisper_words,
     _request_transcription,
@@ -110,16 +109,26 @@ class TranscriptionServiceTests(unittest.TestCase):
 
     @patch("app.services.transcription_service._transcribe_with_openai")
     @patch("app.services.transcription_service.inspect_media")
-    def test_transcribe_media_rejects_non_english_audio(
+    def test_transcribe_media_accepts_non_english_audio(
         self,
         inspect_media_mock: MagicMock,
         transcribe_with_openai_mock: MagicMock,
     ) -> None:
         inspect_media_mock.return_value = self.inspection
-        transcribe_with_openai_mock.side_effect = LanguageNotSupportedError("de")
+        transcribe_with_openai_mock.return_value = (
+            "Pershendetje bota",
+            [
+                TranscriptWord(word="Pershendetje", start=0.0, end=0.5, confidence=0.9),
+                TranscriptWord(word="bota", start=0.5, end=0.9, confidence=0.88),
+            ],
+            "sq",
+            "whisper-1",
+        )
 
-        with self.assertRaises(LanguageNotSupportedError):
-            transcribe_media(self.media_path)
+        result = transcribe_media(self.media_path)
+
+        self.assertEqual(result.detected_language, "sq")
+        self.assertEqual(result.transcript_text, "Pershendetje bota")
 
     @patch("app.services.transcription_service._transcribe_with_openai")
     @patch("app.services.transcription_service.inspect_media")

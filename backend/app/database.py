@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import Iterator
 
+from psycopg import connect
 from psycopg_pool import ConnectionPool
 from supabase import Client, create_client
 
@@ -36,19 +37,16 @@ db_pool: ConnectionPool | None = None
 if settings.database_url:
     db_pool = ConnectionPool(
         conninfo=settings.database_url,
-        min_size=1,
+        min_size=0,
         max_size=5,
         kwargs={"autocommit": True, "connect_timeout": 3},
         open=False,
     )
 
 def open_db_pool() -> None:
-    if not db_pool or not db_pool.closed:
-        return
-    try:
-        db_pool.open(wait=False)
-    except Exception:
-        return
+    # Keep startup resilient when the direct database host is unavailable.
+    # Health checks can still verify connectivity with a one-off connection.
+    return None
 
 def close_db_pool() -> None:
     if db_pool and not db_pool.closed:
@@ -58,7 +56,7 @@ def run_db_healthcheck() -> bool:
     if not db_pool:
         return False
     try:
-        with db_pool.connection() as connection:
+        with connect(settings.database_url, autocommit=True, connect_timeout=3) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("select 1;")
                 return cursor.fetchone() == (1,)

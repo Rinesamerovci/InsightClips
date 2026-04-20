@@ -28,19 +28,19 @@ OPENAI_MAX_UPLOAD_BYTES = 24 * 1024 * 1024
 PCM16_MONO_16KHZ_BYTES_PER_SECOND = 32_000
 SAFE_MAX_WAV_CHUNK_SECONDS = int((OPENAI_MAX_UPLOAD_BYTES - 64 * 1024) / PCM16_MONO_16KHZ_BYTES_PER_SECOND)
 WORD_ALIGNMENT_TOLERANCE_SECONDS = 0.1
+GROQ_OPENAI_COMPAT_BASE_URL = "https://api.groq.com/openai/v1"
 
-# The issue uses legacy Whisper size names; map them onto current API models.
-MODEL_ALIASES: dict[str, str] = {
-    "tiny": "gpt-4o-mini-transcribe",
-    "base": "whisper-1",
-    "small": "gpt-4o-mini-transcribe",
-    "medium": "gpt-4o-transcribe",
+# The issue uses legacy Whisper size names; map them onto Groq models.
+GROQ_MODEL_ALIASES: dict[str, str] = {
+    "tiny": "whisper-large-v3-turbo",
+    "base": "whisper-large-v3-turbo",
+    "small": "whisper-large-v3-turbo",
+    "medium": "whisper-large-v3",
 }
 
-SUPPORTED_API_MODELS = {
-    "gpt-4o-mini-transcribe",
-    "gpt-4o-transcribe",
-    "whisper-1",
+GROQ_SUPPORTED_API_MODELS = {
+    "whisper-large-v3",
+    "whisper-large-v3-turbo",
 }
 
 ENGLISH_LANGUAGE_ALIASES = {
@@ -66,7 +66,7 @@ class TranscriptionError(Exception):
 
 
 class WhisperNotAvailableError(TranscriptionError):
-    def __init__(self, detail: str = "OpenAI transcription is not configured or unavailable.") -> None:
+    def __init__(self, detail: str = "Remote transcription is not configured or unavailable.") -> None:
         super().__init__(detail, code="whisper_not_available", status_code=503)
 
 
@@ -101,9 +101,9 @@ def resolve_transcription_model(model: str) -> str:
     if not normalized:
         raise TranscriptionError("A transcription model must be provided.", code="invalid_model", status_code=400)
 
-    resolved = MODEL_ALIASES.get(normalized, normalized)
-    if resolved not in SUPPORTED_API_MODELS:
-        supported = ", ".join(sorted(SUPPORTED_API_MODELS | set(MODEL_ALIASES)))
+    resolved = GROQ_MODEL_ALIASES.get(normalized, normalized)
+    if resolved not in GROQ_SUPPORTED_API_MODELS:
+        supported = ", ".join(sorted(GROQ_SUPPORTED_API_MODELS | set(GROQ_MODEL_ALIASES)))
         raise TranscriptionError(
             f"Unsupported transcription model '{model}'. Supported values: {supported}.",
             code="invalid_model",
@@ -234,7 +234,7 @@ def _transcribe_with_local_whisper(
 ) -> tuple[str, list[TranscriptWord], str, str]:
     if whisper is None:
         raise WhisperNotAvailableError(
-            "Neither OpenAI transcription nor local Whisper is available in this environment."
+            "Neither remote transcription nor local Whisper is available in this environment."
         )
 
     local_model_name = _resolve_local_whisper_model(requested_model)
@@ -269,7 +269,7 @@ def _resolve_local_whisper_model(requested_model: str) -> str:
         return "tiny"
     if normalized in {"base", "small", "medium"}:
         return "tiny"
-    if normalized in SUPPORTED_API_MODELS:
+    if normalized in GROQ_SUPPORTED_API_MODELS:
         return "tiny"
     return "tiny"
 
@@ -367,18 +367,26 @@ def _build_openai_client() -> Any:
     settings = get_settings()
     if OpenAI is None:
         raise WhisperNotAvailableError(
-            "The OpenAI Python client is not installed. Add the 'openai' package to use transcription."
+            "The OpenAI Python client is not installed. Add the 'openai' package to call the Groq transcription API."
         )
 
-    api_key = settings.openai_api_key.strip()
+    api_key = settings.groq_api_key.strip()
     if not api_key:
-        raise WhisperNotAvailableError("OPENAI_API_KEY is not configured.")
+        raise WhisperNotAvailableError("GROQ_API_KEY is not configured.")
 
-    return OpenAI(
-        api_key=api_key,
-        timeout=settings.openai_transcription_timeout_seconds,
-        max_retries=2,
-    )
+    base_url = settings.transcription_api_base_url.strip()
+    if not base_url:
+        base_url = GROQ_OPENAI_COMPAT_BASE_URL
+
+    client_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "timeout": settings.transcription_timeout_seconds,
+        "max_retries": 2,
+    }
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    return OpenAI(**client_kwargs)
 
 
 def _open_transcription_chunks(file_path: Path, duration_seconds: float):
@@ -436,7 +444,7 @@ def _build_chunk_files(
 ) -> list[TranscriptionChunk]:
     if not shutil.which("ffmpeg"):
         raise WhisperNotAvailableError(
-            "ffmpeg is required to chunk media files larger than the OpenAI upload limit."
+            "ffmpeg is required to chunk media files larger than the transcription provider upload limit."
         )
 
     settings = get_settings()
@@ -549,25 +557,27 @@ def _map_openai_exception(exc: Exception) -> TranscriptionError:
     lowered_detail = detail.lower()
 
     if error_name == "APITimeoutError" or isinstance(exc, TimeoutError) or "timeout" in lowered_detail:
-        return APITimeoutError("OpenAI transcription request timed out.")
+        return APITimeoutError("Groq transcription request timed out.")
     if error_name == "RateLimitError" or status_code == 429:
         return TranscriptionError(
-            "OpenAI transcription rate limit or quota was exceeded.",
+            "Groq transcription rate limit or quota was exceeded.",
             code="transcription_api_limit",
             status_code=429,
         )
     if error_name == "AuthenticationError" or status_code in {401, 403}:
-        return WhisperNotAvailableError("OpenAI authentication failed. Check OPENAI_API_KEY.")
+        return WhisperNotAvailableError(
+            "Groq authentication failed. Check GROQ_API_KEY."
+        )
     if error_name == "BadRequestError" and "language" in lowered_detail:
         return LanguageNotSupportedError("unknown")
     if error_name == "APIConnectionError":
         return TranscriptionError(
-            "Could not reach the OpenAI transcription API.",
+            "Could not reach the Groq transcription API.",
             code="transcription_api_connection_error",
             status_code=502,
         )
     return TranscriptionError(
-        f"OpenAI transcription request failed: {detail}",
+        f"Groq transcription request failed: {detail}",
         code="transcription_api_error",
         status_code=status_code if isinstance(status_code, int) else 502,
     )

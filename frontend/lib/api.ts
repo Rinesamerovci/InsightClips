@@ -7,6 +7,7 @@ export const FRONTEND_UPLOAD_PREFLIGHT_MODE =
   process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "live";
 
 type JsonRecord = Record<string, unknown>;
+
 export type UploadState =
   | "idle"
   | "file_selected"
@@ -15,6 +16,8 @@ export type UploadState =
   | "awaiting_payment"
   | "blocked"
   | "error";
+
+export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
 
 export type UploadPriceRequest = {
   filename: string;
@@ -30,10 +33,12 @@ export type UploadPriceResponse = {
   price: number;
   currency: "USD";
   free_trial_available: boolean;
-  status: "free_ready" | "awaiting_payment" | "blocked";
+  status: UploadPreflightStatus;
   message: string;
   detected_format?: string | null;
   validation_flags?: Record<string, boolean>;
+  upload_reference?: string;
+  is_mock?: boolean;
 };
 
 export type PrepareUploadRequest = {
@@ -44,47 +49,35 @@ export type PrepareUploadRequest = {
   mime_type?: string;
   duration_seconds?: number;
   price?: number;
-  status?: "free_ready" | "awaiting_payment" | "blocked";
+  status?: UploadPreflightStatus;
+};
+
+export type PrepareUploadPayload = {
+  title: string;
+  filename: string;
+  filesize_bytes: number;
+  mime_type?: string | null;
+  duration_seconds?: number;
+  price?: number;
+  status?: UploadPreflightStatus;
+  upload_reference: string;
+  mock?: boolean;
 };
 
 export type PrepareUploadResponse = {
   podcast_id: string;
-  status: "draft" | "free_ready" | "awaiting_payment" | "ready_for_processing" | "blocked";
+  status: "draft" | "free_ready" | "awaiting_payment" | "ready_for_processing" | "processing" | "done" | "blocked";
   storage_ready: boolean;
   checkout_required: boolean;
   payment_status: string;
   price: number;
   currency: "USD";
+  is_mock?: boolean;
 };
 
 type UploadRequestOptions = {
   token?: string | null;
   useMock?: boolean;
-};
-
-export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
-
-export type UploadPricePayload = {
-  file: File;
-  filename: string;
-  filesize_bytes: number;
-  mime_type?: string | null;
-  detected_duration_seconds?: number | null;
-  mock?: boolean;
-};
-
-export type UploadPriceResponse = {
-  duration_seconds: number;
-  duration_minutes: number;
-  price: number;
-  currency: "USD";
-  free_trial_available: boolean;
-  status: UploadPreflightStatus;
-  message: string;
-  detected_format?: string | null;
-  validation_flags?: Record<string, boolean>;
-  upload_reference: string;
-  is_mock?: boolean;
 };
 
 export type AnalysisWord = {
@@ -131,55 +124,44 @@ export type AnalysisSummary = {
   top_segments: ScoreSegment[];
 };
 
-export type PrepareUploadPayload = {
+export type Podcast = {
+  id: string;
+  user_id: string;
   title: string;
-  filename: string;
-  filesize_bytes: number;
-  mime_type?: string | null;
-  duration_seconds?: number;
-  price?: number;
-  status?: UploadPreflightStatus;
-  upload_reference: string;
-  mock?: boolean;
+  duration: number;
+  status: string;
+  storage_path?: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
-export type PrepareUploadResponse = {
+export type PodcastsResponse = {
+  podcasts: Podcast[];
+  is_mock: boolean;
+};
+
+export type ClipResult = {
+  id: string;
+  clip_number: number;
+  clip_start_seconds: number;
+  clip_end_seconds: number;
+  duration_seconds: number;
+  virality_score: number;
+  video_url: string;
+  subtitle_text: string;
+  status: "ready" | "processing" | "failed";
+};
+
+export type ClipGenerationResult = {
   podcast_id: string;
-  status: "draft" | "free_ready" | "awaiting_payment" | "ready_for_processing" | "blocked";
-  storage_ready: boolean;
-  checkout_required: boolean;
-  payment_status: string;
-  price: number;
-  currency: "USD";
-  is_mock?: boolean;
+  total_clips_generated: number;
+  clips: ClipResult[];
+  processing_time_seconds: number;
+  download_folder_url: string;
 };
-
-export function getStoredBackendToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.localStorage.getItem(BACKEND_TOKEN_KEY);
-}
-
-export function storeBackendToken(token: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(BACKEND_TOKEN_KEY, token);
-}
-
-export function clearBackendToken(): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(BACKEND_TOKEN_KEY);
-}
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "PUT";
   body?: JsonRecord;
   token?: string | null;
 };
@@ -201,7 +183,7 @@ function buildBackendCandidates(): string[] {
   return [...new Set(candidates)];
 }
 
-async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
+function buildHeaders(options: RequestOptions): Record<string, string> {
   const headers: Record<string, string> = {};
   if (options.body) {
     headers["Content-Type"] = "application/json";
@@ -209,19 +191,21 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
   }
+  return headers;
+}
 
+async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let lastError: Error | null = null;
 
   for (const backendUrl of buildBackendCandidates()) {
     try {
       const response = await fetch(`${backendUrl}${path}`, {
         method: options.method ?? "GET",
-        headers,
+        headers: buildHeaders(options),
         body: options.body ? JSON.stringify(options.body) : undefined,
       });
 
       const payload = (await response.json().catch(() => ({}))) as JsonRecord;
-
       if (!response.ok) {
         const detail = typeof payload.detail === "string" ? payload.detail : "Request failed.";
         throw new Error(detail);
@@ -236,16 +220,29 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
   throw lastError ?? new Error("Request failed.");
 }
 
-export async function postJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
-  return requestJson<T>(path, { method: "POST", body, token });
-}
+async function requestBlob(path: string, token?: string | null): Promise<Blob> {
+  let lastError: Error | null = null;
 
-export async function getJson<T>(path: string, token?: string | null): Promise<T> {
-  return requestJson<T>(path, { method: "GET", token });
-}
+  for (const backendUrl of buildBackendCandidates()) {
+    try {
+      const response = await fetch(`${backendUrl}${path}`, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
-export async function patchJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
-  return requestJson<T>(path, { method: "PATCH", body, token });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as JsonRecord;
+        const detail = typeof payload.detail === "string" ? payload.detail : "Download failed.";
+        throw new Error(detail);
+      }
+
+      return await response.blob();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Download failed.");
+    }
+  }
+
+  throw lastError ?? new Error("Download failed.");
 }
 
 function buildMockUploadPrice(payload: UploadPriceRequest): UploadPriceResponse {
@@ -306,6 +303,50 @@ function buildMockPrepareResponse(payload: PrepareUploadRequest): PrepareUploadR
   };
 }
 
+export function getStoredBackendToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(BACKEND_TOKEN_KEY);
+}
+
+export function storeBackendToken(token: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(BACKEND_TOKEN_KEY, token);
+}
+
+export function clearBackendToken(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(BACKEND_TOKEN_KEY);
+}
+
+export function getBackendBaseUrl(): string {
+  return configuredBackendUrl;
+}
+
+export async function postJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "POST", body, token });
+}
+
+export async function putJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "PUT", body, token });
+}
+
+export async function getJson<T>(path: string, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "GET", token });
+}
+
+export async function patchJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "PATCH", body, token });
+}
+
 export async function calculateUploadPrice(
   payload: UploadPriceRequest,
   options: UploadRequestOptions = {},
@@ -341,4 +382,25 @@ export async function getPodcastAnalysis(
   token?: string | null,
 ): Promise<AnalysisSummary> {
   return getJson<AnalysisSummary>(`/podcasts/${podcastId}/analysis`, token);
+}
+
+export async function generateClips(
+  podcastId: string,
+  token?: string | null,
+): Promise<ClipGenerationResult> {
+  return postJson<ClipGenerationResult>(`/podcasts/${podcastId}/generate-clips`, {}, token);
+}
+
+export async function getClips(
+  podcastId: string,
+  token?: string | null,
+): Promise<ClipGenerationResult> {
+  return getJson<ClipGenerationResult>(`/podcasts/${podcastId}/clips`, token);
+}
+
+export async function downloadClip(
+  clipId: string,
+  token?: string | null,
+): Promise<Blob> {
+  return requestBlob(`/podcasts/clips/${clipId}/download`, token);
 }

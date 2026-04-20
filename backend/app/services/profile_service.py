@@ -4,6 +4,14 @@ from app.models.profile import ProfileRecord, ProfileResponse
 PROFILE_COLUMNS = "id,email,free_trial_used,full_name,profile_picture_url,created_at,updated_at"
 
 
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    return normalized or None
+
+
 def get_profile_by_id(profile_id: str) -> ProfileRecord | None:
     response = (
         service_supabase.table("profiles")

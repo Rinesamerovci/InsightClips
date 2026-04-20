@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Podcast = {
@@ -141,7 +142,7 @@ export function PodcastCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 rounded-[1.5rem] bg-[#f4f7ef] p-4 text-sm text-[#526352]">
+      <div className="mt-auto grid grid-cols-2 gap-4 rounded-[1.5rem] bg-[#f4f7ef] p-4 text-sm text-[#526352]">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[#8aa084]">Duration</p>
           <p className="mt-1 font-medium text-[#203328]">{formatDuration(podcast.duration)}</p>
@@ -215,9 +216,17 @@ export function PodcastCard({
             </span>
           ) : null}
           {hasAnalysis && !analysisLoading ? (
-            <span className="rounded-full bg-[#edf8e8] px-4 py-2 text-xs font-semibold text-[#3f7543]">
-              Analyzed
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-[#edf8e8] px-4 py-2 text-xs font-semibold text-[#3f7543]">
+                Analyzed
+              </span>
+              <Link
+                href={`/clips?podcastId=${podcast.id}`}
+                className="inline-flex items-center justify-center rounded-[1.1rem] border border-[#cde3c4] bg-white px-4 py-3 text-xs font-semibold text-[#2f5f34] transition hover:bg-[#f5faf1]"
+              >
+                View clips
+              </Link>
+            </div>
           ) : null}
         </div>
 

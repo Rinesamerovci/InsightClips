@@ -19,6 +19,7 @@ from app.services.transcription_service import (  # noqa: E402
     TranscriptionError,
     _build_local_whisper_words,
     _request_transcription,
+    resolve_transcription_model,
     transcribe_media,
 )
 
@@ -195,6 +196,11 @@ class TranscriptionServiceTests(unittest.TestCase):
         self.assertEqual(words[0].word, "Hello")
         self.assertGreater(words[-1].end, words[-1].start)
         self.assertAlmostEqual(words[0].start, 0.0, places=3)
+
+    def test_resolve_transcription_model_uses_groq_aliases(self) -> None:
+        resolved = resolve_transcription_model("base")
+
+        self.assertEqual(resolved, "whisper-large-v3-turbo")
 
 
 if __name__ == "__main__":

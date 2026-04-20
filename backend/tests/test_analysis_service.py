@@ -17,6 +17,7 @@ from app.services.analysis_service import (  # noqa: E402
     analyze_and_score,
     build_analysis_result,
     persist_analysis_result,
+    score_segments_need_refresh,
 )
 
 
@@ -184,6 +185,22 @@ class AnalysisServiceTests(unittest.TestCase):
         )
         for previous, current in zip(chronological_segments, chronological_segments[1:]):
             self.assertLessEqual(previous.segment_end_seconds, current.segment_start_seconds)
+        self.assertTrue(all(segment.duration_seconds <= 45.0 for segment in result.all_scored_segments))
+
+    def test_score_segments_need_refresh_flags_oversized_segments(self) -> None:
+        segments = [
+            analysis_service_module.ScoreSegment(
+                segment_start_seconds=0.0,
+                segment_end_seconds=120.0,
+                duration_seconds=120.0,
+                virality_score=90.0,
+                transcript_snippet="oversized segment",
+                sentiment="neutral",
+                keywords=[],
+            )
+        ]
+
+        self.assertTrue(score_segments_need_refresh(segments))
 
     def test_persist_analysis_result_writes_top_segments(self) -> None:
         result = build_analysis_result(

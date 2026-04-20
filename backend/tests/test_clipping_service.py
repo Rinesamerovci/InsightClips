@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import shutil
+import sys
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.models.analysis import ScoreSegment  # noqa: E402
+from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
+import app.services.clipping_service as clipping_service_module  # noqa: E402
+from app.services.clipping_service import (  # noqa: E402
+    ClippingError,
+    build_ffmpeg_clip_command,
+    build_srt_content,
+    generate_clips,
+    _resolve_clip_window,
+)
+
+
+class ClippingServiceTests(unittest.TestCase):
+    def _workspace_case_dir(self, name: str) -> Path:
+        case_dir = BACKEND_ROOT / ".tmp-test-artifacts" / name
+        if case_dir.exists():
+            shutil.rmtree(case_dir, ignore_errors=True)
+        case_dir.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(case_dir, ignore_errors=True))
+        return case_dir
+
+    def setUp(self) -> None:
+        self.transcription = TranscriptionResult(
+            transcript_text="This is a strong hook for a viral clip and the subtitles should stay aligned.",
+            duration_seconds=20.0,
+            detected_language="en",
+            words=[
+                TranscriptWord(word="This", start=2.0, end=2.2, confidence=0.92),
+                TranscriptWord(word="is", start=2.21, end=2.33, confidence=0.92),
+                TranscriptWord(word="a", start=2.34, end=2.42, confidence=0.92),
+                TranscriptWord(word="strong", start=2.43, end=2.72, confidence=0.92),
+                TranscriptWord(word="hook", start=2.73, end=3.01, confidence=0.92),
+                TranscriptWord(word="for", start=3.02, end=3.18, confidence=0.92),
+                TranscriptWord(word="a", start=3.19, end=3.25, confidence=0.92),
+                TranscriptWord(word="viral", start=3.26, end=3.56, confidence=0.92),
+                TranscriptWord(word="clip", start=3.57, end=3.82, confidence=0.92),
+                TranscriptWord(word="and", start=4.4, end=4.58, confidence=0.9),
+                TranscriptWord(word="the", start=4.59, end=4.73, confidence=0.9),
+                TranscriptWord(word="subtitles", start=4.74, end=5.15, confidence=0.9),
+                TranscriptWord(word="should", start=5.16, end=5.46, confidence=0.9),
+                TranscriptWord(word="stay", start=5.47, end=5.71, confidence=0.9),
+                TranscriptWord(word="aligned.", start=5.72, end=6.15, confidence=0.9),
+            ],
+            model_used="whisper-large-v3-turbo",
+            processing_time_seconds=0.6,
+        )
+        self.score_segments = [
+            ScoreSegment(
+                segment_start_seconds=2.0,
+                segment_end_seconds=6.2,
+                duration_seconds=4.2,
+                virality_score=88.5,
+                transcript_snippet="This is a strong hook for a viral clip and the subtitles should stay aligned.",
+                sentiment="positive",
+                keywords=["viral", "hook"],
+            )
+        ]
+
+    def test_build_ffmpeg_clip_command_uses_expected_codecs_and_filter(self) -> None:
+        command = build_ffmpeg_clip_command(
+            Path("input.mp4"),
+            Path("output.mp4"),
+            Path("captions.srt"),
+            start_seconds=12.345,
+            duration_seconds=18.2,
+        )
+
+        self.assertIn("ffmpeg", command[0])
+        self.assertIn("libx264", command)
+        self.assertIn("aac", command)
+        self.assertIn("+faststart", command)
+        self.assertIn("subtitles=", command[command.index("-vf") + 1])
+
+    def test_build_srt_content_offsets_timestamps_relative_to_clip_start(self) -> None:
+        srt_content, subtitle_text = build_srt_content(
+            self.transcription,
+            clip_start_seconds=2.0,
+            clip_end_seconds=6.2,
+        )
+
+        self.assertIn("00:00:00,000 -->", srt_content)
+        self.assertIn("This is a strong", srt_content)
+        self.assertIn("subtitles should stay aligned.", subtitle_text)
+
+    def test_generate_clips_persists_ready_rows(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-persist")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                clips = generate_clips("podcast-123", self.score_segments, self.transcription)
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].status, "ready")
+        insert_payload = clips_table.insert.call_args.args[0]
+        self.assertEqual(insert_payload[0]["podcast_id"], "podcast-123")
+        self.assertEqual(insert_payload[0]["status"], "ready")
+
+    def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
+        stale_segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=1.0,
+            duration_seconds=1.0,
+            virality_score=88.5,
+            transcript_snippet="This is a strong hook for a viral clip",
+            sentiment="positive",
+            keywords=["viral", "hook"],
+        )
+
+        clip_start, clip_end = _resolve_clip_window(stale_segment, self.transcription)
+
+        self.assertGreaterEqual(clip_start, 0.0)
+        self.assertLessEqual(clip_start, 0.2)
+        self.assertGreaterEqual(clip_end, 4.5)
+
+    def test_generate_clips_uses_snippet_matched_window_when_segment_times_are_stale(self) -> None:
+        stale_segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=1.0,
+            duration_seconds=1.0,
+            virality_score=88.5,
+            transcript_snippet="This is a strong hook for a viral clip",
+            sentiment="positive",
+            keywords=["viral", "hook"],
+        )
+        case_dir = self._workspace_case_dir("clipping-snippet-match")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        captured_command: dict[str, float] = {}
+
+        def fake_ffmpeg(*args, **kwargs):
+            captured_command["start"] = kwargs["start_seconds"]
+            captured_command["duration"] = kwargs["duration_seconds"]
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                clips = generate_clips("podcast-123", [stale_segment], self.transcription)
+
+        self.assertEqual(len(clips), 1)
+        self.assertGreaterEqual(captured_command["start"], 0.0)
+        self.assertLessEqual(captured_command["start"], 0.2)
+        self.assertGreater(captured_command["duration"], 4.0)
+
+    def test_generate_clips_raises_when_segment_has_no_overlapping_words(self) -> None:
+        invalid_segment = ScoreSegment(
+            segment_start_seconds=10.0,
+            segment_end_seconds=12.0,
+            duration_seconds=2.0,
+            virality_score=50.0,
+            transcript_snippet="No aligned words here.",
+            sentiment="neutral",
+            keywords=[],
+        )
+
+        case_dir = self._workspace_case_dir("clipping-invalid")
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock())))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=MagicMock())),
+        )
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with self.assertRaises(ClippingError) as exc_info:
+                            generate_clips("podcast-123", [invalid_segment], self.transcription)
+
+        self.assertIn("No clips could be generated", exc_info.exception.detail)
+
+
+if __name__ == "__main__":
+    unittest.main()

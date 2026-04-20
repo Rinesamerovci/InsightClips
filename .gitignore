@@ -27,3 +27,5 @@ venv/
 # Local test and transcription chunk artifacts
 .tmp-tests/
 insightclips-transcription-*/
+backend/.tmp-test-artifacts/
+backend/.generated/

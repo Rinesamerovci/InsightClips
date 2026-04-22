@@ -19,6 +19,8 @@
 
 # production
 /build
+/.test-dist
+/node_modules/.cache
 
 # misc
 .DS_Store
@@ -49,3 +51,5 @@ __pycache__/
 
 # Environment variables
 .env
+
+.generated/

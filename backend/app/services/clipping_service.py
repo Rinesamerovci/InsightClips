@@ -223,7 +223,7 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
     response = (
         service_supabase.table("clips")
         .select(
-            "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status"
+            "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at"
         )
         .eq("podcast_id", podcast_id)
         .order("clip_number")
@@ -244,6 +244,9 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
             video_url=str(row.get("storage_url") or _build_backend_download_path(str(row["id"]))),
             subtitle_text=str(row.get("subtitle_text") or ""),
             status=str(row.get("status") or "ready"),
+            published=bool(row.get("published") or False),
+            download_url=str(row.get("download_url") or "").strip() or None,
+            published_at=row.get("published_at"),
         )
         for row in rows
     ]

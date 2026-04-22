@@ -7,10 +7,10 @@ import {
   ArrowLeft,
   Clapperboard,
   Download,
-  Film,
   Loader2,
   Moon,
   PlayCircle,
+  Search,
   Sparkles,
   SunMedium,
   Wand2,
@@ -20,15 +20,23 @@ import { useAuth } from "@/context/AuthContext";
 import {
   downloadClip,
   generateClips,
+  getBackendBaseUrl,
   getClips,
   getJson,
+  getRecommendations,
   publishClips,
   revokeClipDownload,
-  type ClipGenerationResult,
+  searchClips,
+  type ClipRecommendation,
   type ClipResult,
+  type ClipSearchResult,
   type Podcast,
   type PodcastsResponse,
 } from "@/lib/api";
+import {
+  buildDiscoveryItem,
+  type ClipStatusFilter,
+} from "@/lib/clip-insights";
 
 const T = {
   dark: {
@@ -44,10 +52,10 @@ const T = {
     accent: "#5a9e3a",
     accentLt: "#7ab55c",
     accentGlow: "rgba(90,158,58,.22)",
+    chip: "rgba(90,158,58,.12)",
     errorBg: "rgba(82,24,24,.72)",
     errorBd: "rgba(170,84,84,.34)",
     errorText: "#efaaaa",
-    chip: "rgba(90,158,58,.12)",
   },
   light: {
     bg: "#eef6e9",
@@ -62,12 +70,21 @@ const T = {
     accent: "#4a8e2a",
     accentLt: "#6aa845",
     accentGlow: "rgba(90,158,58,.18)",
+    chip: "rgba(90,158,58,.08)",
     errorBg: "rgba(255,238,238,.88)",
     errorBd: "rgba(215,165,165,.5)",
     errorText: "#9d3a3a",
-    chip: "rgba(90,158,58,.08)",
   },
 };
+
+const FILTERS: Array<{ value: ClipStatusFilter; label: string }> = [
+  { value: "all", label: "All clips" },
+  { value: "published", label: "Published" },
+  { value: "unpublished", label: "Private" },
+  { value: "ready", label: "Ready" },
+  { value: "processing", label: "Processing" },
+  { value: "failed", label: "Failed" },
+];
 
 function formatTime(seconds: number): string {
   const totalSeconds = Math.max(0, Math.round(seconds));
@@ -76,8 +93,29 @@ function formatTime(seconds: number): string {
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
 }
 
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return "Not published yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Not published yet";
+  }
+
+  return date.toLocaleString();
+}
+
 function isPreviewable(url: string): boolean {
   return /^https?:\/\//i.test(url);
+}
+
+function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSearchResult[] {
+  if (!podcast) {
+    return [];
+  }
+
+  return clips.map((clip) => buildDiscoveryItem(clip, podcast));
 }
 
 export default function ClipsPage() {
@@ -85,37 +123,51 @@ export default function ClipsPage() {
   const searchParams = useSearchParams();
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
 
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
-  const [selectedPodcastId, setSelectedPodcastId] = useState<string>("");
-  const [clipsResult, setClipsResult] = useState<ClipGenerationResult | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [dark, setDark] = useState(true);
+  const [viewportWidth, setViewportWidth] = useState(1280);
   const [loading, setLoading] = useState(true);
   const [loadingClips, setLoadingClips] = useState(false);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [downloadingClipId, setDownloadingClipId] = useState<string>("");
+  const [error, setError] = useState("");
+  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
+  const [selectedPodcastId, setSelectedPodcastId] = useState("");
+  const [clips, setClips] = useState<ClipResult[]>([]);
+  const [searchResults, setSearchResults] = useState<ClipSearchResult[]>([]);
+  const [recommendations, setRecommendations] = useState<ClipRecommendation[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<ClipStatusFilter>("all");
+  const [searchEstimated, setSearchEstimated] = useState(false);
+  const [recommendationsEstimated, setRecommendationsEstimated] = useState(false);
+  const [downloadingClipId, setDownloadingClipId] = useState("");
   const [publishingClipIds, setPublishingClipIds] = useState<string[]>([]);
   const [revokingClipIds, setRevokingClipIds] = useState<string[]>([]);
-  const [error, setError] = useState("");
-  const [dark, setDark] = useState(true);
-  const [mounted, setMounted] = useState(false);
-  const [viewportWidth, setViewportWidth] = useState(1280);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
-  const selectedPodcast = podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
-  const clipCount = clipsResult?.total_clips_generated ?? 0;
-  const averageScore = useMemo(() => {
-    if (!clipsResult?.clips.length) {
-      return 0;
-    }
-    const total = clipsResult.clips.reduce((sum, clip) => sum + clip.virality_score, 0);
-    return total / clipsResult.clips.length;
-  }, [clipsResult]);
+  const selectedPodcast =
+    podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
+  const activeSearch = searchQuery.trim().length > 0 || filter !== "all";
+
+  const visibleClips = useMemo(
+    () => (activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast)),
+    [activeSearch, clips, searchResults, selectedPodcast],
+  );
+
+  const publishedCount = clips.filter((clip) => clip.published).length;
+  const averageScore =
+    clips.length > 0
+      ? clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length
+      : 0;
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("insightclips-theme");
     if (savedTheme) {
       setDark(savedTheme === "dark");
     }
+
     const handleResize = () => setViewportWidth(window.innerWidth);
     handleResize();
     window.addEventListener("resize", handleResize);
@@ -127,6 +179,7 @@ export default function ClipsPage() {
     if (!mounted) {
       return;
     }
+
     window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
   }, [dark, mounted]);
 
@@ -135,7 +188,7 @@ export default function ClipsPage() {
       return;
     }
 
-    const load = async () => {
+    const loadPodcasts = async () => {
       setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
@@ -151,21 +204,24 @@ export default function ClipsPage() {
         const preferredPodcast =
           podcastsResponse.podcasts.find((podcast) => podcast.id === queryPodcastId) ??
           podcastsResponse.podcasts.find((podcast) =>
-            ["done", "ready_for_processing", "processing"].includes(podcast.status)
+            ["done", "ready_for_processing", "processing"].includes(podcast.status),
           ) ??
           podcastsResponse.podcasts[0];
 
-        if (preferredPodcast) {
-          setSelectedPodcastId(preferredPodcast.id);
-        }
+        setSelectedPodcastId(preferredPodcast?.id ?? "");
+        setError("");
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unable to load your podcasts.");
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load your podcasts.",
+        );
       } finally {
         setLoading(false);
       }
     };
 
-    void load();
+    void loadPodcasts();
   }, [authLoading, backendToken, router, searchParams, syncBackendSession]);
 
   useEffect(() => {
@@ -173,8 +229,9 @@ export default function ClipsPage() {
       return;
     }
 
-    const loadClips = async () => {
+    const loadClipData = async () => {
       setLoadingClips(true);
+      setLoadingRecommendations(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -182,23 +239,135 @@ export default function ClipsPage() {
           return;
         }
 
-        const result = await getClips(selectedPodcastId, token);
-        setClipsResult(result);
+        const [clipsResult, recommendationsResult] = await Promise.allSettled([
+          getClips(selectedPodcastId, token),
+          getRecommendations(selectedPodcastId, token),
+        ]);
+
+        if (clipsResult.status === "fulfilled") {
+          setClips(clipsResult.value.clips);
+        } else if (
+          clipsResult.reason instanceof Error &&
+          clipsResult.reason.message.includes("No clips have been generated")
+        ) {
+          setClips([]);
+        } else {
+          throw clipsResult.reason;
+        }
+
+        if (recommendationsResult.status === "fulfilled") {
+          setRecommendations(recommendationsResult.value.recommendations);
+          setRecommendationsEstimated(
+            Boolean(recommendationsResult.value.estimated),
+          );
+        } else {
+          setRecommendations([]);
+          setRecommendationsEstimated(false);
+        }
+
         setError("");
       } catch (loadError) {
-        setClipsResult(null);
-        if (loadError instanceof Error && loadError.message.includes("No clips have been generated")) {
-          setError("");
-          return;
-        }
-        setError(loadError instanceof Error ? loadError.message : "Unable to load clips.");
+        setClips([]);
+        setRecommendations([]);
+        setError(
+          loadError instanceof Error ? loadError.message : "Unable to load clips.",
+        );
       } finally {
         setLoadingClips(false);
+        setLoadingRecommendations(false);
       }
     };
 
-    void loadClips();
+    void loadClipData();
   }, [authLoading, backendToken, router, selectedPodcastId, syncBackendSession]);
+
+  useEffect(() => {
+    if (!selectedPodcastId || !selectedPodcast) {
+      return;
+    }
+
+    if (!activeSearch) {
+      setSearchResults(toDiscoveryClips(clips, selectedPodcast));
+      setSearchEstimated(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const runSearch = async () => {
+        setSearching(true);
+        try {
+          const token = backendToken ?? (await syncBackendSession());
+          if (!token || controller.signal.aborted) {
+            return;
+          }
+
+          const result = await searchClips(
+            {
+              query: searchQuery,
+              podcastId: selectedPodcastId,
+              status: filter,
+            },
+            token,
+          );
+
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          setSearchResults(result.clips);
+          setSearchEstimated(Boolean(result.estimated));
+        } catch (searchError) {
+          if (!controller.signal.aborted) {
+            setError(
+              searchError instanceof Error
+                ? searchError.message
+                : "Unable to search clips.",
+            );
+          }
+        } finally {
+          if (!controller.signal.aborted) {
+            setSearching(false);
+          }
+        }
+      };
+
+      void runSearch();
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [
+    activeSearch,
+    backendToken,
+    clips,
+    filter,
+    searchQuery,
+    selectedPodcast,
+    selectedPodcastId,
+    syncBackendSession,
+  ]);
+
+  const syncClipEverywhere = (
+    clipId: string,
+    updater: (clip: ClipResult | ClipSearchResult | ClipRecommendation) => {
+      published?: boolean;
+      download_url?: string | null;
+      published_at?: string | null;
+    },
+  ) => {
+    setClips((current) =>
+      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
+    );
+    setSearchResults((current) =>
+      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
+    );
+    setRecommendations((current) =>
+      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
+    );
+  };
 
   const handleGenerateClips = async () => {
     if (!selectedPodcastId) {
@@ -214,16 +383,31 @@ export default function ClipsPage() {
         return;
       }
 
-      const result = await generateClips(selectedPodcastId, token);
-      setClipsResult(result);
+      const [generated, recommended] = await Promise.all([
+        generateClips(selectedPodcastId, token),
+        getRecommendations(selectedPodcastId, token).catch(() => null),
+      ]);
+
+      setClips(generated.clips);
+      setSearchResults(
+        selectedPodcast ? toDiscoveryClips(generated.clips, selectedPodcast) : [],
+      );
+      if (recommended) {
+        setRecommendations(recommended.recommendations);
+        setRecommendationsEstimated(Boolean(recommended.estimated));
+      }
     } catch (generationError) {
-      setError(generationError instanceof Error ? generationError.message : "Clip generation failed.");
+      setError(
+        generationError instanceof Error
+          ? generationError.message
+          : "Clip generation failed.",
+      );
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleDownload = async (clip: ClipResult) => {
+  const handleDownload = async (clip: ClipSearchResult | ClipResult) => {
     setDownloadingClipId(clip.id);
     try {
       const token = backendToken ?? (await syncBackendSession());
@@ -232,23 +416,52 @@ export default function ClipsPage() {
         return;
       }
 
-      const blob = await downloadClip(clip.id, token);
-      const url = URL.createObjectURL(blob);
+      const backendBaseUrl = getBackendBaseUrl();
+      const downloadUrl = new URL(
+        `/podcasts/clips/${clip.id}/download`,
+        backendBaseUrl.endsWith("/") ? backendBaseUrl : `${backendBaseUrl}/`,
+      );
+      downloadUrl.searchParams.set("access_token", token);
+
       const anchor = document.createElement("a");
-      anchor.href = url;
+      anchor.href = downloadUrl.toString();
       anchor.download = `clip-${clip.clip_number}.mp4`;
+      anchor.rel = "noreferrer";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(url);
     } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : "Clip download failed.");
+      try {
+        const token = backendToken ?? (await syncBackendSession());
+        if (!token) {
+          router.replace("/login");
+          return;
+        }
+
+        const blob = await downloadClip(clip.id, token);
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `clip-${clip.clip_number}.mp4`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      } catch (fallbackError) {
+        setError(
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : downloadError instanceof Error
+              ? downloadError.message
+              : "Clip download failed.",
+        );
+      }
     } finally {
       setDownloadingClipId("");
     }
   };
 
-  const handlePublish = async (clip: ClipResult) => {
+  const handlePublish = async (clip: ClipSearchResult | ClipResult) => {
     if (!selectedPodcastId) {
       return;
     }
@@ -268,32 +481,21 @@ export default function ClipsPage() {
         throw new Error("Publish result did not include the requested clip.");
       }
 
-      setClipsResult((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          clips: current.clips.map((item) =>
-            item.id === clip.id
-              ? {
-                  ...item,
-                  published: publication.published,
-                  download_url: publication.download_url ?? null,
-                  published_at: publication.published_at ?? null,
-                }
-              : item
-          ),
-        };
-      });
+      syncClipEverywhere(clip.id, () => ({
+        published: publication.published,
+        download_url: publication.download_url ?? null,
+        published_at: publication.published_at ?? null,
+      }));
     } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : "Clip publish failed.");
+      setError(
+        publishError instanceof Error ? publishError.message : "Clip publish failed.",
+      );
     } finally {
       setPublishingClipIds((current) => current.filter((item) => item !== clip.id));
     }
   };
 
-  const handleRevoke = async (clip: ClipResult) => {
+  const handleRevoke = async (clip: ClipSearchResult | ClipResult) => {
     setRevokingClipIds((current) => [...current, clip.id]);
     setError("");
     try {
@@ -304,26 +506,15 @@ export default function ClipsPage() {
       }
 
       const result = await revokeClipDownload(clip.id, token);
-      setClipsResult((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          clips: current.clips.map((item) =>
-            item.id === clip.id
-              ? {
-                  ...item,
-                  published: result.published,
-                  download_url: null,
-                  published_at: null,
-                }
-              : item
-          ),
-        };
-      });
+      syncClipEverywhere(clip.id, () => ({
+        published: result.published,
+        download_url: null,
+        published_at: null,
+      }));
     } catch (revokeError) {
-      setError(revokeError instanceof Error ? revokeError.message : "Clip revoke failed.");
+      setError(
+        revokeError instanceof Error ? revokeError.message : "Clip revoke failed.",
+      );
     } finally {
       setRevokingClipIds((current) => current.filter((item) => item !== clip.id));
     }
@@ -351,27 +542,13 @@ export default function ClipsPage() {
         html { scroll-behavior: smooth; }
         @keyframes floatOrb { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(26px,-18px) scale(1.04)} }
         @keyframes slideUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes shimmer { 0%{background-position:220% center} 100%{background-position:-220% center} }
         .orbA { animation: floatOrb 16s ease-in-out infinite; }
         .orbB { animation: floatOrb 22s -5s ease-in-out infinite; }
-        .shimmer {
-          background: linear-gradient(90deg, ${t.text} 0%, ${t.accent} 35%, ${t.accentLt} 55%, ${t.text} 100%);
-          background-size: 220% auto;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          animation: shimmer 4s linear infinite;
-        }
+        .lift-card { transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s, border-color .25s; }
+        .lift-card:hover { transform: translateY(-3px); box-shadow: 0 18px 40px ${t.accentGlow}; border-color: ${t.border}; }
       `}</style>
 
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      >
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>
         <div
           className="orbA"
           style={{
@@ -400,8 +577,25 @@ export default function ClipsPage() {
         />
       </div>
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 1320, margin: "0 auto", padding: "30px 22px 64px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+      <div
+        style={{
+          position: "relative",
+          zIndex: 1,
+          maxWidth: 1360,
+          margin: "0 auto",
+          padding: "30px 22px 64px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 20,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Link
               href="/dashboard"
@@ -419,6 +613,22 @@ export default function ClipsPage() {
             >
               <ArrowLeft size={16} />
               Dashboard
+            </Link>
+            <Link
+              href="/analytics"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "none",
+                color: t.textSub,
+                border: `1px solid ${t.border}`,
+                borderRadius: 999,
+                padding: "10px 16px",
+                background: t.card,
+              }}
+            >
+              Analytics
             </Link>
             <button
               type="button"
@@ -472,7 +682,13 @@ export default function ClipsPage() {
             animation: "slideUp .5s cubic-bezier(.22,1,.36,1) both",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.4fr) 320px", gap: 22, alignItems: "stretch" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.4fr) 320px",
+              gap: 22,
+            }}
+          >
             <div>
               <div
                 style={{
@@ -490,7 +706,7 @@ export default function ClipsPage() {
                 }}
               >
                 <Clapperboard size={14} />
-                Final Output Stage
+                Clip Discovery
               </div>
               <h1
                 style={{
@@ -502,14 +718,15 @@ export default function ClipsPage() {
                   letterSpacing: "-.04em",
                 }}
               >
-                Browse, preview, and download your <span className="shimmer">best moments.</span>
+                Search, publish, and ship your strongest moments.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
-                Pick a processed podcast, regenerate cleaner clips when needed, and manage subtitle-burned exports from one polished workspace.
+                This board brings clip discovery, publish controls, and recommendation signals into one workflow for Sprint 4.
               </p>
             </div>
 
             <div
+              className="lift-card"
               style={{
                 borderRadius: 24,
                 border: `1px solid ${t.borderSub}`,
@@ -520,15 +737,16 @@ export default function ClipsPage() {
               }}
             >
               {[
-                { label: "Podcasts", value: podcasts.length, sub: "ready for clip review" },
-                { label: "Clips Ready", value: clipCount, sub: "available now" },
-                { label: "Avg Score", value: clipCount ? averageScore.toFixed(1) : "0.0", sub: "virality average" },
+                { label: "Podcasts", value: podcasts.length, sub: "available to review" },
+                { label: "Generated", value: clips.length, sub: "clips in selected show" },
+                { label: "Published", value: publishedCount, sub: "live for download" },
+                { label: "Avg Score", value: clips.length ? averageScore.toFixed(1) : "0.0", sub: "virality average" },
               ].map((item) => (
                 <div key={item.label}>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 4 }}>
                     {item.label}
                   </div>
-                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 32, fontStyle: "italic", lineHeight: 1, marginBottom: 4 }}>
+                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, fontStyle: "italic", lineHeight: 1, marginBottom: 4 }}>
                     {item.value}
                   </div>
                   <div style={{ fontSize: 12, color: t.textSub }}>{item.sub}</div>
@@ -563,333 +781,298 @@ export default function ClipsPage() {
         >
           <aside
             style={{
-              borderRadius: 24,
-              background: t.card,
-              border: `1px solid ${t.border}`,
-              padding: 18,
-              minHeight: 520,
-              animation: "slideUp .55s .08s cubic-bezier(.22,1,.36,1) both",
+              display: "grid",
+              gap: 18,
+              alignSelf: "start",
             }}
           >
-            <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 14 }}>
-              Podcast Library
-            </div>
+            <section
+              style={{
+                borderRadius: 24,
+                background: t.card,
+                border: `1px solid ${t.border}`,
+                padding: 18,
+                animation: "slideUp .55s .08s cubic-bezier(.22,1,.36,1) both",
+              }}
+            >
+              <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 14 }}>
+                Podcast Library
+              </div>
 
-            {loading || authLoading ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: "48px 0", color: t.textSub }}>
-                <Loader2 size={22} className="animate-spin" />
+              {loading || authLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: "48px 0", color: t.textSub }}>
+                  <Loader2 size={22} className="animate-spin" />
+                </div>
+              ) : podcasts.length === 0 ? (
+                <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                  No podcasts yet. Upload one first, then come back here to manage clips.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {podcasts.map((podcast) => {
+                    const isSelected = podcast.id === selectedPodcastId;
+                    return (
+                      <button
+                        key={podcast.id}
+                        type="button"
+                        onClick={() => setSelectedPodcastId(podcast.id)}
+                        style={{
+                          textAlign: "left",
+                          borderRadius: 18,
+                          border: `1px solid ${isSelected ? t.accent : t.borderSub}`,
+                          background: isSelected ? t.chip : t.cardAlt,
+                          padding: "14px 14px 16px",
+                          cursor: "pointer",
+                          color: t.text,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, marginBottom: 6, lineHeight: 1.4 }}>
+                          {podcast.title}
+                        </div>
+                        <div style={{ fontSize: 13, color: t.textSub }}>
+                          {formatTime(podcast.duration)} / {podcast.status.replaceAll("_", " ")}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section
+              className="lift-card"
+              style={{
+                borderRadius: 24,
+                background: t.card,
+                border: `1px solid ${t.border}`,
+                padding: 18,
+              }}
+            >
+              <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
+                Recommendations
               </div>
-            ) : podcasts.length === 0 ? (
-              <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                No podcasts yet. Upload one first, then come back here to generate your clips.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {podcasts.map((podcast) => {
-                  const isSelected = podcast.id === selectedPodcastId;
-                  return (
-                    <button
-                      key={podcast.id}
-                      type="button"
-                      onClick={() => setSelectedPodcastId(podcast.id)}
+              {loadingRecommendations ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub }}>
+                  <Loader2 size={18} className="animate-spin" />
+                  Loading recommendations...
+                </div>
+              ) : recommendations.length === 0 ? (
+                <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                  Recommendations will appear here after clips are generated for the selected podcast.
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {recommendationsEstimated ? (
+                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
+                      Showing estimated recommendations based on current clip scores while the dedicated endpoint is unavailable.
+                    </div>
+                  ) : null}
+                  {recommendations.map((clip) => (
+                    <article
+                      key={clip.id}
                       style={{
-                        textAlign: "left",
                         borderRadius: 18,
-                        border: `1px solid ${isSelected ? t.accent : t.borderSub}`,
-                        background: isSelected ? t.chip : t.cardAlt,
-                        padding: "14px 14px 16px",
-                        cursor: "pointer",
-                        color: t.text,
+                        border: `1px solid ${t.borderSub}`,
+                        background: t.cardAlt,
+                        padding: 14,
                       }}
                     >
-                      <div style={{ fontWeight: 700, marginBottom: 6, lineHeight: 1.4 }}>{podcast.title}</div>
-                      <div style={{ fontSize: 13, color: t.textSub }}>
-                        {formatTime(podcast.duration)} • {podcast.status.replaceAll("_", " ")}
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                            Clip {clip.clip_number}
+                          </div>
+                          <div style={{ marginTop: 4, fontWeight: 700 }}>{clip.recommendation_reason ?? "Recommended next"}</div>
+                        </div>
+                        <div style={{ borderRadius: 999, background: t.chip, color: t.accent, fontWeight: 700, padding: "7px 10px", height: "fit-content" }}>
+                          {clip.virality_score.toFixed(1)}
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                      <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
+                        {clip.subtitle_text}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
           </aside>
 
           <main
             style={{
-              borderRadius: 24,
-              background: t.card,
-              border: `1px solid ${t.border}`,
-              padding: 20,
+              display: "grid",
+              gap: 18,
               animation: "slideUp .55s .14s cubic-bezier(.22,1,.36,1) both",
             }}
           >
-            {selectedPodcast ? (
-              <>
+            <section
+              style={{
+                borderRadius: 24,
+                background: t.card,
+                border: `1px solid ${t.border}`,
+                padding: 20,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  marginBottom: 18,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                    Selected Podcast
+                  </div>
+                  <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.08, margin: 0 }}>
+                    {selectedPodcast?.title ?? "Choose a podcast"}
+                  </h2>
+                  <p style={{ marginTop: 8, color: t.textSub }}>
+                    {selectedPodcast
+                      ? `${formatTime(selectedPodcast.duration)} total length / ${clips.length} generated clip${clips.length === 1 ? "" : "s"}`
+                      : "Select a podcast from the left to begin."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateClips()}
+                  disabled={!selectedPodcastId || generating || loadingClips}
+                  style={{
+                    border: "none",
+                    borderRadius: 18,
+                    background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                    color: "#fff",
+                    padding: "14px 18px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontWeight: 700,
+                    cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
+                    opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
+                    boxShadow: `0 14px 30px ${t.accentGlow}`,
+                  }}
+                >
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                  {generating ? "Generating clips..." : "Generate clips"}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.2fr) auto",
+                  gap: 14,
+                }}
+              >
                 <div
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
-                    gap: 16,
-                    flexWrap: "wrap",
                     alignItems: "center",
-                    marginBottom: 20,
+                    gap: 10,
+                    borderRadius: 18,
+                    background: t.cardAlt,
+                    border: `1px solid ${t.borderSub}`,
+                    padding: "12px 14px",
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                      Selected Podcast
-                    </div>
-                    <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.08, margin: 0 }}>
-                      {selectedPodcast.title}
-                    </h2>
-                    <p style={{ marginTop: 8, color: t.textSub }}>
-                      {formatTime(selectedPodcast.duration)} total length
-                      {clipsResult?.processing_time_seconds ? ` • generated in ${clipsResult.processing_time_seconds.toFixed(1)}s` : ""}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerateClips()}
-                    disabled={generating || loadingClips}
+                  <Search size={16} color={t.textSub} />
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search clips by transcript, clip number, or podcast"
                     style={{
+                      flex: 1,
                       border: "none",
-                      borderRadius: 18,
-                      background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                      color: "#fff",
-                      padding: "14px 18px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 10,
-                      fontWeight: 700,
-                      cursor: generating || loadingClips ? "default" : "pointer",
-                      opacity: generating || loadingClips ? 0.72 : 1,
-                      boxShadow: `0 14px 30px ${t.accentGlow}`,
+                      outline: "none",
+                      background: "transparent",
+                      color: t.text,
+                      fontSize: 14,
                     }}
-                  >
-                    {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                    {generating ? "Generating clips..." : "Generate clips"}
-                  </button>
+                  />
                 </div>
 
-                {loadingClips ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub, padding: "32px 0" }}>
-                    <Loader2 size={20} className="animate-spin" />
-                    Loading generated clips...
-                  </div>
-                ) : clipsResult?.clips.length ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 16 }}>
-                    {clipsResult.clips.map((clip) => (
-                      <article
-                        key={clip.id}
-                        style={{
-                          borderRadius: 22,
-                          overflow: "hidden",
-                          border: `1px solid ${t.borderSub}`,
-                          background: t.cardAlt,
-                        }}
-                      >
-                        <div
-                          style={{
-                            minHeight: 180,
-                            background: dark
-                              ? "linear-gradient(135deg, #152412, #385530)"
-                              : "linear-gradient(135deg, #dfead7, #c9ddbd)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {isPreviewable(clip.video_url) ? (
-                            <video
-                              controls
-                              preload="metadata"
-                              src={clip.video_url}
-                              style={{ width: "100%", height: 220, objectFit: "cover" }}
-                            />
-                          ) : (
-                            <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
-                              <PlayCircle size={34} />
-                              <div style={{ marginTop: 10, fontWeight: 600 }}>Protected preview</div>
-                              <div style={{ marginTop: 6, fontSize: 13, opacity: 0.72 }}>
-                                Download to open this clip locally.
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {FILTERS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setFilter(option.value)}
+                      style={{
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "10px 14px",
+                        background:
+                          filter === option.value
+                            ? `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`
+                            : t.cardAlt,
+                        color: filter === option.value ? "#fff" : t.textSub,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                        <div style={{ padding: 16 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-                            <div>
-                              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".18em", color: t.textFaint }}>
-                                Clip {clip.clip_number}
-                              </div>
-                              <div style={{ fontSize: 13, color: t.textSub, marginTop: 6 }}>
-                                {formatTime(clip.clip_start_seconds)} - {formatTime(clip.clip_end_seconds)}
-                              </div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                                <span
-                                  style={{
-                                    borderRadius: 999,
-                                    background: clip.published ? t.chip : "transparent",
-                                    border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
-                                    color: clip.published ? t.accent : t.textSub,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    letterSpacing: ".1em",
-                                    textTransform: "uppercase",
-                                    padding: "6px 10px",
-                                  }}
-                                >
-                                  {clip.published ? "Published" : "Unpublished"}
-                                </span>
-                              </div>
-                            </div>
-                            <div
-                              style={{
-                                borderRadius: 999,
-                                background: t.chip,
-                                color: t.accent,
-                                fontWeight: 700,
-                                padding: "8px 10px",
-                                height: "fit-content",
-                              }}
-                            >
-                              {clip.virality_score.toFixed(1)}
-                            </div>
-                          </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 14, color: t.textSub, fontSize: 13 }}>
+                <span>
+                  {searching
+                    ? "Searching clips..."
+                    : `${visibleClips.length} clip${visibleClips.length === 1 ? "" : "s"} in view`}
+                </span>
+                <span>
+                  {searchEstimated
+                    ? "Search is using fallback matching from current clip data."
+                    : activeSearch
+                      ? "Search is powered by the clip discovery API."
+                      : "Browsing the full generated clip list."}
+                </span>
+              </div>
+            </section>
 
-                          <p style={{ margin: 0, color: t.text, lineHeight: 1.75, minHeight: 98 }}>
-                            {clip.subtitle_text}
-                          </p>
-
-                          <div
-                            style={{
-                              marginTop: 14,
-                              borderRadius: 16,
-                              border: `1px solid ${t.borderSub}`,
-                              background: t.chip,
-                              padding: "12px 14px",
-                            }}
-                          >
-                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                              Publishing
-                            </div>
-                            <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                              {clip.published
-                                ? `This clip is published and has a download route${clip.published_at ? ` since ${new Date(clip.published_at).toLocaleString()}` : ""}.`
-                                : "This clip is still private and not yet published for download."}
-                            </div>
-                          </div>
-
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 16 }}>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: t.textSub, fontSize: 13 }}>
-                              <Film size={14} />
-                              {formatTime(clip.duration_seconds)}
-                            </div>
-
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                              {clip.published ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleRevoke(clip)}
-                                  disabled={revokingClipIds.includes(clip.id)}
-                                  style={{
-                                    border: `1px solid ${t.border}`,
-                                    borderRadius: 14,
-                                    background: "transparent",
-                                    color: t.text,
-                                    padding: "10px 14px",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    fontWeight: 700,
-                                    cursor: revokingClipIds.includes(clip.id) ? "default" : "pointer",
-                                    opacity: revokingClipIds.includes(clip.id) ? 0.75 : 1,
-                                  }}
-                                >
-                                  {revokingClipIds.includes(clip.id) ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  ) : (
-                                    <Wand2 size={14} />
-                                  )}
-                                  Revoke
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => void handlePublish(clip)}
-                                  disabled={publishingClipIds.includes(clip.id)}
-                                  style={{
-                                    border: "none",
-                                    borderRadius: 14,
-                                    background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                                    color: "#fff",
-                                    padding: "10px 14px",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    fontWeight: 700,
-                                    cursor: publishingClipIds.includes(clip.id) ? "default" : "pointer",
-                                    opacity: publishingClipIds.includes(clip.id) ? 0.75 : 1,
-                                  }}
-                                >
-                                  {publishingClipIds.includes(clip.id) ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  ) : (
-                                    <Sparkles size={14} />
-                                  )}
-                                  Publish
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => void handleDownload(clip)}
-                                disabled={downloadingClipId === clip.id || !clip.published}
-                                style={{
-                                  border: "none",
-                                  borderRadius: 14,
-                                  background: dark ? "#20381a" : "#183311",
-                                  color: "#fff",
-                                  padding: "10px 14px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  fontWeight: 700,
-                                  cursor: downloadingClipId === clip.id || !clip.published ? "default" : "pointer",
-                                  opacity: downloadingClipId === clip.id || !clip.published ? 0.6 : 1,
-                                }}
-                              >
-                                {downloadingClipId === clip.id ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <Download size={14} />
-                                )}
-                                Download
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      borderRadius: 22,
-                      border: `1px dashed ${t.border}`,
-                      padding: "44px 26px",
-                      textAlign: "center",
-                      color: t.textSub,
-                    }}
-                  >
-                    <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
-                    <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text }}>
-                      No generated clips yet
-                    </h3>
-                    <p style={{ marginTop: 10, lineHeight: 1.8 }}>
-                      Generate clips for this podcast to create subtitle-burned MP4 exports ready for preview and download.
-                    </p>
+            <section
+              style={{
+                borderRadius: 24,
+                background: t.card,
+                border: `1px solid ${t.border}`,
+                padding: 20,
+              }}
+            >
+              {loadingClips ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub, padding: "32px 0" }}>
+                  <Loader2 size={20} className="animate-spin" />
+                  Loading generated clips...
+                </div>
+              ) : !selectedPodcast ? (
+                <div style={{ color: t.textSub, lineHeight: 1.8 }}>
+                  Select a podcast from the left to view its clip dashboard.
+                </div>
+              ) : visibleClips.length === 0 ? (
+                <div
+                  style={{
+                    borderRadius: 22,
+                    border: `1px dashed ${t.border}`,
+                    padding: "48px 26px",
+                    textAlign: "center",
+                    color: t.textSub,
+                  }}
+                >
+                  <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
+                  <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text }}>
+                    {clips.length === 0 ? "No generated clips yet" : "No clips match this search"}
+                  </h3>
+                  <p style={{ marginTop: 10, lineHeight: 1.8 }}>
+                    {clips.length === 0
+                      ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions."
+                      : "Try another search or filter to surface different clip candidates."}
+                  </p>
+                  {clips.length === 0 ? (
                     <button
                       type="button"
                       onClick={() => void handleGenerateClips()}
@@ -912,14 +1095,214 @@ export default function ClipsPage() {
                       {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
                       Generate now
                     </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div style={{ color: t.textSub, lineHeight: 1.8 }}>
-                Select a podcast from the left to view or generate clips.
-              </div>
-            )}
+                  ) : null}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+                  {visibleClips.map((clip) => {
+                    const isPublishing = publishingClipIds.includes(clip.id);
+                    const isRevoking = revokingClipIds.includes(clip.id);
+                    const isDownloading = downloadingClipId === clip.id;
+                    return (
+                      <article
+                        key={clip.id}
+                        className="lift-card"
+                        style={{
+                          borderRadius: 22,
+                          overflow: "hidden",
+                          border: `1px solid ${t.borderSub}`,
+                          background: t.cardAlt,
+                        }}
+                      >
+                        <div
+                          style={{
+                            minHeight: 190,
+                            background: dark
+                              ? "linear-gradient(135deg, #152412, #385530)"
+                              : "linear-gradient(135deg, #dfead7, #c9ddbd)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {isPreviewable(clip.video_url ?? "") ? (
+                            <video
+                              controls
+                              preload="metadata"
+                              src={clip.video_url}
+                              style={{ width: "100%", height: 220, objectFit: "cover" }}
+                            />
+                          ) : (
+                            <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
+                              <PlayCircle size={34} />
+                              <div style={{ marginTop: 10, fontWeight: 600 }}>Protected preview</div>
+                              <div style={{ marginTop: 6, fontSize: 13, opacity: 0.72 }}>
+                                Publish the clip to unlock its authenticated download.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                            <div>
+                              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".18em", color: t.textFaint }}>
+                                {clip.podcast_title} / Clip {clip.clip_number}
+                              </div>
+                              <div style={{ fontSize: 13, color: t.textSub, marginTop: 6 }}>
+                                {formatTime(clip.clip_start_seconds)} - {formatTime(clip.clip_end_seconds)} / {formatTime(clip.duration_seconds)}
+                              </div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                <span
+                                  style={{
+                                    borderRadius: 999,
+                                    background: clip.published ? t.chip : "transparent",
+                                    border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
+                                    color: clip.published ? t.accent : t.textSub,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".1em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {clip.published ? "Published" : "Private"}
+                                </span>
+                                <span
+                                  style={{
+                                    borderRadius: 999,
+                                    background: "transparent",
+                                    border: `1px solid ${t.borderSub}`,
+                                    color: t.textSub,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".1em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {clip.status}
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                borderRadius: 999,
+                                background: t.chip,
+                                color: t.accent,
+                                fontWeight: 700,
+                                padding: "8px 10px",
+                                height: "fit-content",
+                              }}
+                            >
+                              {clip.virality_score.toFixed(1)}
+                            </div>
+                          </div>
+
+                          <p style={{ margin: 0, color: t.text, lineHeight: 1.75, minHeight: 92 }}>
+                            {clip.subtitle_text}
+                          </p>
+
+                          <div
+                            style={{
+                              marginTop: 14,
+                              borderRadius: 16,
+                              border: `1px solid ${t.borderSub}`,
+                              background: t.chip,
+                              padding: "12px 14px",
+                            }}
+                          >
+                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                              Publish State
+                            </div>
+                            <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                              {clip.published
+                                ? `Published on ${formatDate(clip.published_at)} with an authenticated download URL.`
+                                : "Still private. Publish this clip to make it downloadable from the dashboard."}
+                            </div>
+                            {clip.match_reason ? (
+                              <div style={{ marginTop: 8, fontSize: 12, color: t.textSub }}>
+                                Search hint: {clip.match_reason}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
+                            {clip.published ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleRevoke(clip)}
+                                disabled={isRevoking}
+                                style={{
+                                  border: `1px solid ${t.border}`,
+                                  borderRadius: 14,
+                                  background: "transparent",
+                                  color: t.text,
+                                  padding: "10px 14px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  fontWeight: 700,
+                                  cursor: isRevoking ? "default" : "pointer",
+                                  opacity: isRevoking ? 0.75 : 1,
+                                }}
+                              >
+                                {isRevoking ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                                Revoke
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handlePublish(clip)}
+                                disabled={isPublishing}
+                                style={{
+                                  border: "none",
+                                  borderRadius: 14,
+                                  background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                                  color: "#fff",
+                                  padding: "10px 14px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  fontWeight: 700,
+                                  cursor: isPublishing ? "default" : "pointer",
+                                  opacity: isPublishing ? 0.75 : 1,
+                                }}
+                              >
+                                {isPublishing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                Publish
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => void handleDownload(clip)}
+                              disabled={isDownloading || !clip.published}
+                              style={{
+                                border: "none",
+                                borderRadius: 14,
+                                background: dark ? "#20381a" : "#183311",
+                                color: "#fff",
+                                padding: "10px 14px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontWeight: 700,
+                                cursor: isDownloading || !clip.published ? "default" : "pointer",
+                                opacity: isDownloading || !clip.published ? 0.6 : 1,
+                              }}
+                            >
+                              {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                              Download
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </main>
         </div>
       </div>

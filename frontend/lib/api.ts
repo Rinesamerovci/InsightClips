@@ -150,6 +150,9 @@ export type ClipResult = {
   video_url: string;
   subtitle_text: string;
   status: "ready" | "processing" | "failed";
+  published?: boolean;
+  download_url?: string | null;
+  published_at?: string | null;
 };
 
 export type ClipGenerationResult = {
@@ -158,6 +161,26 @@ export type ClipGenerationResult = {
   clips: ClipResult[];
   processing_time_seconds: number;
   download_folder_url: string;
+};
+
+export type ClipPublicationStatus = {
+  clip_id: string;
+  published: boolean;
+  download_url?: string | null;
+  published_at?: string | null;
+};
+
+export type ClipPublicationResult = {
+  podcast_id: string;
+  total_clips_published: number;
+  published_clips: ClipPublicationStatus[];
+  processing_time_seconds: number;
+};
+
+export type ClipRevocationResult = {
+  clip_id: string;
+  revoked: boolean;
+  published: boolean;
 };
 
 type RequestOptions = {
@@ -403,4 +426,19 @@ export async function downloadClip(
   token?: string | null,
 ): Promise<Blob> {
   return requestBlob(`/podcasts/clips/${clipId}/download`, token);
+}
+
+export async function publishClips(
+  podcastId: string,
+  clipIds: string[],
+  token?: string | null,
+): Promise<ClipPublicationResult> {
+  return postJson<ClipPublicationResult>(`/podcasts/${podcastId}/publish-clips`, { clip_ids: clipIds }, token);
+}
+
+export async function revokeClipDownload(
+  clipId: string,
+  token?: string | null,
+): Promise<ClipRevocationResult> {
+  return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
 }

@@ -8,6 +8,7 @@ from app.services.analysis_service import (
     transcribe_podcast_media_for_user,
 )
 from app.services.media_service import inspect_staged_media
+from app.services.publishing_service import publish_clips, revoke_clip_download
 from app.services.transcription_service import transcribe_media
 
 __all__ = [
@@ -16,6 +17,8 @@ __all__ = [
     "get_analysis_summary_for_podcast",
     "inspect_staged_media",
     "persist_analysis_result",
+    "publish_clips",
+    "revoke_clip_download",
     "transcribe_podcast_media_for_user",
     "transcribe_media",
 ]

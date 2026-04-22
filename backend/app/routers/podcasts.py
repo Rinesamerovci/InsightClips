@@ -4,8 +4,9 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
 
-from app.dependencies.auth import AuthenticatedUser, get_current_user
+from app.dependencies.auth import AuthenticatedUser, get_current_user, get_current_user_for_download
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest
+from app.models.clip_insights import ClipRecommendationsResponse, PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.podcast import PodcastsResponse
@@ -19,6 +20,12 @@ from app.services.analysis_service import (
     podcast_belongs_to_user,
     score_segments_need_refresh,
     transcribe_podcast_media_for_user,
+)
+from app.services.clip_insights_service import (
+    ClipInsightsError,
+    get_clip_metrics_for_podcast,
+    get_clip_recommendations_for_podcast,
+    record_clip_download,
 )
 from app.services.clipping_service import (
     ClippingError,
@@ -185,6 +192,38 @@ async def get_podcast_clips(
     return result
 
 
+@router.get("/{podcast_id}/recommendations", response_model=ClipRecommendationsResponse)
+async def get_podcast_recommendations(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipRecommendationsResponse:
+    if not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    try:
+        return get_clip_recommendations_for_podcast(podcast_id)
+    except ClipInsightsError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/{podcast_id}/metrics", response_model=PodcastClipMetrics)
+async def get_podcast_clip_metrics(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PodcastClipMetrics:
+    if not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    try:
+        return get_clip_metrics_for_podcast(podcast_id)
+    except ClipInsightsError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.post("/{podcast_id}/publish-clips", response_model=ClipPublicationResult)
 async def publish_podcast_clips(
     podcast_id: str,
@@ -206,7 +245,7 @@ async def publish_podcast_clips(
 @router.get("/clips/{clip_id}/download")
 async def download_generated_clip(
     clip_id: str,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user_for_download),
 ):
     podcast_id = get_clip_podcast_id(clip_id)
     if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
@@ -217,8 +256,10 @@ async def download_generated_clip(
 
     storage_url, file_path = get_published_clip_download_target(clip_id)
     if storage_url:
+        record_clip_download(clip_id)
         return RedirectResponse(storage_url)
     if file_path and file_path.exists():
+        record_clip_download(clip_id)
         return FileResponse(path=file_path, media_type="video/mp4", filename=file_path.name)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,

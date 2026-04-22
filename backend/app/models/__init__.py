@@ -2,6 +2,13 @@
 
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest, ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest
+from app.models.clip_insights import (
+    ClipMetricRow,
+    ClipRecommendationsResponse,
+    ClipSearchItem,
+    ClipSearchResponse,
+    PodcastClipMetrics,
+)
 from app.models.media import MediaInspectionResult
 from app.models.publishing import (
     ClipPublicationResult,
@@ -22,12 +29,17 @@ __all__ = [
     "AnalysisSummary",
     "AnalyzePodcastRequest",
     "ClipGenerationResult",
+    "ClipMetricRow",
     "ClipPublicationResult",
     "ClipPublicationStatus",
+    "ClipRecommendationsResponse",
     "ClipResult",
     "ClipRevocationResult",
+    "ClipSearchItem",
+    "ClipSearchResponse",
     "GenerateClipsRequest",
     "MediaInspectionResult",
+    "PodcastClipMetrics",
     "PublishClipsRequest",
     "ScoreSegment",
     "TranscriptWord",

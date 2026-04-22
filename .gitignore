@@ -13,6 +13,7 @@ backend/**/__pycache__/
 *.log
 .pytest_cache/
 backend/.env.local
+.generated/
 
 # Media Files
 *.mp4

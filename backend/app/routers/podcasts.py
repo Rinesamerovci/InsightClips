@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from app.dependencies.auth import AuthenticatedUser, get_current_user
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
+from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.podcast import PodcastsResponse
 from app.services.analysis_service import (
     AnalysisError,
@@ -23,9 +24,13 @@ from app.services.clipping_service import (
     ClippingError,
     build_clip_generation_result,
     generate_clips,
-    get_clip_download_target,
     get_clip_podcast_id,
     get_clips_for_podcast,
+)
+from app.services.publishing_service import (
+    PublishingError,
+    get_published_clip_download_target,
+    publish_clips,
 )
 from app.services.podcast_service import get_podcasts_for_user, update_podcast_status_for_user
 
@@ -176,8 +181,26 @@ async def get_podcast_clips(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No clips have been generated for this podcast yet.",
-        )
+    )
     return result
+
+
+@router.post("/{podcast_id}/publish-clips", response_model=ClipPublicationResult)
+async def publish_podcast_clips(
+    podcast_id: str,
+    payload: PublishClipsRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipPublicationResult:
+    if not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+
+    try:
+        return await asyncio.to_thread(publish_clips, podcast_id, payload.clip_ids)
+    except PublishingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/clips/{clip_id}/download")
@@ -192,9 +215,12 @@ async def download_generated_clip(
             detail="Clip not found for the current user.",
         )
 
-    storage_url, file_path = get_clip_download_target(clip_id)
+    storage_url, file_path = get_published_clip_download_target(clip_id)
     if storage_url:
         return RedirectResponse(storage_url)
     if file_path and file_path.exists():
         return FileResponse(path=file_path, media_type="video/mp4", filename=file_path.name)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip file is no longer available.")
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Clip download is unavailable or has been revoked.",
+    )

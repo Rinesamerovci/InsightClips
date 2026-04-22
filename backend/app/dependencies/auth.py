@@ -1,4 +1,4 @@
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 
 from app.database import service_supabase
@@ -35,6 +35,20 @@ async def get_current_user(
             detail="Invalid authorization header format.",
         )
 
+    return _resolve_authenticated_user(token)
+
+
+async def get_current_user_for_download(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    access_token: str | None = Query(default=None, alias="access_token"),
+) -> AuthenticatedUser:
+    if access_token:
+        return _resolve_authenticated_user(access_token)
+
+    return await get_current_user(authorization)
+
+
+def _resolve_authenticated_user(token: str) -> AuthenticatedUser:
     backend_payload = decode_backend_token(token)
     if backend_payload:
         return AuthenticatedUser(

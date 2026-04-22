@@ -196,7 +196,11 @@ def _resolve_local_clip_path(row: dict[str, Any]) -> Path | None:
 def _create_storage_signed_url(storage_key: str, row: dict[str, Any]) -> str:
     try:
         storage = service_supabase.storage.from_(CLIP_STORAGE_BUCKET)
-        signed = storage.create_signed_url(storage_key, PUBLISHED_DOWNLOAD_TTL_SECONDS)
+        signed = storage.create_signed_url(
+            storage_key,
+            PUBLISHED_DOWNLOAD_TTL_SECONDS,
+            {"download": Path(storage_key).name},
+        )
     except Exception as exc:
         raise PublishingError(f"Unable to generate a clip download URL: {exc}", status_code=502) from exc
 

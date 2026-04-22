@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -20,6 +21,9 @@ class ClipResult(BaseModel):
     video_url: str
     subtitle_text: str
     status: Literal["ready", "processing", "failed"]
+    published: bool = False
+    download_url: str | None = None
+    published_at: datetime | None = None
 
     @field_validator("id", "video_url", "subtitle_text")
     @classmethod

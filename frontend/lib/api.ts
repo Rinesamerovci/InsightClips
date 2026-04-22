@@ -1,3 +1,14 @@
+import {
+  buildDiscoveryItem,
+  buildEstimatedPodcastMetrics,
+  filterDiscoveryItems,
+  rankRecommendedItems,
+  type ClipDiscoveryItem,
+  type ClipMetricRow,
+  type ClipStatusFilter,
+  type PodcastMetricSummary,
+} from "@/lib/clip-insights";
+
 const configuredBackendUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
 const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
@@ -181,6 +192,27 @@ export type ClipRevocationResult = {
   clip_id: string;
   revoked: boolean;
   published: boolean;
+};
+
+export type ClipSearchResult = ClipDiscoveryItem;
+
+export type ClipSearchResponse = {
+  query: string;
+  total_results: number;
+  clips: ClipSearchResult[];
+  estimated?: boolean;
+};
+
+export type ClipRecommendation = ClipDiscoveryItem;
+
+export type ClipRecommendationsResponse = {
+  podcast_id: string;
+  recommendations: ClipRecommendation[];
+  estimated?: boolean;
+};
+
+export type PodcastClipMetrics = PodcastMetricSummary & {
+  top_clips: ClipMetricRow[];
 };
 
 type RequestOptions = {
@@ -441,4 +473,108 @@ export async function revokeClipDownload(
   token?: string | null,
 ): Promise<ClipRevocationResult> {
   return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
+}
+
+async function getAllDiscoveryClips(token?: string | null): Promise<ClipDiscoveryItem[]> {
+  const podcastsResponse = await getJson<PodcastsResponse>("/podcasts", token);
+  const clipGroups = await Promise.all(
+    podcastsResponse.podcasts.map(async (podcast) => {
+      try {
+        const result = await getClips(podcast.id, token);
+        return result.clips.map((clip) => buildDiscoveryItem(clip, podcast));
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  return clipGroups.flat();
+}
+
+export async function searchClips(
+  options: {
+    query?: string;
+    podcastId?: string;
+    status?: ClipStatusFilter;
+  } = {},
+  token?: string | null,
+): Promise<ClipSearchResponse> {
+  const params = new URLSearchParams();
+  if (options.query?.trim()) {
+    params.set("query", options.query.trim());
+  }
+  if (options.podcastId) {
+    params.set("podcast_id", options.podcastId);
+  }
+  if (options.status && options.status !== "all") {
+    params.set("status", options.status);
+  }
+
+  try {
+    const path = params.size ? `/clips/search?${params.toString()}` : "/clips/search";
+    return await getJson<ClipSearchResponse>(path, token);
+  } catch {
+    const allClips = await getAllDiscoveryClips(token);
+    const filtered = filterDiscoveryItems(allClips, {
+      query: options.query,
+      status: options.status,
+      podcastId: options.podcastId,
+    }).sort((left, right) => {
+      if (right.virality_score !== left.virality_score) {
+        return right.virality_score - left.virality_score;
+      }
+      return left.clip_number - right.clip_number;
+    });
+
+    return {
+      query: options.query ?? "",
+      total_results: filtered.length,
+      clips: filtered,
+      estimated: true,
+    };
+  }
+}
+
+export async function getRecommendations(
+  podcastId: string,
+  token?: string | null,
+): Promise<ClipRecommendationsResponse> {
+  try {
+    return await getJson<ClipRecommendationsResponse>(
+      `/podcasts/${podcastId}/recommendations`,
+      token,
+    );
+  } catch {
+    const podcastsResponse = await getJson<PodcastsResponse>("/podcasts", token);
+    const podcast = podcastsResponse.podcasts.find((item) => item.id === podcastId);
+    if (!podcast) {
+      throw new Error("Podcast not found for recommendations.");
+    }
+
+    const result = await getClips(podcastId, token);
+    const discoveryItems = result.clips.map((clip) => buildDiscoveryItem(clip, podcast));
+    return {
+      podcast_id: podcastId,
+      recommendations: rankRecommendedItems(discoveryItems, 4),
+      estimated: true,
+    };
+  }
+}
+
+export async function getClipMetrics(
+  podcastId: string,
+  token?: string | null,
+): Promise<PodcastClipMetrics> {
+  try {
+    return await getJson<PodcastClipMetrics>(`/podcasts/${podcastId}/metrics`, token);
+  } catch {
+    const podcastsResponse = await getJson<PodcastsResponse>("/podcasts", token);
+    const podcast = podcastsResponse.podcasts.find((item) => item.id === podcastId);
+    if (!podcast) {
+      throw new Error("Podcast not found for metrics.");
+    }
+
+    const clipsResult = await getClips(podcastId, token);
+    return buildEstimatedPodcastMetrics(podcast, clipsResult.clips);
+  }
 }

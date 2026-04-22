@@ -22,6 +22,8 @@ import {
   generateClips,
   getClips,
   getJson,
+  publishClips,
+  revokeClipDownload,
   type ClipGenerationResult,
   type ClipResult,
   type Podcast,
@@ -90,6 +92,8 @@ export default function ClipsPage() {
   const [loadingClips, setLoadingClips] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloadingClipId, setDownloadingClipId] = useState<string>("");
+  const [publishingClipIds, setPublishingClipIds] = useState<string[]>([]);
+  const [revokingClipIds, setRevokingClipIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [dark, setDark] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -241,6 +245,87 @@ export default function ClipsPage() {
       setError(downloadError instanceof Error ? downloadError.message : "Clip download failed.");
     } finally {
       setDownloadingClipId("");
+    }
+  };
+
+  const handlePublish = async (clip: ClipResult) => {
+    if (!selectedPodcastId) {
+      return;
+    }
+
+    setPublishingClipIds((current) => [...current, clip.id]);
+    setError("");
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      const result = await publishClips(selectedPodcastId, [clip.id], token);
+      const publication = result.published_clips.find((item) => item.clip_id === clip.id);
+      if (!publication) {
+        throw new Error("Publish result did not include the requested clip.");
+      }
+
+      setClipsResult((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          clips: current.clips.map((item) =>
+            item.id === clip.id
+              ? {
+                  ...item,
+                  published: publication.published,
+                  download_url: publication.download_url ?? null,
+                  published_at: publication.published_at ?? null,
+                }
+              : item
+          ),
+        };
+      });
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Clip publish failed.");
+    } finally {
+      setPublishingClipIds((current) => current.filter((item) => item !== clip.id));
+    }
+  };
+
+  const handleRevoke = async (clip: ClipResult) => {
+    setRevokingClipIds((current) => [...current, clip.id]);
+    setError("");
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      const result = await revokeClipDownload(clip.id, token);
+      setClipsResult((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          clips: current.clips.map((item) =>
+            item.id === clip.id
+              ? {
+                  ...item,
+                  published: result.published,
+                  download_url: null,
+                  published_at: null,
+                }
+              : item
+          ),
+        };
+      });
+    } catch (revokeError) {
+      setError(revokeError instanceof Error ? revokeError.message : "Clip revoke failed.");
+    } finally {
+      setRevokingClipIds((current) => current.filter((item) => item !== clip.id));
     }
   };
 
@@ -641,6 +726,23 @@ export default function ClipsPage() {
                               <div style={{ fontSize: 13, color: t.textSub, marginTop: 6 }}>
                                 {formatTime(clip.clip_start_seconds)} - {formatTime(clip.clip_end_seconds)}
                               </div>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                <span
+                                  style={{
+                                    borderRadius: 999,
+                                    background: clip.published ? t.chip : "transparent",
+                                    border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
+                                    color: clip.published ? t.accent : t.textSub,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".1em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {clip.published ? "Published" : "Unpublished"}
+                                </span>
+                              </div>
                             </div>
                             <div
                               style={{
@@ -660,37 +762,112 @@ export default function ClipsPage() {
                             {clip.subtitle_text}
                           </p>
 
+                          <div
+                            style={{
+                              marginTop: 14,
+                              borderRadius: 16,
+                              border: `1px solid ${t.borderSub}`,
+                              background: t.chip,
+                              padding: "12px 14px",
+                            }}
+                          >
+                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                              Publishing
+                            </div>
+                            <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                              {clip.published
+                                ? `This clip is published and has a download route${clip.published_at ? ` since ${new Date(clip.published_at).toLocaleString()}` : ""}.`
+                                : "This clip is still private and not yet published for download."}
+                            </div>
+                          </div>
+
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 16 }}>
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: t.textSub, fontSize: 13 }}>
                               <Film size={14} />
                               {formatTime(clip.duration_seconds)}
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => void handleDownload(clip)}
-                              disabled={downloadingClipId === clip.id}
-                              style={{
-                                border: "none",
-                                borderRadius: 14,
-                                background: dark ? "#20381a" : "#183311",
-                                color: "#fff",
-                                padding: "10px 14px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 8,
-                                fontWeight: 700,
-                                cursor: downloadingClipId === clip.id ? "default" : "pointer",
-                                opacity: downloadingClipId === clip.id ? 0.75 : 1,
-                              }}
-                            >
-                              {downloadingClipId === clip.id ? (
-                                <Loader2 size={14} className="animate-spin" />
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                              {clip.published ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRevoke(clip)}
+                                  disabled={revokingClipIds.includes(clip.id)}
+                                  style={{
+                                    border: `1px solid ${t.border}`,
+                                    borderRadius: 14,
+                                    background: "transparent",
+                                    color: t.text,
+                                    padding: "10px 14px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    fontWeight: 700,
+                                    cursor: revokingClipIds.includes(clip.id) ? "default" : "pointer",
+                                    opacity: revokingClipIds.includes(clip.id) ? 0.75 : 1,
+                                  }}
+                                >
+                                  {revokingClipIds.includes(clip.id) ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <Wand2 size={14} />
+                                  )}
+                                  Revoke
+                                </button>
                               ) : (
-                                <Download size={14} />
+                                <button
+                                  type="button"
+                                  onClick={() => void handlePublish(clip)}
+                                  disabled={publishingClipIds.includes(clip.id)}
+                                  style={{
+                                    border: "none",
+                                    borderRadius: 14,
+                                    background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                                    color: "#fff",
+                                    padding: "10px 14px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    fontWeight: 700,
+                                    cursor: publishingClipIds.includes(clip.id) ? "default" : "pointer",
+                                    opacity: publishingClipIds.includes(clip.id) ? 0.75 : 1,
+                                  }}
+                                >
+                                  {publishingClipIds.includes(clip.id) ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <Sparkles size={14} />
+                                  )}
+                                  Publish
+                                </button>
                               )}
-                              Download
-                            </button>
+
+                              <button
+                                type="button"
+                                onClick={() => void handleDownload(clip)}
+                                disabled={downloadingClipId === clip.id || !clip.published}
+                                style={{
+                                  border: "none",
+                                  borderRadius: 14,
+                                  background: dark ? "#20381a" : "#183311",
+                                  color: "#fff",
+                                  padding: "10px 14px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  fontWeight: 700,
+                                  cursor: downloadingClipId === clip.id || !clip.published ? "default" : "pointer",
+                                  opacity: downloadingClipId === clip.id || !clip.published ? 0.6 : 1,
+                                }}
+                              >
+                                {downloadingClipId === clip.id ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Download size={14} />
+                                )}
+                                Download
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </article>

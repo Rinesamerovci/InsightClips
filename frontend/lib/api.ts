@@ -7,7 +7,7 @@ import {
   type ClipMetricRow,
   type ClipStatusFilter,
   type PodcastMetricSummary,
-} from "@/lib/clip-insights";
+} from "./clip-insights";
 
 const configuredBackendUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
@@ -519,12 +519,20 @@ export async function searchClips(
       query: options.query,
       status: options.status,
       podcastId: options.podcastId,
-    }).sort((left, right) => {
-      if (right.virality_score !== left.virality_score) {
-        return right.virality_score - left.virality_score;
-      }
-      return left.clip_number - right.clip_number;
-    });
+    })
+      .map((item) =>
+        buildDiscoveryItem(
+          item,
+          { id: item.podcast_id, title: item.podcast_title },
+          options.query ?? "",
+        ),
+      )
+      .sort((left, right) => {
+        if (right.virality_score !== left.virality_score) {
+          return right.virality_score - left.virality_score;
+        }
+        return left.clip_number - right.clip_number;
+      });
 
     return {
       query: options.query ?? "",

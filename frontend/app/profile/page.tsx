@@ -65,10 +65,6 @@ export default function ProfilePage() {
   // States
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [fullName, setFullName] = useState("");
-  const [profilePictureUrl, setProfilePictureUrl] = useState("");
-  const [saveMessage, setSaveMessage] = useState("");
   const [error, setError] = useState("");
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [dark, setDark] = useState(() => {

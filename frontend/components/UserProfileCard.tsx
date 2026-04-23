@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type Profile = {
   email: string;
   full_name: string | null;
@@ -29,10 +31,12 @@ export function UserProfileCard({ profile }: { profile: Profile }) {
     <section className="rounded-[2rem] border border-[#d9e5d3] bg-white p-6 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
       <div className="flex items-center gap-4">
         {profile.profile_picture_url ? (
-          <img
+          <Image
             alt="Profile"
             className="h-16 w-16 rounded-[1.5rem] object-cover"
             src={profile.profile_picture_url}
+            width={64}
+            height={64}
           />
         ) : (
           <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-[#d7e8d2] text-xl font-semibold text-[#2e4b35]">

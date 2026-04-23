@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -118,7 +118,7 @@ function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSea
   return clips.map((clip) => buildDiscoveryItem(clip, podcast));
 }
 
-export default function ClipsPage() {
+function ClipsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
@@ -1307,5 +1307,13 @@ export default function ClipsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ClipsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ClipsPageContent />
+    </Suspense>
   );
 }

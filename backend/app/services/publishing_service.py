@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 from typing import Any
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
@@ -19,6 +20,7 @@ class PublishingError(Exception):
 
 
 def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult:
+    started_at = time.perf_counter()
     cleaned_podcast_id = podcast_id.strip()
     if not cleaned_podcast_id:
         raise PublishingError("podcast_id is required.", status_code=400)
@@ -38,12 +40,13 @@ def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult
             status_code=404,
         )
 
+    ordered_rows = _order_clip_rows(rows, normalized_clip_ids)
     published_at = datetime.now(timezone.utc)
-    statuses: list[ClipPublicationStatus] = []
+    prepared_publications: list[tuple[str, dict[str, Any], ClipPublicationStatus]] = []
 
-    for row in rows:
+    for row in ordered_rows:
         storage_key = _ensure_clip_uploaded(row)
-        _create_storage_signed_url(storage_key, row)
+        _create_storage_signed_url(storage_key)
 
         clip_id = str(row["id"])
         download_url = _build_backend_download_path(clip_id)
@@ -51,24 +54,59 @@ def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult
             "published": True,
             "download_url": download_url,
             "published_at": published_at.isoformat(),
-            "storage_path": storage_key,
         }
-        service_supabase.table("clips").update(payload).eq("id", clip_id).execute()
-        statuses.append(
-            ClipPublicationStatus(
-                clip_id=clip_id,
-                published=True,
-                download_url=download_url,
-                published_at=published_at,
+        prepared_publications.append(
+            (
+                clip_id,
+                payload,
+                ClipPublicationStatus(
+                    clip_id=clip_id,
+                    published=True,
+                    download_url=download_url,
+                    published_at=published_at,
+                ),
             )
         )
 
+    for clip_id, payload, _ in prepared_publications:
+        service_supabase.table("clips").update(payload).eq("id", clip_id).execute()
+
+    statuses = [
+        status
+        for _, _, status in prepared_publications
+    ]
     return ClipPublicationResult(
         podcast_id=cleaned_podcast_id,
         total_clips_published=len(statuses),
         published_clips=statuses,
-        processing_time_seconds=0.0,
+        processing_time_seconds=round(time.perf_counter() - started_at, 3),
     )
+
+
+def get_published_clip_download_content(clip_id: str) -> tuple[bytes | None, Path | None, str | None]:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None, None, None
+
+    rows = _select_clip_rows().eq("id", clip_id).limit(1).execute().data or []
+    if not rows:
+        return None, None, None
+
+    row = rows[0]
+    if not bool(row.get("published")):
+        return None, None, None
+
+    file_path = _resolve_local_clip_path(row)
+    try:
+        storage_key = _resolve_storage_key(row)
+        filename = _build_download_filename(clip_id, row, storage_key=storage_key, file_path=file_path)
+        return _download_storage_bytes(storage_key), None, filename
+    except PublishingError:
+        pass
+
+    if file_path and file_path.exists():
+        return None, file_path, file_path.name
+
+    return None, None, _build_download_filename(clip_id, row, file_path=file_path)
 
 
 def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
@@ -97,31 +135,6 @@ def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
     )
 
 
-def get_published_clip_download_target(clip_id: str) -> tuple[str | None, Path | None]:
-    if isinstance(service_supabase, UnconfiguredSupabaseClient):
-        return None, None
-
-    rows = _select_clip_rows().eq("id", clip_id).limit(1).execute().data or []
-    if not rows:
-        return None, None
-
-    row = rows[0]
-    if not bool(row.get("published")):
-        return None, None
-
-    storage_path = str(row.get("storage_path") or "").strip()
-    if storage_path:
-        try:
-            signed_url = _create_storage_signed_url(storage_path, row)
-            return signed_url, None
-        except PublishingError:
-            file_path = Path(storage_path)
-            if file_path.exists():
-                return None, file_path
-
-    return None, None
-
-
 def _normalize_clip_ids(clip_ids: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -142,6 +155,11 @@ def _get_clip_rows_for_podcast(podcast_id: str, clip_ids: list[str]) -> list[dic
         .data
         or []
     )
+
+
+def _order_clip_rows(rows: list[dict[str, Any]], clip_ids: list[str]) -> list[dict[str, Any]]:
+    row_map = {str(row["id"]): row for row in rows}
+    return [row_map[clip_id] for clip_id in clip_ids if clip_id in row_map]
 
 
 def _select_clip_rows():
@@ -193,7 +211,48 @@ def _resolve_local_clip_path(row: dict[str, Any]) -> Path | None:
     return None
 
 
-def _create_storage_signed_url(storage_key: str, row: dict[str, Any]) -> str:
+def _download_storage_bytes(storage_key: str) -> bytes:
+    try:
+        storage = service_supabase.storage.from_(CLIP_STORAGE_BUCKET)
+        payload = storage.download(storage_key)
+    except Exception as exc:
+        raise PublishingError(f"Unable to download clip from storage: {exc}", status_code=502) from exc
+
+    if isinstance(payload, bytes):
+        return payload
+    if isinstance(payload, bytearray):
+        return bytes(payload)
+    try:
+        return bytes(payload)
+    except Exception as exc:
+        raise PublishingError(f"Supabase returned an unexpected clip payload for {storage_key}.", status_code=502) from exc
+
+
+def _build_download_filename(
+    clip_id: str,
+    row: dict[str, Any],
+    *,
+    storage_key: str | None = None,
+    file_path: Path | None = None,
+) -> str:
+    if file_path is not None:
+        return file_path.name
+    if storage_key:
+        filename = Path(storage_key).name.strip()
+        if filename:
+            return filename
+    raw_storage_path = str(row.get("storage_path") or "").strip()
+    if raw_storage_path:
+        filename = Path(raw_storage_path).name.strip()
+        if filename:
+            return filename
+    clip_number = int(row.get("clip_number") or 0)
+    if clip_number > 0:
+        return f"clip-{clip_number:02d}.mp4"
+    return f"{clip_id}.mp4"
+
+
+def _create_storage_signed_url(storage_key: str) -> str:
     try:
         storage = service_supabase.storage.from_(CLIP_STORAGE_BUCKET)
         signed = storage.create_signed_url(

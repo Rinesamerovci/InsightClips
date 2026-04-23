@@ -30,5 +30,9 @@ async def patch_profile(
             detail="Profile not found.",
         )
 
-    updated = update_profile(current_user.id, payload.full_name.strip() if payload.full_name else None)
+    updated = update_profile(
+        current_user.id,
+        payload.full_name,
+        payload.profile_picture_url,
+    )
     return serialize_profile(updated)

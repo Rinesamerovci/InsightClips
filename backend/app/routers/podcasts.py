@@ -2,14 +2,15 @@ import asyncio
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, Response
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user, get_current_user_for_download
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest
-from app.models.clip_insights import ClipRecommendationsResponse, PodcastClipMetrics
+from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.podcast import PodcastsResponse
+from app.models.search import RecommendationResult
 from app.services.analysis_service import (
     AnalysisError,
     analyze_and_score,
@@ -24,7 +25,6 @@ from app.services.analysis_service import (
 from app.services.clip_insights_service import (
     ClipInsightsError,
     get_clip_metrics_for_podcast,
-    get_clip_recommendations_for_podcast,
     record_clip_download,
 )
 from app.services.clipping_service import (
@@ -36,9 +36,10 @@ from app.services.clipping_service import (
 )
 from app.services.publishing_service import (
     PublishingError,
-    get_published_clip_download_target,
+    get_published_clip_download_content,
     publish_clips,
 )
+from app.services.recommendation_service import RecommendationServiceError, recommend_clips
 from app.services.podcast_service import get_podcasts_for_user, update_podcast_status_for_user
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
@@ -192,19 +193,20 @@ async def get_podcast_clips(
     return result
 
 
-@router.get("/{podcast_id}/recommendations", response_model=ClipRecommendationsResponse)
+@router.get("/{podcast_id}/recommendations", response_model=RecommendationResult)
 async def get_podcast_recommendations(
     podcast_id: str,
+    limit: int = 5,
     current_user: AuthenticatedUser = Depends(get_current_user),
-) -> ClipRecommendationsResponse:
+) -> RecommendationResult:
     if not podcast_belongs_to_user(podcast_id, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Podcast not found for the current user.",
         )
     try:
-        return get_clip_recommendations_for_podcast(podcast_id)
-    except ClipInsightsError as exc:
+        return recommend_clips(podcast_id, limit=limit)
+    except RecommendationServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
@@ -254,13 +256,22 @@ async def download_generated_clip(
             detail="Clip not found for the current user.",
         )
 
-    storage_url, file_path = get_published_clip_download_target(clip_id)
-    if storage_url:
+    content, file_path, filename = get_published_clip_download_content(clip_id)
+    if content is not None:
         record_clip_download(clip_id)
-        return RedirectResponse(storage_url)
+        safe_filename = (filename or f"{clip_id}.mp4").replace('"', "")
+        return Response(
+            content=content,
+            media_type="video/mp4",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        )
     if file_path and file_path.exists():
         record_clip_download(clip_id)
-        return FileResponse(path=file_path, media_type="video/mp4", filename=file_path.name)
+        return FileResponse(
+            path=file_path,
+            media_type="video/mp4",
+            filename=(filename or file_path.name),
+        )
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Clip download is unavailable or has been revoked.",

@@ -57,10 +57,19 @@ def mark_free_trial_used(profile_id: str) -> None:
     service_supabase.table("profiles").update({"free_trial_used": True}).eq("id", profile_id).execute()
 
 
-def update_profile(profile_id: str, full_name: str | None = None) -> ProfileRecord:
+def update_profile(
+    profile_id: str,
+    full_name: str | None = None,
+    profile_picture_url: str | None = None,
+) -> ProfileRecord:
     response = (
         service_supabase.table("profiles")
-        .update({"full_name": full_name})
+        .update(
+            {
+                "full_name": _normalize_optional_text(full_name),
+                "profile_picture_url": _normalize_optional_text(profile_picture_url),
+            }
+        )
         .eq("id", profile_id)
         .execute()
     )

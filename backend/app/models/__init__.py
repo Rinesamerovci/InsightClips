@@ -16,6 +16,12 @@ from app.models.publishing import (
     ClipRevocationResult,
     PublishClipsRequest,
 )
+from app.models.search import (
+    ClipSearchHit,
+    ClipSearchResult,
+    RecommendationItem,
+    RecommendationResult,
+)
 from app.models.transcription import TranscriptWord, TranscriptionResult
 from app.models.upload import (
     UploadCalculatePriceRequest,
@@ -36,11 +42,15 @@ __all__ = [
     "ClipResult",
     "ClipRevocationResult",
     "ClipSearchItem",
+    "ClipSearchHit",
+    "ClipSearchResult",
     "ClipSearchResponse",
     "GenerateClipsRequest",
     "MediaInspectionResult",
     "PodcastClipMetrics",
     "PublishClipsRequest",
+    "RecommendationItem",
+    "RecommendationResult",
     "ScoreSegment",
     "TranscriptWord",
     "TranscriptionResult",

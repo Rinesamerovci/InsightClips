@@ -27,3 +27,4 @@ class ProfileResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     full_name: str | None = None
+    profile_picture_url: str | None = None

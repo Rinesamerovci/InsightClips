@@ -9,6 +9,8 @@ from app.services.analysis_service import (
 )
 from app.services.media_service import inspect_staged_media
 from app.services.publishing_service import publish_clips, revoke_clip_download
+from app.services.recommendation_service import recommend_clips
+from app.services.search_service import search_clips
 from app.services.transcription_service import transcribe_media
 
 __all__ = [
@@ -18,7 +20,9 @@ __all__ = [
     "inspect_staged_media",
     "persist_analysis_result",
     "publish_clips",
+    "recommend_clips",
     "revoke_clip_download",
+    "search_clips",
     "transcribe_podcast_media_for_user",
     "transcribe_media",
 ]

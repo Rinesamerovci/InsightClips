@@ -358,14 +358,14 @@ export default function InsightClipsLanding() {
                 Start for Free <MoveRight size={16} />
               </Link>
 
-              <button style={{
+              <Link href="/demo" style={{
                 display:"flex", alignItems:"center", gap:12,
                 padding:"15px 28px", borderRadius:14,
                 border:`1px solid ${t.border}`,
                 background: isDark ? "rgba(255,255,255,.03)" : "rgba(0,0,0,.03)",
                 color:t.text, fontSize:12, fontWeight:600,
                 letterSpacing:".1em", textTransform:"uppercase", cursor:"pointer",
-                transition:"all .3s",
+                transition:"all .3s", textDecoration:"none",
               }}>
                 <div style={{
                   width:32, height:32, borderRadius:"50%",
@@ -375,7 +375,7 @@ export default function InsightClipsLanding() {
                   <Play size={12} color={t.accent} fill={t.accent} style={{ marginLeft:2 }} />
                 </div>
                 Watch Demo
-              </button>
+              </Link>
             </div>
           </div>
 

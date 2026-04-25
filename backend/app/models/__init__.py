@@ -10,6 +10,7 @@ from app.models.clip_insights import (
     PodcastClipMetrics,
 )
 from app.models.media import MediaInspectionResult
+from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.publishing import (
     ClipPublicationResult,
     ClipPublicationStatus,
@@ -47,6 +48,8 @@ __all__ = [
     "ClipSearchResponse",
     "GenerateClipsRequest",
     "MediaInspectionResult",
+    "OverlayDecision",
+    "OverlayMappingResult",
     "PodcastClipMetrics",
     "PublishClipsRequest",
     "RecommendationItem",

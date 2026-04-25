@@ -28,6 +28,7 @@ import {
   revokeClipDownload,
   searchClips,
   type ClipRecommendation,
+  type ClipOverlay,
   type ClipResult,
   type ClipSearchResult,
   type Podcast,
@@ -106,6 +107,19 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString();
 }
 
+function truncateText(value: string, maxLength: number): string {
+  const normalized = String(value ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+}
+
 function isPreviewable(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
@@ -116,6 +130,89 @@ function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSea
   }
 
   return clips.map((clip) => buildDiscoveryItem(clip, podcast));
+}
+
+function formatOverlayValue(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .split(/[_-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function mergeOverlayMetadata<T extends { id: string; overlay?: ClipOverlay | null }>(
+  items: T[],
+  overlayByClipId: Map<string, ClipOverlay | null>,
+): T[] {
+  return items.map((item) => {
+    const overlay = item.overlay ?? overlayByClipId.get(item.id) ?? null;
+    return overlay === item.overlay ? item : { ...item, overlay };
+  });
+}
+
+function getOverlayState(overlay?: ClipOverlay | null): {
+  variant: "enabled" | "disabled" | "info";
+  badge: string;
+  title: string;
+  description: string;
+  category: string | null;
+  keyword: string | null;
+  asset: string | null;
+  matchedText: string | null;
+} {
+  if (!overlay) {
+    return {
+      variant: "info",
+      badge: "Overlay info",
+      title: "Auto-B-Roll status unavailable",
+      description: "No overlay metadata is attached to this clip yet.",
+      category: null,
+      keyword: null,
+      asset: null,
+      matchedText: null,
+    };
+  }
+
+  const category = formatOverlayValue(overlay.overlay_category);
+  const keyword = overlay.keyword ?? null;
+  const asset = formatOverlayValue(overlay.overlay_asset);
+  const matchedText = overlay.matched_text ?? null;
+
+  if (overlay.applied) {
+    return {
+      variant: "enabled",
+      badge: "Auto-B-Roll on",
+      title: category ? `${category} overlay applied` : "Overlay applied",
+      description: keyword
+        ? `Triggered by "${keyword}".`
+        : category
+          ? `Applied from the ${category} overlay set.`
+          : "An overlay was applied to this clip.",
+      category,
+      keyword,
+      asset,
+      matchedText,
+    };
+  }
+
+  return {
+    variant: "disabled",
+    badge: "Auto-B-Roll off",
+    title: "No overlay applied",
+    description:
+      keyword || category
+        ? `Checked this clip${keyword ? ` for "${keyword}"` : ""}${category ? ` in ${category}` : ""}, but no overlay was used.`
+        : "Checked this clip, but no matching overlay was used.",
+    category,
+    keyword,
+    asset,
+    matchedText,
+  };
 }
 
 function ClipsPageContent() {
@@ -150,13 +247,26 @@ function ClipsPageContent() {
   const selectedPodcast =
     podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
   const activeSearch = searchQuery.trim().length > 0 || filter !== "all";
+  const overlayByClipId = useMemo(
+    () => new Map(clips.map((clip) => [clip.id, clip.overlay ?? null])),
+    [clips],
+  );
 
   const visibleClips = useMemo(
-    () => (activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast)),
-    [activeSearch, clips, searchResults, selectedPodcast],
+    () =>
+      mergeOverlayMetadata(
+        activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast),
+        overlayByClipId,
+      ),
+    [activeSearch, clips, overlayByClipId, searchResults, selectedPodcast],
+  );
+  const visibleRecommendations = useMemo(
+    () => mergeOverlayMetadata(recommendations, overlayByClipId),
+    [overlayByClipId, recommendations],
   );
 
   const publishedCount = clips.filter((clip) => clip.published).length;
+  const overlayEnabledCount = clips.filter((clip) => clip.overlay?.applied).length;
   const averageScore =
     clips.length > 0
       ? clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length
@@ -777,6 +887,7 @@ function ClipsPageContent() {
             gridTemplateColumns: isMobile ? "1fr" : "320px minmax(0, 1fr)",
             gap: 20,
             marginTop: 22,
+            alignItems: "start",
           }}
         >
           <aside
@@ -808,7 +919,7 @@ function ClipsPageContent() {
                   No podcasts yet. Upload one first, then come back here to manage clips.
                 </div>
               ) : (
-                <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gap: 10, alignItems: "start" }}>
                   {podcasts.map((podcast) => {
                     const isSelected = podcast.id === selectedPodcastId;
                     return (
@@ -867,32 +978,72 @@ function ClipsPageContent() {
                       Showing estimated recommendations based on current clip scores while the dedicated endpoint is unavailable.
                     </div>
                   ) : null}
-                  {recommendations.map((clip) => (
-                    <article
-                      key={clip.id}
-                      style={{
-                        borderRadius: 18,
-                        border: `1px solid ${t.borderSub}`,
-                        background: t.cardAlt,
-                        padding: 14,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                            Clip {clip.clip_number}
+                  {visibleRecommendations.map((clip) => {
+                    const overlayState = getOverlayState(clip.overlay);
+
+                    return (
+                      <article
+                        key={clip.id}
+                        style={{
+                          borderRadius: 18,
+                          border: `1px solid ${t.borderSub}`,
+                          background: t.cardAlt,
+                          padding: 14,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                              Clip {clip.clip_number}
+                            </div>
+                            <div style={{ marginTop: 4, fontWeight: 700 }}>{clip.recommendation_reason ?? "Recommended next"}</div>
                           </div>
-                          <div style={{ marginTop: 4, fontWeight: 700 }}>{clip.recommendation_reason ?? "Recommended next"}</div>
+                          <div style={{ borderRadius: 999, background: t.chip, color: t.accent, fontWeight: 700, padding: "7px 10px", height: "fit-content" }}>
+                            {clip.virality_score.toFixed(1)}
+                          </div>
                         </div>
-                        <div style={{ borderRadius: 999, background: t.chip, color: t.accent, fontWeight: 700, padding: "7px 10px", height: "fit-content" }}>
-                          {clip.virality_score.toFixed(1)}
+                        <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
+                          {clip.subtitle_text}
                         </div>
-                      </div>
-                      <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
-                        {clip.subtitle_text}
-                      </div>
-                    </article>
-                  ))}
+                        {overlayState.variant === "enabled" ? (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                background: t.chip,
+                                border: `1px solid ${t.accent}`,
+                                color: t.accent,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                letterSpacing: ".08em",
+                                textTransform: "uppercase",
+                                padding: "6px 10px",
+                              }}
+                            >
+                              {overlayState.badge}
+                            </span>
+                            {overlayState.category ? (
+                              <span
+                                style={{
+                                  borderRadius: 999,
+                                  background: "transparent",
+                                  border: `1px solid ${t.borderSub}`,
+                                  color: t.textSub,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  letterSpacing: ".08em",
+                                  textTransform: "uppercase",
+                                  padding: "6px 10px",
+                                }}
+                              >
+                                {overlayState.category}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -932,7 +1083,7 @@ function ClipsPageContent() {
                   </h2>
                   <p style={{ marginTop: 8, color: t.textSub }}>
                     {selectedPodcast
-                      ? `${formatTime(selectedPodcast.duration)} total length / ${clips.length} generated clip${clips.length === 1 ? "" : "s"}`
+                      ? `${formatTime(selectedPodcast.duration)} total length / ${clips.length} generated clip${clips.length === 1 ? "" : "s"} / ${overlayEnabledCount} Auto-B-Roll-enabled clip${overlayEnabledCount === 1 ? "" : "s"}`
                       : "Select a podcast from the left to begin."}
                   </p>
                 </div>
@@ -1098,11 +1249,26 @@ function ClipsPageContent() {
                   ) : null}
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: 16,
+                    alignItems: "start",
+                  }}
+                >
                   {visibleClips.map((clip) => {
                     const isPublishing = publishingClipIds.includes(clip.id);
                     const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
+                    const overlayState = getOverlayState(clip.overlay);
+                    const overlayBadgeColor =
+                      overlayState.variant === "enabled" ? t.accent : t.textSub;
+                    const overlayBadgeBorder =
+                      overlayState.variant === "enabled" ? t.accent : t.borderSub;
+                    const overlayBadgeBackground =
+                      overlayState.variant === "enabled" ? t.chip : "transparent";
+
                     return (
                       <article
                         key={clip.id}
@@ -1112,6 +1278,7 @@ function ClipsPageContent() {
                           overflow: "hidden",
                           border: `1px solid ${t.borderSub}`,
                           background: t.cardAlt,
+                          alignSelf: "start",
                         }}
                       >
                         <div
@@ -1171,6 +1338,38 @@ function ClipsPageContent() {
                                 <span
                                   style={{
                                     borderRadius: 999,
+                                    background: overlayBadgeBackground,
+                                    border: `1px solid ${overlayBadgeBorder}`,
+                                    color: overlayBadgeColor,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".1em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {overlayState.badge}
+                                </span>
+                                {overlayState.category ? (
+                                  <span
+                                    style={{
+                                      borderRadius: 999,
+                                      background: "transparent",
+                                      border: `1px solid ${t.borderSub}`,
+                                      color: t.textSub,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      letterSpacing: ".1em",
+                                      textTransform: "uppercase",
+                                      padding: "6px 10px",
+                                    }}
+                                  >
+                                    {overlayState.category}
+                                  </span>
+                                ) : null}
+                                <span
+                                  style={{
+                                    borderRadius: 999,
                                     background: "transparent",
                                     border: `1px solid ${t.borderSub}`,
                                     color: t.textSub,
@@ -1199,32 +1398,155 @@ function ClipsPageContent() {
                             </div>
                           </div>
 
-                          <p style={{ margin: 0, color: t.text, lineHeight: 1.75, minHeight: 92 }}>
-                            {clip.subtitle_text}
-                          </p>
+                          <div style={{ marginTop: 2 }}>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                letterSpacing: ".16em",
+                                textTransform: "uppercase",
+                                color: t.textFaint,
+                                marginBottom: 8,
+                              }}
+                            >
+                              Clip Preview
+                            </div>
+                            <p
+                              style={{
+                                margin: 0,
+                                color: t.text,
+                                lineHeight: 1.7,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 5,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                              title={clip.subtitle_text}
+                            >
+                              {clip.subtitle_text}
+                            </p>
+                          </div>
 
                           <div
                             style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                              gap: 12,
                               marginTop: 14,
-                              borderRadius: 16,
-                              border: `1px solid ${t.borderSub}`,
-                              background: t.chip,
-                              padding: "12px 14px",
                             }}
                           >
-                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                              Publish State
-                            </div>
-                            <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                              {clip.published
-                                ? `Published on ${formatDate(clip.published_at)} with an authenticated download URL.`
-                                : "Still private. Publish this clip to make it downloadable from the dashboard."}
-                            </div>
-                            {clip.match_reason ? (
-                              <div style={{ marginTop: 8, fontSize: 12, color: t.textSub }}>
-                                Search hint: {clip.match_reason}
+                            <div
+                              style={{
+                                borderRadius: 16,
+                                border: `1px solid ${t.borderSub}`,
+                                background: t.chip,
+                                padding: "12px 14px",
+                              }}
+                            >
+                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                                Publish State
                               </div>
-                            ) : null}
+                              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                {clip.published
+                                  ? `Published ${formatDate(clip.published_at)}.`
+                                  : "Private. Publish to enable downloads."}
+                              </div>
+                              {clip.match_reason ? (
+                                <div style={{ marginTop: 8, fontSize: 12, color: t.textSub }}>
+                                  Search: {clip.match_reason}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div
+                              style={{
+                                borderRadius: 16,
+                                border: `1px solid ${t.borderSub}`,
+                                background: overlayState.variant === "enabled" ? t.chip : "transparent",
+                                padding: "12px 14px",
+                              }}
+                            >
+                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                                Overlay Status
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: overlayState.variant === "enabled" ? t.accent : t.text, lineHeight: 1.55 }}>
+                                {overlayState.title}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                {overlayState.description}
+                              </div>
+                              {overlayState.keyword || overlayState.category || overlayState.asset ? (
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                  {overlayState.keyword ? (
+                                    <span
+                                      style={{
+                                        borderRadius: 999,
+                                        background: "transparent",
+                                        border: `1px solid ${t.borderSub}`,
+                                        color: t.textSub,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        letterSpacing: ".08em",
+                                        textTransform: "uppercase",
+                                        padding: "6px 10px",
+                                      }}
+                                    >
+                                      Keyword: {overlayState.keyword}
+                                    </span>
+                                  ) : null}
+                                  {overlayState.category ? (
+                                    <span
+                                      style={{
+                                        borderRadius: 999,
+                                        background: "transparent",
+                                        border: `1px solid ${t.borderSub}`,
+                                        color: t.textSub,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        letterSpacing: ".08em",
+                                        textTransform: "uppercase",
+                                        padding: "6px 10px",
+                                      }}
+                                    >
+                                      Category: {overlayState.category}
+                                    </span>
+                                  ) : null}
+                                  {overlayState.asset ? (
+                                    <span
+                                      style={{
+                                        borderRadius: 999,
+                                        background: "transparent",
+                                        border: `1px solid ${t.borderSub}`,
+                                        color: t.textSub,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        letterSpacing: ".08em",
+                                        textTransform: "uppercase",
+                                        padding: "6px 10px",
+                                      }}
+                                    >
+                                      Asset: {overlayState.asset}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {overlayState.matchedText ? (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    fontSize: 12,
+                                    color: t.textSub,
+                                    lineHeight: 1.6,
+                                    display: "-webkit-box",
+                                    WebkitLineClamp: 3,
+                                    WebkitBoxOrient: "vertical",
+                                    overflow: "hidden",
+                                  }}
+                                  title={overlayState.matchedText}
+                                >
+                                  Matched text: {truncateText(overlayState.matchedText, 120)}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>

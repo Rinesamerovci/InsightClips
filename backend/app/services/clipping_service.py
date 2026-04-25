@@ -14,6 +14,7 @@ from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
+import app.services.overlay_mapping_service as overlay_mapping_service_module
 
 
 GENERATED_CLIPS_ROOT = ROOT_DIR / ".generated" / "clips"
@@ -127,6 +128,7 @@ def generate_clips(
 
     output_dir = _prepare_output_directory(podcast_id)
     generated_results: list[ClipResult] = []
+    generated_pairs: list[tuple[ClipResult, ScoreSegment]] = []
     rows_to_persist: list[dict[str, Any]] = []
 
     for clip_number, segment in enumerate(selected_segments, start=1):
@@ -176,6 +178,7 @@ def generate_clips(
                     status="ready",
                 )
             )
+            generated_pairs.append((generated_results[-1], segment))
             rows_to_persist.append(
                 {
                     "id": clip_id,
@@ -198,6 +201,14 @@ def generate_clips(
         raise ClippingError("No clips could be generated from the selected segments.")
 
     _persist_generated_clips(podcast_id, rows_to_persist)
+    overlay_mapping_service_module.service_supabase = service_supabase
+    overlay_result = overlay_mapping_service_module.build_overlay_mappings(podcast_id, generated_pairs)
+    overlay_mapping_service_module.persist_overlay_mappings(overlay_result)
+    overlays_by_clip_id = {decision.clip_id: decision for decision in overlay_result.overlay_decisions}
+    generated_results = [
+        clip.model_copy(update={"overlay": overlays_by_clip_id.get(clip.id)})
+        for clip in generated_results
+    ]
     return generated_results
 
 
@@ -233,6 +244,9 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
     if not rows:
         return None
 
+    overlay_mapping_service_module.service_supabase = service_supabase
+    overlays_by_clip_id = overlay_mapping_service_module.get_overlay_decisions_for_podcast(podcast_id)
+
     clips = [
         ClipResult(
             id=str(row["id"]),
@@ -247,6 +261,7 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
             published=bool(row.get("published") or False),
             download_url=str(row.get("download_url") or "").strip() or None,
             published_at=row.get("published_at"),
+            overlay=overlays_by_clip_id.get(str(row["id"])),
         )
         for row in rows
     ]

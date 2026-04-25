@@ -138,6 +138,16 @@ async function testSearchClipsFallsBackToCurrentClipData(): Promise<void> {
             published: false,
             download_url: null,
             published_at: null,
+            overlay: {
+              clip_id: "clip-1",
+              podcast_id: "pod-1",
+              keyword: "retention",
+              overlay_category: "education",
+              overlay_asset: "viewer_retention_curve",
+              matched_text: "Retention hooks",
+              applied: true,
+              confidence: 0.88,
+            },
           },
           {
             id: "clip-2",
@@ -174,6 +184,8 @@ async function testSearchClipsFallsBackToCurrentClipData(): Promise<void> {
     assert.equal(result.total_results, 1);
     assert.equal(result.clips[0]?.id, "clip-1");
     assert.equal(result.clips[0]?.match_reason, "Matched clip transcript");
+    assert.equal(result.clips[0]?.overlay?.keyword, "retention");
+    assert.equal(result.clips[0]?.overlay?.overlay_category, "education");
   } finally {
     restore();
   }

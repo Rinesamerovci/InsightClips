@@ -1,3 +1,5 @@
+import type { ClipOverlay } from "./api";
+
 export type ClipStatusFilter =
   | "all"
   | "published"
@@ -19,6 +21,7 @@ export type ClipInsightInput = {
   published_at?: string | null;
   download_url?: string | null;
   video_url?: string;
+  overlay?: ClipOverlay | null;
 };
 
 export type PodcastInsightInput = {

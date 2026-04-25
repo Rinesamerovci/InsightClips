@@ -23,6 +23,16 @@ const discoveryItems = [
       subtitle_text: "How creators turn attention into revenue",
       status: "ready",
       published: false,
+      overlay: {
+        clip_id: "clip-1",
+        podcast_id: "pod-1",
+        keyword: "revenue",
+        overlay_category: "business",
+        overlay_asset: "growth_chart",
+        matched_text: "turn attention into revenue",
+        applied: true,
+        confidence: 0.91,
+      },
     },
     podcast,
   ),
@@ -74,4 +84,6 @@ export function runClipsTests(): void {
     ["clip-1", "clip-3", "clip-2"],
   );
   assert.equal(ranked[0]?.recommendation_reason, "Highest upside right now");
+  assert.equal(discoveryItems[0]?.overlay?.applied, true);
+  assert.equal(discoveryItems[0]?.overlay?.overlay_category, "business");
 }

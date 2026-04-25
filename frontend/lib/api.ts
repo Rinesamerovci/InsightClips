@@ -151,6 +151,17 @@ export type PodcastsResponse = {
   is_mock: boolean;
 };
 
+export type ClipOverlay = {
+  clip_id: string;
+  podcast_id: string;
+  keyword?: string | null;
+  overlay_category?: string | null;
+  overlay_asset?: string | null;
+  matched_text?: string | null;
+  applied: boolean;
+  confidence?: number | null;
+};
+
 export type ClipResult = {
   id: string;
   clip_number: number;
@@ -164,6 +175,7 @@ export type ClipResult = {
   published?: boolean;
   download_url?: string | null;
   published_at?: string | null;
+  overlay?: ClipOverlay | null;
 };
 
 export type ClipGenerationResult = {

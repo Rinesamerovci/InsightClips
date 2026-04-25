@@ -126,14 +126,22 @@ class FakeClipsTable:
 
 
 class FakeSupabase:
-    def __init__(self, rows: list[dict[str, object]], storage: FakeStorage) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, object]],
+        storage: FakeStorage,
+        overlay_rows: list[dict[str, object]] | None = None,
+    ) -> None:
         self._clips_table = FakeClipsTable(rows)
+        self._overlay_rows = overlay_rows or []
         self.storage = SimpleNamespace(from_=lambda _: storage)
 
-    def table(self, name: str) -> FakeClipsTable:
-        if name != "clips":
-            raise AssertionError(f"Unexpected table requested: {name}")
-        return self._clips_table
+    def table(self, name: str):
+        if name == "clips":
+            return self._clips_table
+        if name == "clip_overlays":
+            return SimpleNamespace(select=lambda _: FakeSelectQuery(self._overlay_rows))
+        raise AssertionError(f"Unexpected table requested: {name}")
 
 
 class PublishingServiceTests(unittest.TestCase):
@@ -192,7 +200,22 @@ class PublishingServiceTests(unittest.TestCase):
         rows[0]["published_at"] = "2026-04-21T12:00:00+00:00"
         rows[0]["storage_url"] = "https://example.com/storage/clip-01.mp4"
         storage = FakeStorage()
-        fake_supabase = FakeSupabase(rows, storage)
+        fake_supabase = FakeSupabase(
+            rows,
+            storage,
+            overlay_rows=[
+                {
+                    "clip_id": "clip-1",
+                    "podcast_id": "podcast-123",
+                    "keyword": "ai",
+                    "overlay_category": "technology",
+                    "overlay_asset": "ai_chip",
+                    "matched_text": "AI drives startup growth.",
+                    "applied": True,
+                    "confidence": 0.93,
+                }
+            ],
+        )
 
         with patch.object(clipping_service_module, "service_supabase", fake_supabase):
             result = get_clips_for_podcast("podcast-123")
@@ -200,6 +223,8 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.clips[0].published)
         self.assertEqual(result.clips[0].download_url, "/podcasts/clips/clip-1/download")
+        self.assertIsNotNone(result.clips[0].overlay)
+        self.assertEqual(result.clips[0].overlay.overlay_asset, "ai_chip")
 
     def test_revoke_clip_download_clears_publication_fields(self) -> None:
         case_dir = self._workspace_case_dir("publishing-revoke")

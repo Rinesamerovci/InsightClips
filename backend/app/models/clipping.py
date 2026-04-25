@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.analysis import ScoreSegment
+from app.models.overlay import OverlayDecision
 from app.models.transcription import TranscriptionResult
 
 
@@ -24,6 +25,7 @@ class ClipResult(BaseModel):
     published: bool = False
     download_url: str | None = None
     published_at: datetime | None = None
+    overlay: OverlayDecision | None = None
 
     @field_validator("id", "video_url", "subtitle_text")
     @classmethod

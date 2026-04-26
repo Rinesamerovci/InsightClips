@@ -73,6 +73,18 @@ async function testSearchClipsUsesBackendDiscoveryRoute(): Promise<void> {
             published: true,
             download_url: "/podcasts/clips/clip-1/download",
             published_at: "2026-04-23T09:00:00Z",
+            overlay: {
+              clip_id: "clip-1",
+              podcast_id: "pod-1",
+              keyword: "retention",
+              overlay_category: "education",
+              overlay_asset: "viewer_retention_curve",
+              asset_path: "education/viewer_retention_curve.png",
+              applied: true,
+              rendered: true,
+              render_status: "rendered",
+              confidence: 0.9,
+            },
             search_score: 58,
             matched_fields: ["title", "keywords"],
             match_reason: "Matched clip title",
@@ -102,6 +114,7 @@ async function testSearchClipsUsesBackendDiscoveryRoute(): Promise<void> {
     assert.ok(calls[0]?.url.includes("status=published"));
     assert.equal(calls[0]?.init?.method, "GET");
     assert.equal((calls[0]?.init?.headers as Record<string, string>)?.Authorization, "Bearer token-123");
+    assert.equal(result.clips[0]?.overlay?.rendered, true);
   } finally {
     restore();
   }

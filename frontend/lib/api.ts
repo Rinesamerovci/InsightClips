@@ -157,8 +157,18 @@ export type ClipOverlay = {
   keyword?: string | null;
   overlay_category?: string | null;
   overlay_asset?: string | null;
+  asset_path?: string | null;
   matched_text?: string | null;
+  position?: string | null;
+  scale?: number | null;
+  opacity?: number | null;
+  margin_x?: number | null;
+  margin_y?: number | null;
+  render_start_seconds?: number | null;
+  render_end_seconds?: number | null;
   applied: boolean;
+  rendered?: boolean;
+  render_status?: string | null;
   confidence?: number | null;
 };
 

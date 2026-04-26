@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
+from app.models.overlay import OverlayDecision
 from app.models.search import ClipSearchHit, ClipSearchResult
+import app.services.overlay_mapping_service as overlay_mapping_service_module
 
 CLIP_COLUMNS = (
     "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,"
@@ -46,6 +48,7 @@ class ClipDiscoveryContext:
     published: bool
     download_url: str | None
     published_at: Any
+    overlay: OverlayDecision | None
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,7 @@ def search_clips(
                 published=context.published,
                 download_url=context.download_url,
                 published_at=context.published_at,
+                overlay=context.overlay,
                 search_score=search_score,
                 matched_fields=matched_fields,
                 match_reason=_resolve_match_reason(matched_fields),
@@ -139,9 +143,17 @@ def load_discovery_context(podcast_id: str) -> list[ClipDiscoveryContext]:
         or []
     )
     score_rows = _load_score_rows(cleaned_podcast_id)
+    overlay_mapping_service_module.service_supabase = service_supabase
+    overlays_by_clip_id = overlay_mapping_service_module.get_overlay_decisions_for_podcast(cleaned_podcast_id)
 
     return [
-        _build_context(cleaned_podcast_id, podcast_title, row, score_rows)
+        _build_context(
+            cleaned_podcast_id,
+            podcast_title,
+            row,
+            score_rows,
+            overlays_by_clip_id.get(str(row["id"])),
+        )
         for row in clip_rows
     ]
 
@@ -170,6 +182,7 @@ def _build_context(
     podcast_title: str,
     row: dict[str, Any],
     score_rows: list[dict[str, Any]],
+    overlay: OverlayDecision | None,
 ) -> ClipDiscoveryContext:
     clip_start_seconds = float(row.get("clip_start_sec") or 0.0)
     clip_end_seconds = float(row.get("clip_end_sec") or 0.0)
@@ -214,6 +227,7 @@ def _build_context(
         published=bool(row.get("published")),
         download_url=str(row.get("download_url") or "").strip() or None,
         published_at=row.get("published_at"),
+        overlay=overlay,
     )
 
 

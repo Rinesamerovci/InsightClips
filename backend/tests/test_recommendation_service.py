@@ -60,11 +60,13 @@ class FakeSupabase:
         podcasts: list[dict[str, object]],
         clips: list[dict[str, object]],
         scores: list[dict[str, object]],
+        overlay_rows: list[dict[str, object]] | None = None,
     ) -> None:
         self._tables = {
             "podcasts": FakeTable(podcasts),
             "clips": FakeTable(clips),
             "scores": FakeTable(scores),
+            "clip_overlays": FakeTable(overlay_rows or []),
         }
 
     def table(self, name: str) -> FakeTable:
@@ -209,6 +211,42 @@ class RecommendationServiceTests(unittest.TestCase):
 
         self.assertEqual(len(result.recommendations), 2)
         self.assertTrue(all(item.recommendation_score > 0 for item in result.recommendations))
+
+    def test_recommend_clips_includes_overlay_metadata(self) -> None:
+        fake_supabase = FakeSupabase(
+            self.podcasts,
+            self.clips,
+            self.scores,
+            overlay_rows=[
+                {
+                    "clip_id": "clip-1",
+                    "podcast_id": "pod-1",
+                    "keyword": "retention",
+                    "overlay_category": "business",
+                    "overlay_asset": "marketing_graph",
+                    "asset_path": "business/marketing_graph.png",
+                    "matched_text": "Retention hooks that bring viewers back again",
+                    "position": "top_left",
+                    "scale": 0.2,
+                    "opacity": 0.92,
+                    "margin_x": 32,
+                    "margin_y": 32,
+                    "render_start_seconds": 0.9,
+                    "render_end_seconds": 3.1,
+                    "applied": True,
+                    "rendered": True,
+                    "render_status": "rendered",
+                    "confidence": 0.91,
+                }
+            ],
+        )
+
+        with patch.object(search_service_module, "service_supabase", fake_supabase):
+            result = recommend_clips("pod-1", limit=1)
+
+        self.assertEqual(result.recommendations[0].id, "clip-1")
+        self.assertIsNotNone(result.recommendations[0].overlay)
+        self.assertEqual(result.recommendations[0].overlay.keyword, "retention")
 
 
 if __name__ == "__main__":

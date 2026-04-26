@@ -13,6 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.models.analysis import ScoreSegment  # noqa: E402
 from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
+from app.models.overlay import OverlayDecision  # noqa: E402
 import app.services.clipping_service as clipping_service_module  # noqa: E402
 from app.services.clipping_service import (  # noqa: E402
     ClippingError,
@@ -83,6 +84,37 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("aac", command)
         self.assertIn("+faststart", command)
         self.assertIn("subtitles=", command[command.index("-vf") + 1])
+
+    def test_build_ffmpeg_clip_command_uses_filter_complex_when_overlay_is_enabled(self) -> None:
+        overlay = OverlayDecision(
+            clip_id="clip-1",
+            podcast_id="podcast-1",
+            keyword="ai",
+            overlay_category="technology",
+            overlay_asset="ai_chip",
+            asset_path="technology/ai_chip.png",
+            position="bottom_right",
+            scale=0.2,
+            opacity=0.95,
+            margin_x=32,
+            margin_y=32,
+            render_start_seconds=1.2,
+            render_end_seconds=3.8,
+            applied=True,
+        )
+        command = build_ffmpeg_clip_command(
+            Path("input.mp4"),
+            Path("output.mp4"),
+            Path("captions.srt"),
+            start_seconds=4.0,
+            duration_seconds=18.2,
+            overlay=overlay,
+            overlay_asset_path=Path("overlay.png"),
+        )
+
+        self.assertIn("-filter_complex", command)
+        self.assertIn("-map", command)
+        self.assertIn("overlay=", command[command.index("-filter_complex") + 1])
 
     def test_build_srt_content_offsets_timestamps_relative_to_clip_start(self) -> None:
         srt_content, subtitle_text = build_srt_content(
@@ -216,6 +248,117 @@ class ClippingServiceTests(unittest.TestCase):
                             generate_clips("podcast-123", [invalid_segment], self.transcription)
 
         self.assertIn("No clips could be generated", exc_info.exception.detail)
+
+    def test_generate_clips_marks_overlay_missing_asset_without_crashing_export(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-missing-overlay")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        overlay = OverlayDecision(
+            clip_id="clip-1",
+            podcast_id="podcast-123",
+            keyword="ai",
+            overlay_category="technology",
+            overlay_asset="ai_chip",
+            asset_path="technology/missing.png",
+            applied=True,
+            render_status="mapped",
+        )
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                with patch.object(
+                                    clipping_service_module.overlay_mapping_service_module,
+                                    "detect_overlay_decision",
+                                    return_value=overlay,
+                                ):
+                                    clips = generate_clips("podcast-123", self.score_segments, self.transcription)
+
+        self.assertEqual(len(clips), 1)
+        self.assertIsNotNone(clips[0].overlay)
+        self.assertEqual(clips[0].overlay.render_status, "missing_asset")
+        self.assertFalse(clips[0].overlay.rendered)
+
+    def test_generate_clips_falls_back_when_overlay_render_fails(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-overlay-fallback")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+        asset_dir = case_dir / "technology"
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        asset_path = asset_dir / "ai_chip.png"
+        asset_path.write_bytes(b"png")
+
+        call_count = {"value": 0}
+
+        def fake_ffmpeg(*args, **kwargs):
+            call_count["value"] += 1
+            clip_path = args[1]
+            if kwargs.get("overlay") is not None:
+                raise ClippingError("overlay filter failed", status_code=502)
+            clip_path.write_bytes(b"clip")
+
+        overlay = OverlayDecision(
+            clip_id="clip-1",
+            podcast_id="podcast-123",
+            keyword="ai",
+            overlay_category="technology",
+            overlay_asset="ai_chip",
+            asset_path="technology/ai_chip.png",
+            position="bottom_right",
+            scale=0.2,
+            opacity=0.95,
+            render_start_seconds=0.8,
+            render_end_seconds=2.6,
+            applied=True,
+            render_status="mapped",
+        )
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "OVERLAY_ASSETS_ROOT", case_dir):
+                    with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                        with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                            with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                                with patch.object(
+                                    clipping_service_module,
+                                    "_store_clip_assets",
+                                    return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                                ):
+                                    with patch.object(
+                                        clipping_service_module.overlay_mapping_service_module,
+                                        "detect_overlay_decision",
+                                        return_value=overlay,
+                                    ):
+                                        clips = generate_clips("podcast-123", self.score_segments, self.transcription)
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(call_count["value"], 2)
+        self.assertEqual(clips[0].overlay.render_status, "render_fallback")
+        self.assertFalse(clips[0].overlay.rendered)
 
 
 if __name__ == "__main__":

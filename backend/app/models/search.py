@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.overlay import OverlayDecision
+
 
 class _ClipDiscoveryBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -24,6 +26,7 @@ class _ClipDiscoveryBase(BaseModel):
     published: bool = False
     download_url: str | None = None
     published_at: datetime | None = None
+    overlay: OverlayDecision | None = None
 
     @field_validator("id", "podcast_id", "podcast_title", "title", "video_url", "subtitle_text", "status")
     @classmethod

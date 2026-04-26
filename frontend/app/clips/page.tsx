@@ -182,8 +182,10 @@ function getOverlayState(overlay?: ClipOverlay | null): {
   const keyword = overlay.keyword ?? null;
   const asset = formatOverlayValue(overlay.overlay_asset);
   const matchedText = overlay.matched_text ?? null;
+  const renderStatus = overlay.render_status ?? null;
+  const rendered = overlay.rendered ?? overlay.applied;
 
-  if (overlay.applied) {
+  if (rendered) {
     return {
       variant: "enabled",
       badge: "Auto-B-Roll on",
@@ -193,6 +195,36 @@ function getOverlayState(overlay?: ClipOverlay | null): {
         : category
           ? `Applied from the ${category} overlay set.`
           : "An overlay was applied to this clip.",
+      category,
+      keyword,
+      asset,
+      matchedText,
+    };
+  }
+
+  if (overlay.applied && renderStatus === "missing_asset") {
+    return {
+      variant: "info",
+      badge: "Asset missing",
+      title: "Overlay matched but asset was unavailable",
+      description: keyword
+        ? `Matched "${keyword}", but the local overlay file could not be loaded.`
+        : "Overlay metadata matched, but the local overlay file could not be loaded.",
+      category,
+      keyword,
+      asset,
+      matchedText,
+    };
+  }
+
+  if (overlay.applied && renderStatus === "render_fallback") {
+    return {
+      variant: "info",
+      badge: "Fallback export",
+      title: "Overlay was skipped to keep export stable",
+      description: keyword
+        ? `Matched "${keyword}", but the clip was exported without the overlay after a render fallback.`
+        : "The clip was exported without the overlay after a render fallback.",
       category,
       keyword,
       asset,
@@ -266,7 +298,9 @@ function ClipsPageContent() {
   );
 
   const publishedCount = clips.filter((clip) => clip.published).length;
-  const overlayEnabledCount = clips.filter((clip) => clip.overlay?.applied).length;
+  const overlayEnabledCount = clips.filter(
+    (clip) => (clip.overlay?.rendered ?? clip.overlay?.applied) === true,
+  ).length;
   const averageScore =
     clips.length > 0
       ? clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length

@@ -62,6 +62,7 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
                 published=context.published,
                 download_url=context.download_url,
                 published_at=context.published_at,
+                overlay=context.overlay,
                 recommendation_score=round(score, 2),
                 recommendation_reason=reason,
             )

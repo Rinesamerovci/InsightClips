@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import tempfile
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.config import ROOT_DIR, get_settings
+from app.config import BACKEND_DIR, ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
+from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
 import app.services.overlay_mapping_service as overlay_mapping_service_module
 
@@ -26,6 +25,7 @@ MAX_SUBTITLE_DURATION_SECONDS = 3.4
 SUBTITLE_GAP_SECONDS = 0.55
 CLIP_LEAD_IN_SECONDS = 2.0
 CLIP_LEAD_OUT_SECONDS = 1.0
+OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
 
 
 class ClippingError(Exception):
@@ -49,8 +49,10 @@ def build_ffmpeg_clip_command(
     *,
     start_seconds: float,
     duration_seconds: float,
+    overlay: OverlayDecision | None = None,
+    overlay_asset_path: Path | None = None,
 ) -> list[str]:
-    return [
+    command = [
         "ffmpeg",
         "-v",
         "error",
@@ -58,28 +60,57 @@ def build_ffmpeg_clip_command(
         "-y",
         "-i",
         str(source_path),
-        "-ss",
-        f"{start_seconds:.3f}",
-        "-t",
-        f"{duration_seconds:.3f}",
-        "-vf",
-        _build_subtitle_filter(subtitle_path),
-        "-c:v",
-        "libx264",
-        "-preset",
-        "medium",
-        "-crf",
-        "18",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-movflags",
-        "+faststart",
-        str(output_path),
     ]
+    if overlay is not None and overlay_asset_path is not None:
+        command.extend(
+            [
+                "-loop",
+                "1",
+                "-i",
+                str(overlay_asset_path),
+            ]
+        )
+    command.extend(
+        [
+            "-ss",
+            f"{start_seconds:.3f}",
+            "-t",
+            f"{duration_seconds:.3f}",
+        ]
+    )
+    if overlay is not None and overlay_asset_path is not None:
+        command.extend(
+            [
+                "-filter_complex",
+                _build_video_filter_graph(subtitle_path, overlay),
+                "-map",
+                "[vout]",
+                "-map",
+                "0:a?",
+            ]
+        )
+    else:
+        command.extend(["-vf", _build_subtitle_filter(subtitle_path)])
+    command.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
+    return command
 
 
 def build_srt_content(
@@ -127,8 +158,9 @@ def generate_clips(
         raise ClippingError("No scored segments are available for clip generation.", status_code=404)
 
     output_dir = _prepare_output_directory(podcast_id)
+    overlay_mapping_service_module.service_supabase = service_supabase
     generated_results: list[ClipResult] = []
-    generated_pairs: list[tuple[ClipResult, ScoreSegment]] = []
+    overlay_decisions: list[OverlayDecision] = []
     rows_to_persist: list[dict[str, Any]] = []
 
     for clip_number, segment in enumerate(selected_segments, start=1):
@@ -149,13 +181,30 @@ def generate_clips(
                 clip_start_seconds=clip_start,
                 clip_end_seconds=clip_end,
             )
+            draft_clip = ClipResult(
+                id=clip_id,
+                clip_number=clip_number,
+                clip_start_seconds=clip_start,
+                clip_end_seconds=clip_end,
+                duration_seconds=clip_duration,
+                virality_score=segment.virality_score,
+                video_url=_build_backend_download_path(clip_id),
+                subtitle_text=subtitle_text,
+                status="ready",
+            )
+            overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
+                podcast_id,
+                draft_clip,
+                segment,
+            )
             subtitle_path.write_text(srt_content, encoding="utf-8")
-            _run_ffmpeg_clip_generation(
+            final_overlay = _render_clip_with_optional_overlay(
                 source_path,
                 clip_path,
                 subtitle_path,
                 start_seconds=clip_start,
                 duration_seconds=clip_duration,
+                overlay=overlay_decision,
             )
             storage_url, subtitle_url = _store_clip_assets(
                 podcast_id,
@@ -166,19 +215,14 @@ def generate_clips(
             )
             video_url = storage_url or _build_backend_download_path(clip_id)
             generated_results.append(
-                ClipResult(
-                    id=clip_id,
-                    clip_number=clip_number,
-                    clip_start_seconds=clip_start,
-                    clip_end_seconds=clip_end,
-                    duration_seconds=clip_duration,
-                    virality_score=segment.virality_score,
-                    video_url=video_url,
-                    subtitle_text=subtitle_text,
-                    status="ready",
+                draft_clip.model_copy(
+                    update={
+                        "video_url": video_url,
+                        "overlay": final_overlay,
+                    }
                 )
             )
-            generated_pairs.append((generated_results[-1], segment))
+            overlay_decisions.append(final_overlay)
             rows_to_persist.append(
                 {
                     "id": clip_id,
@@ -201,14 +245,12 @@ def generate_clips(
         raise ClippingError("No clips could be generated from the selected segments.")
 
     _persist_generated_clips(podcast_id, rows_to_persist)
-    overlay_mapping_service_module.service_supabase = service_supabase
-    overlay_result = overlay_mapping_service_module.build_overlay_mappings(podcast_id, generated_pairs)
+    overlay_result = OverlayMappingResult(
+        podcast_id=podcast_id,
+        total_segments_checked=len(overlay_decisions),
+        overlay_decisions=overlay_decisions,
+    )
     overlay_mapping_service_module.persist_overlay_mappings(overlay_result)
-    overlays_by_clip_id = {decision.clip_id: decision for decision in overlay_result.overlay_decisions}
-    generated_results = [
-        clip.model_copy(update={"overlay": overlays_by_clip_id.get(clip.id)})
-        for clip in generated_results
-    ]
     return generated_results
 
 
@@ -489,6 +531,101 @@ def _build_subtitle_filter(subtitle_path: Path) -> str:
     return f"subtitles='{safe_path}':force_style='{style}'"
 
 
+def _build_video_filter_graph(subtitle_path: Path, overlay: OverlayDecision) -> str:
+    subtitle_filter = _build_subtitle_filter(subtitle_path)
+    opacity = max(0.0, min(float(overlay.opacity or 1.0), 1.0))
+    scale = max(0.05, min(float(overlay.scale or 0.18), 0.95))
+    start = max(0.0, float(overlay.render_start_seconds or 0.0))
+    end = max(start + 0.6, float(overlay.render_end_seconds or (start + 2.0)))
+    x_expr, y_expr = _resolve_overlay_coordinates(overlay)
+    return (
+        f"[0:v]{subtitle_filter}[base];"
+        f"[1:v]format=rgba,colorchannelmixer=aa={opacity:.3f}[ovsrc];"
+        f"[ovsrc][base]scale2ref=w=oh*mdar:h=trunc(main_h*{scale:.3f}/2)*2[ov][base2];"
+        f"[base2][ov]overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{start:.3f},{end:.3f})'[vout]"
+    )
+
+
+def _resolve_overlay_coordinates(overlay: OverlayDecision) -> tuple[str, str]:
+    margin_x = int(overlay.margin_x or 32)
+    margin_y = int(overlay.margin_y or 32)
+    position = overlay.position or "top_right"
+    coordinates = {
+        "top_left": (f"{margin_x}", f"{margin_y}"),
+        "top_center": ("(main_w-overlay_w)/2", f"{margin_y}"),
+        "top_right": (f"main_w-overlay_w-{margin_x}", f"{margin_y}"),
+        "bottom_left": (f"{margin_x}", f"main_h-overlay_h-{margin_y}"),
+        "bottom_center": ("(main_w-overlay_w)/2", f"main_h-overlay_h-{margin_y}"),
+        "bottom_right": (f"main_w-overlay_w-{margin_x}", f"main_h-overlay_h-{margin_y}"),
+        "center": ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"),
+    }
+    return coordinates.get(position, coordinates["top_right"])
+
+
+def _resolve_overlay_asset_path(asset_path: str | None) -> Path | None:
+    if not asset_path:
+        return None
+    root = OVERLAY_ASSETS_ROOT.resolve()
+    resolved = (root / asset_path).resolve()
+    if root not in resolved.parents:
+        return None
+    if not resolved.exists() or not resolved.is_file():
+        return None
+    return resolved
+
+
+def _render_clip_with_optional_overlay(
+    source_path: Path,
+    clip_path: Path,
+    subtitle_path: Path,
+    *,
+    start_seconds: float,
+    duration_seconds: float,
+    overlay: OverlayDecision,
+) -> OverlayDecision:
+    if not overlay.applied:
+        _run_ffmpeg_clip_generation(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
+        return overlay.model_copy(update={"rendered": False, "render_status": "no_match"})
+
+    overlay_asset_path = _resolve_overlay_asset_path(overlay.asset_path)
+    if overlay_asset_path is None:
+        _run_ffmpeg_clip_generation(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
+        return overlay.model_copy(update={"rendered": False, "render_status": "missing_asset"})
+
+    try:
+        _run_ffmpeg_clip_generation(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+            overlay=overlay,
+            overlay_asset_path=overlay_asset_path,
+        )
+        return overlay.model_copy(update={"rendered": True, "render_status": "rendered"})
+    except ClippingError:
+        _run_ffmpeg_clip_generation(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+        )
+        return overlay.model_copy(update={"rendered": False, "render_status": "render_fallback"})
+
+
 def _run_ffmpeg_clip_generation(
     source_path: Path,
     clip_path: Path,
@@ -496,6 +633,8 @@ def _run_ffmpeg_clip_generation(
     *,
     start_seconds: float,
     duration_seconds: float,
+    overlay: OverlayDecision | None = None,
+    overlay_asset_path: Path | None = None,
 ) -> None:
     if not shutil.which("ffmpeg"):
         raise ClippingError("ffmpeg is required to generate clips.", status_code=500)
@@ -506,6 +645,8 @@ def _run_ffmpeg_clip_generation(
         subtitle_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
+        overlay=overlay,
+        overlay_asset_path=overlay_asset_path,
     )
     try:
         result = subprocess.run(

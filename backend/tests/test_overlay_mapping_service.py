@@ -90,6 +90,8 @@ class OverlayMappingServiceTests(unittest.TestCase):
         self.assertTrue(result.overlay_decisions[0].applied)
         self.assertEqual(result.overlay_decisions[0].keyword, "ai")
         self.assertEqual(result.overlay_decisions[0].overlay_category, "technology")
+        self.assertEqual(result.overlay_decisions[0].asset_path, "technology/ai_chip.png")
+        self.assertEqual(result.overlay_decisions[0].render_status, "mapped")
 
     def test_build_overlay_mappings_falls_back_safely_when_no_keyword_matches(self) -> None:
         clip = self._build_clip()

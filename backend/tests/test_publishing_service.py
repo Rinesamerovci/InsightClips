@@ -171,6 +171,10 @@ class PublishingServiceTests(unittest.TestCase):
                 "published": False,
                 "download_url": None,
                 "published_at": None,
+                "export_mode": "portrait",
+                "crop_mode": "center_crop",
+                "mobile_optimized": True,
+                "face_tracking_enabled": False,
             }
         ]
 
@@ -225,6 +229,8 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertEqual(result.clips[0].download_url, "/podcasts/clips/clip-1/download")
         self.assertIsNotNone(result.clips[0].overlay)
         self.assertEqual(result.clips[0].overlay.overlay_asset, "ai_chip")
+        self.assertEqual(result.export_settings.export_mode, "portrait")
+        self.assertTrue(result.clips[0].export_settings.mobile_optimized)
 
     def test_revoke_clip_download_clears_publication_fields(self) -> None:
         case_dir = self._workspace_case_dir("publishing-revoke")

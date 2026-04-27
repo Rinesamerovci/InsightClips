@@ -11,6 +11,7 @@ from app.config import BACKEND_DIR, ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
+from app.models.export_settings import ExportSettings, ExportSettingsInput
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
 import app.services.overlay_mapping_service as overlay_mapping_service_module
@@ -150,6 +151,7 @@ def generate_clips(
     podcast_id: str,
     score_segments: list[ScoreSegment],
     transcription: TranscriptionResult,
+    export_settings: ExportSettingsInput | ExportSettings | None = None,
 ) -> list[ClipResult]:
     podcast_row = _get_podcast_row(podcast_id)
     source_path = _resolve_source_media_path(podcast_row)
@@ -157,6 +159,7 @@ def generate_clips(
     if not selected_segments:
         raise ClippingError("No scored segments are available for clip generation.", status_code=404)
 
+    resolved_export_settings = _resolve_export_settings(export_settings, podcast_row=podcast_row)
     output_dir = _prepare_output_directory(podcast_id)
     overlay_mapping_service_module.service_supabase = service_supabase
     generated_results: list[ClipResult] = []
@@ -191,6 +194,7 @@ def generate_clips(
                 video_url=_build_backend_download_path(clip_id),
                 subtitle_text=subtitle_text,
                 status="ready",
+                export_settings=resolved_export_settings,
             )
             overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
                 podcast_id,
@@ -236,6 +240,10 @@ def generate_clips(
                     "subtitle_url": subtitle_url or str(subtitle_path),
                     "subtitle_text": subtitle_text,
                     "status": "ready",
+                    "export_mode": resolved_export_settings.export_mode,
+                    "crop_mode": resolved_export_settings.crop_mode,
+                    "mobile_optimized": resolved_export_settings.mobile_optimized,
+                    "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
                 }
             )
         except ClippingError:
@@ -245,6 +253,7 @@ def generate_clips(
         raise ClippingError("No clips could be generated from the selected segments.")
 
     _persist_generated_clips(podcast_id, rows_to_persist)
+    _persist_podcast_export_settings(podcast_id, resolved_export_settings)
     overlay_result = OverlayMappingResult(
         podcast_id=podcast_id,
         total_segments_checked=len(overlay_decisions),
@@ -259,13 +268,16 @@ def build_clip_generation_result(
     clips: list[ClipResult],
     *,
     processing_time_seconds: float,
+    export_settings: ExportSettings | None = None,
 ) -> ClipGenerationResult:
+    resolved_export_settings = export_settings or (clips[0].export_settings if clips else ExportSettings())
     return ClipGenerationResult(
         podcast_id=podcast_id,
         total_clips_generated=len(clips),
         clips=clips,
         processing_time_seconds=round(processing_time_seconds, 3),
         download_folder_url=f"/podcasts/{podcast_id}/clips",
+        export_settings=resolved_export_settings,
     )
 
 
@@ -276,7 +288,7 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
     response = (
         service_supabase.table("clips")
         .select(
-            "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at"
+            "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled"
         )
         .eq("podcast_id", podcast_id)
         .order("clip_number")
@@ -304,10 +316,16 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
             download_url=str(row.get("download_url") or "").strip() or None,
             published_at=row.get("published_at"),
             overlay=overlays_by_clip_id.get(str(row["id"])),
+            export_settings=_build_export_settings_from_row(row),
         )
         for row in rows
     ]
-    return build_clip_generation_result(podcast_id, clips, processing_time_seconds=0.0)
+    return build_clip_generation_result(
+        podcast_id,
+        clips,
+        processing_time_seconds=0.0,
+        export_settings=clips[0].export_settings if clips else ExportSettings(),
+    )
 
 
 def get_clip_download_target(clip_id: str) -> tuple[str | None, Path | None]:
@@ -682,7 +700,7 @@ def _get_podcast_row(podcast_id: str) -> dict[str, Any]:
 
     response = (
         service_supabase.table("podcasts")
-        .select("id,storage_path")
+        .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled")
         .eq("id", podcast_id)
         .limit(1)
         .execute()
@@ -765,6 +783,44 @@ def _persist_generated_clips(podcast_id: str, rows: list[dict[str, Any]]) -> Non
     service_supabase.table("clips").delete().eq("podcast_id", podcast_id).execute()
     if rows:
         service_supabase.table("clips").insert(rows).execute()
+
+
+def _resolve_export_settings(
+    export_settings: ExportSettingsInput | ExportSettings | None,
+    *,
+    podcast_row: dict[str, Any] | None = None,
+) -> ExportSettings:
+    if isinstance(export_settings, ExportSettings):
+        return export_settings
+    if isinstance(export_settings, ExportSettingsInput):
+        return export_settings.resolve()
+    if podcast_row is not None:
+        return _build_export_settings_from_row(podcast_row)
+    return ExportSettings()
+
+
+def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
+    export_mode = str(row.get("export_mode") or "landscape").strip() or "landscape"
+    crop_mode = str(row.get("crop_mode") or ("center_crop" if export_mode == "portrait" else "none")).strip()
+    return ExportSettings(
+        export_mode=export_mode,  # type: ignore[arg-type]
+        crop_mode=crop_mode,  # type: ignore[arg-type]
+        mobile_optimized=bool(row.get("mobile_optimized") or False),
+        face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
+    )
+
+
+def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSettings) -> None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return
+    service_supabase.table("podcasts").update(
+        {
+            "export_mode": export_settings.export_mode,
+            "crop_mode": export_settings.crop_mode,
+            "mobile_optimized": export_settings.mobile_optimized,
+            "face_tracking_enabled": export_settings.face_tracking_enabled,
+        }
+    ).eq("id", podcast_id).execute()
 
 
 def _build_backend_download_path(clip_id: str) -> str:

@@ -10,6 +10,7 @@ from app.services.analysis_service import (
 from app.services.media_service import inspect_staged_media
 from app.services.overlay_mapping_service import (
     build_overlay_mappings,
+    detect_overlay_decision,
     get_overlay_decisions_for_podcast,
     persist_overlay_mappings,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "get_overlay_decisions_for_podcast",
     "inspect_staged_media",
     "build_overlay_mappings",
+    "detect_overlay_decision",
     "persist_analysis_result",
     "persist_overlay_mappings",
     "publish_clips",

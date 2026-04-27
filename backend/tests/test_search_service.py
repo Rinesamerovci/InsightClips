@@ -60,11 +60,13 @@ class FakeSupabase:
         podcasts: list[dict[str, object]],
         clips: list[dict[str, object]],
         scores: list[dict[str, object]],
+        overlay_rows: list[dict[str, object]] | None = None,
     ) -> None:
         self._tables = {
             "podcasts": FakeTable(podcasts),
             "clips": FakeTable(clips),
             "scores": FakeTable(scores),
+            "clip_overlays": FakeTable(overlay_rows or []),
         }
 
     def table(self, name: str) -> FakeTable:
@@ -184,6 +186,42 @@ class SearchServiceTests(unittest.TestCase):
 
         self.assertEqual([item.id for item in filtered.clips], ["clip-1"])
         self.assertEqual([item.id for item in processing.clips], ["clip-3"])
+
+    def test_search_clips_includes_overlay_metadata(self) -> None:
+        fake_supabase = FakeSupabase(
+            self.podcasts,
+            self.clips,
+            self.scores,
+            overlay_rows=[
+                {
+                    "clip_id": "clip-1",
+                    "podcast_id": "pod-1",
+                    "keyword": "retention",
+                    "overlay_category": "business",
+                    "overlay_asset": "marketing_graph",
+                    "asset_path": "business/marketing_graph.png",
+                    "matched_text": "Retention playbook for creators",
+                    "position": "top_left",
+                    "scale": 0.2,
+                    "opacity": 0.92,
+                    "margin_x": 32,
+                    "margin_y": 32,
+                    "render_start_seconds": 1.2,
+                    "render_end_seconds": 3.8,
+                    "applied": True,
+                    "rendered": True,
+                    "render_status": "rendered",
+                    "confidence": 0.9,
+                }
+            ],
+        )
+
+        with patch.object(search_service_module, "service_supabase", fake_supabase):
+            result = search_clips("pod-1", "retention", {})
+
+        self.assertIsNotNone(result.clips[0].overlay)
+        self.assertEqual(result.clips[0].overlay.overlay_asset, "marketing_graph")
+        self.assertTrue(result.clips[0].overlay.rendered)
 
 
 if __name__ == "__main__":

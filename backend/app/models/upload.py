@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.export_settings import ExportSettings, ExportSettingsInput
+
 
 UploadStatus = Literal["draft", "free_ready", "awaiting_payment", "ready_for_processing", "blocked"]
 UploadPreflightStatus = Literal["free_ready", "awaiting_payment", "blocked"]
@@ -67,6 +69,7 @@ class UploadPrepareRequest(BaseModel):
     duration_seconds: float | None = Field(default=None, gt=0)
     price: float | None = Field(default=None, ge=0)
     status: UploadPreflightStatus | None = None
+    export_settings: ExportSettingsInput | None = None
 
     @field_validator("title", "filename")
     @classmethod
@@ -102,3 +105,4 @@ class UploadPrepareResponse(BaseModel):
     payment_status: str
     price: float
     currency: str = "USD"
+    export_settings: ExportSettings | None = None

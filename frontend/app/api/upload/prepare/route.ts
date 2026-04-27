@@ -17,6 +17,12 @@ type PrepareRequestBody = {
   status?: "free_ready" | "awaiting_payment" | "blocked";
   upload_reference?: string;
   mock?: boolean;
+  export_settings?: {
+    export_mode: "landscape" | "portrait";
+    crop_mode?: "none" | "center_crop" | "smart_crop";
+    mobile_optimized?: boolean;
+    face_tracking_enabled?: boolean;
+  };
 };
 
 function getErrorDetail(payload: unknown, fallback: string): string {
@@ -59,6 +65,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             : "free",
       price: body.price ?? 0,
       currency: "USD",
+      export_settings: body.export_settings ?? null,
       is_mock: true,
     });
   }
@@ -87,6 +94,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         duration_seconds: body.duration_seconds,
         price: body.price,
         status: body.status,
+        export_settings: body.export_settings,
       }),
       cache: "no-store",
     });

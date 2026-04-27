@@ -160,7 +160,13 @@ async def generate_podcast_clips(
                 ),
             )
 
-        clips = await asyncio.to_thread(generate_clips, podcast_id, score_segments, transcription)
+        clips = await asyncio.to_thread(
+            generate_clips,
+            podcast_id,
+            score_segments,
+            transcription,
+            payload.export_settings,
+        )
     except (AnalysisError, ClippingError) as exc:
         update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -170,6 +176,7 @@ async def generate_podcast_clips(
         podcast_id,
         clips,
         processing_time_seconds=round(time.perf_counter() - started_at, 3),
+        export_settings=clips[0].export_settings if clips else None,
     )
 
 

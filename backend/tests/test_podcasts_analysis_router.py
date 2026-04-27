@@ -15,6 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.dependencies.auth import AuthenticatedUser  # noqa: E402
 from app.models.analysis import AnalysisResult, AnalyzePodcastRequest, ScoreSegment  # noqa: E402
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest  # noqa: E402
+from app.models.export_settings import ExportSettings  # noqa: E402
 from app.models.transcription import TranscriptionResult, TranscriptWord  # noqa: E402
 from app.routers.podcasts import analyze_podcast, generate_podcast_clips  # noqa: E402
 
@@ -78,6 +79,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
                 video_url="https://example.com/clip-1.mp4",
                 subtitle_text="A strong subtitle line",
                 status="ready",
+                export_settings=ExportSettings(export_mode="portrait", crop_mode="center_crop"),
             )
         ]
 
@@ -97,6 +99,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
                         )
                     ],
                     transcription=self.payload.transcription,
+                    export_settings={"export_mode": "portrait"},
                 ),
                 self.user,
             )
@@ -104,10 +107,12 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertIsInstance(result, ClipGenerationResult)
         self.assertEqual(result.total_clips_generated, 1)
+        self.assertEqual(result.export_settings.export_mode, "portrait")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         generate_clips_mock.assert_called_once()
+        self.assertEqual(generate_clips_mock.call_args.args[3].resolve().export_mode, "portrait")
         analyze_and_score_mock.assert_not_called()
         persist_analysis_result_mock.assert_not_called()
 

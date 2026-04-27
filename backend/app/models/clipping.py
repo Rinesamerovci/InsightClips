@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.analysis import ScoreSegment
+from app.models.export_settings import ExportSettings, ExportSettingsInput
 from app.models.overlay import OverlayDecision
 from app.models.transcription import TranscriptionResult
 
@@ -26,6 +27,7 @@ class ClipResult(BaseModel):
     download_url: str | None = None
     published_at: datetime | None = None
     overlay: OverlayDecision | None = None
+    export_settings: ExportSettings = Field(default_factory=ExportSettings)
 
     @field_validator("id", "video_url", "subtitle_text")
     @classmethod
@@ -44,6 +46,7 @@ class ClipGenerationResult(BaseModel):
     clips: list[ClipResult] = Field(default_factory=list)
     processing_time_seconds: float = Field(ge=0)
     download_folder_url: str
+    export_settings: ExportSettings = Field(default_factory=ExportSettings)
 
     @field_validator("podcast_id", "download_folder_url")
     @classmethod
@@ -59,4 +62,5 @@ class GenerateClipsRequest(BaseModel):
 
     score_segments: list[ScoreSegment] | None = None
     transcription: TranscriptionResult | None = None
+    export_settings: ExportSettingsInput | None = None
 

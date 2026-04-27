@@ -12,6 +12,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.models.analysis import ScoreSegment  # noqa: E402
+from app.models.export_settings import ExportSettingsInput  # noqa: E402
 from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
 from app.models.overlay import OverlayDecision  # noqa: E402
 import app.services.clipping_service as clipping_service_module  # noqa: E402
@@ -135,8 +136,16 @@ class ClippingServiceTests(unittest.TestCase):
             delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
             insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
         )
+        podcasts_update_execute = MagicMock()
+        podcasts_table = SimpleNamespace(
+            update=MagicMock(
+                return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=podcasts_update_execute)))
+            )
+        )
         service_supabase_mock = MagicMock()
-        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: clips_table if name == "clips" else podcasts_table if name == "podcasts" else MagicMock()
+        )
 
         def fake_ffmpeg(*args, **kwargs):
             clip_path = args[1]
@@ -156,9 +165,69 @@ class ClippingServiceTests(unittest.TestCase):
 
         self.assertEqual(len(clips), 1)
         self.assertEqual(clips[0].status, "ready")
+        self.assertEqual(clips[0].export_settings.export_mode, "landscape")
         insert_payload = clips_table.insert.call_args.args[0]
         self.assertEqual(insert_payload[0]["podcast_id"], "podcast-123")
         self.assertEqual(insert_payload[0]["status"], "ready")
+        self.assertEqual(insert_payload[0]["export_mode"], "landscape")
+        self.assertEqual(insert_payload[0]["crop_mode"], "none")
+        podcasts_table.update.assert_called_once()
+
+    def test_generate_clips_persists_portrait_export_preferences(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-export-settings")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        podcasts_eq_mock = MagicMock(return_value=SimpleNamespace(execute=MagicMock()))
+        podcasts_table = SimpleNamespace(update=MagicMock(return_value=SimpleNamespace(eq=podcasts_eq_mock)))
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: clips_table if name == "clips" else podcasts_table if name == "podcasts" else MagicMock()
+        )
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(
+                    clipping_service_module,
+                    "_get_podcast_row",
+                    return_value={"id": "podcast-123", "storage_path": "podcast.mp4"},
+                ):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                clips = generate_clips(
+                                    "podcast-123",
+                                    self.score_segments,
+                                    self.transcription,
+                                    ExportSettingsInput(
+                                        export_mode="portrait",
+                                        crop_mode="smart_crop",
+                                        face_tracking_enabled=True,
+                                    ),
+                                )
+
+        self.assertEqual(clips[0].export_settings.export_mode, "portrait")
+        self.assertEqual(clips[0].export_settings.crop_mode, "smart_crop")
+        self.assertTrue(clips[0].export_settings.face_tracking_enabled)
+        insert_payload = clips_table.insert.call_args.args[0]
+        self.assertEqual(insert_payload[0]["export_mode"], "portrait")
+        self.assertEqual(insert_payload[0]["crop_mode"], "smart_crop")
+        self.assertTrue(insert_payload[0]["face_tracking_enabled"])
+        podcasts_update_payload = podcasts_table.update.call_args.args[0]
+        self.assertEqual(podcasts_update_payload["export_mode"], "portrait")
+        self.assertEqual(podcasts_update_payload["crop_mode"], "smart_crop")
+        self.assertTrue(podcasts_update_payload["face_tracking_enabled"])
 
     def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
         stale_segment = ScoreSegment(

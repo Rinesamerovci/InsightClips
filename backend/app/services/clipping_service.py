@@ -14,6 +14,7 @@ from app.models.clipping import ClipGenerationResult, ClipResult
 from app.models.export_settings import ExportSettings, ExportSettingsInput
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
+from app.utils.reframing import CropWindow, build_portrait_video_filters, compute_portrait_crop_window
 import app.services.overlay_mapping_service as overlay_mapping_service_module
 
 
@@ -50,6 +51,8 @@ def build_ffmpeg_clip_command(
     *,
     start_seconds: float,
     duration_seconds: float,
+    export_settings: ExportSettings | None = None,
+    crop_window: CropWindow | None = None,
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
 ) -> list[str]:
@@ -83,7 +86,12 @@ def build_ffmpeg_clip_command(
         command.extend(
             [
                 "-filter_complex",
-                _build_video_filter_graph(subtitle_path, overlay),
+                _build_video_filter_graph(
+                    subtitle_path,
+                    overlay,
+                    export_settings=export_settings,
+                    crop_window=crop_window,
+                ),
                 "-map",
                 "[vout]",
                 "-map",
@@ -91,7 +99,7 @@ def build_ffmpeg_clip_command(
             ]
         )
     else:
-        command.extend(["-vf", _build_subtitle_filter(subtitle_path)])
+        command.extend(["-vf", _build_video_filters(subtitle_path, export_settings=export_settings, crop_window=crop_window)])
     command.extend(
         [
             "-c:v",
@@ -208,6 +216,7 @@ def generate_clips(
                 subtitle_path,
                 start_seconds=clip_start,
                 duration_seconds=clip_duration,
+                export_settings=resolved_export_settings,
                 overlay=overlay_decision,
             )
             storage_url, subtitle_url = _store_clip_assets(
@@ -549,8 +558,39 @@ def _build_subtitle_filter(subtitle_path: Path) -> str:
     return f"subtitles='{safe_path}':force_style='{style}'"
 
 
-def _build_video_filter_graph(subtitle_path: Path, overlay: OverlayDecision) -> str:
-    subtitle_filter = _build_subtitle_filter(subtitle_path)
+def _build_video_filters(
+    subtitle_path: Path,
+    *,
+    export_settings: ExportSettings | None = None,
+    crop_window: CropWindow | None = None,
+) -> str:
+    filters: list[str] = []
+    if export_settings is not None and export_settings.export_mode == "portrait":
+        portrait_crop = crop_window or CropWindow(
+            source_width=1920,
+            source_height=1080,
+            crop_width=608,
+            crop_height=1080,
+            offset_x=656,
+            offset_y=0,
+        )
+        filters.append(build_portrait_video_filters(portrait_crop))
+    filters.append(_build_subtitle_filter(subtitle_path))
+    return ",".join(filters)
+
+
+def _build_video_filter_graph(
+    subtitle_path: Path,
+    overlay: OverlayDecision,
+    *,
+    export_settings: ExportSettings | None = None,
+    crop_window: CropWindow | None = None,
+) -> str:
+    subtitle_filter = _build_video_filters(
+        subtitle_path,
+        export_settings=export_settings,
+        crop_window=crop_window,
+    )
     opacity = max(0.0, min(float(overlay.opacity or 1.0), 1.0))
     scale = max(0.05, min(float(overlay.scale or 0.18), 0.95))
     start = max(0.0, float(overlay.render_start_seconds or 0.0))
@@ -599,8 +639,15 @@ def _render_clip_with_optional_overlay(
     *,
     start_seconds: float,
     duration_seconds: float,
+    export_settings: ExportSettings,
     overlay: OverlayDecision,
 ) -> OverlayDecision:
+    crop_window = _resolve_crop_window(
+        source_path,
+        start_seconds=start_seconds,
+        duration_seconds=duration_seconds,
+        export_settings=export_settings,
+    )
     if not overlay.applied:
         _run_ffmpeg_clip_generation(
             source_path,
@@ -608,6 +655,8 @@ def _render_clip_with_optional_overlay(
             subtitle_path,
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
+            export_settings=export_settings,
+            crop_window=crop_window,
         )
         return overlay.model_copy(update={"rendered": False, "render_status": "no_match"})
 
@@ -619,6 +668,8 @@ def _render_clip_with_optional_overlay(
             subtitle_path,
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
+            export_settings=export_settings,
+            crop_window=crop_window,
         )
         return overlay.model_copy(update={"rendered": False, "render_status": "missing_asset"})
 
@@ -629,6 +680,8 @@ def _render_clip_with_optional_overlay(
             subtitle_path,
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
+            export_settings=export_settings,
+            crop_window=crop_window,
             overlay=overlay,
             overlay_asset_path=overlay_asset_path,
         )
@@ -640,6 +693,8 @@ def _render_clip_with_optional_overlay(
             subtitle_path,
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
+            export_settings=export_settings,
+            crop_window=crop_window,
         )
         return overlay.model_copy(update={"rendered": False, "render_status": "render_fallback"})
 
@@ -651,6 +706,8 @@ def _run_ffmpeg_clip_generation(
     *,
     start_seconds: float,
     duration_seconds: float,
+    export_settings: ExportSettings | None = None,
+    crop_window: CropWindow | None = None,
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
 ) -> None:
@@ -663,6 +720,8 @@ def _run_ffmpeg_clip_generation(
         subtitle_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
+        export_settings=export_settings,
+        crop_window=crop_window,
         overlay=overlay,
         overlay_asset_path=overlay_asset_path,
     )
@@ -797,6 +856,23 @@ def _resolve_export_settings(
     if podcast_row is not None:
         return _build_export_settings_from_row(podcast_row)
     return ExportSettings()
+
+
+def _resolve_crop_window(
+    source_path: Path,
+    *,
+    start_seconds: float,
+    duration_seconds: float,
+    export_settings: ExportSettings,
+) -> CropWindow | None:
+    if export_settings.export_mode != "portrait":
+        return None
+    return compute_portrait_crop_window(
+        source_path,
+        clip_start_seconds=start_seconds,
+        clip_duration_seconds=duration_seconds,
+        prefer_face_detection=export_settings.crop_mode == "smart_crop",
+    )
 
 
 def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:

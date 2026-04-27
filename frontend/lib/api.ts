@@ -29,6 +29,15 @@ export type UploadState =
   | "error";
 
 export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
+export type ExportMode = "landscape" | "portrait";
+export type CropMode = "none" | "center_crop" | "smart_crop";
+
+export type ExportSettings = {
+  export_mode: ExportMode;
+  crop_mode: CropMode;
+  mobile_optimized?: boolean;
+  face_tracking_enabled?: boolean;
+};
 
 export type UploadPriceRequest = {
   filename: string;
@@ -61,6 +70,7 @@ export type PrepareUploadRequest = {
   duration_seconds?: number;
   price?: number;
   status?: UploadPreflightStatus;
+  export_settings?: ExportSettings;
 };
 
 export type PrepareUploadPayload = {
@@ -73,6 +83,7 @@ export type PrepareUploadPayload = {
   status?: UploadPreflightStatus;
   upload_reference: string;
   mock?: boolean;
+  export_settings?: ExportSettings;
 };
 
 export type PrepareUploadResponse = {
@@ -83,6 +94,7 @@ export type PrepareUploadResponse = {
   payment_status: string;
   price: number;
   currency: "USD";
+  export_settings?: ExportSettings | null;
   is_mock?: boolean;
 };
 
@@ -142,6 +154,7 @@ export type Podcast = {
   duration: number;
   status: string;
   storage_path?: string | null;
+  export_settings?: ExportSettings | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -186,6 +199,7 @@ export type ClipResult = {
   download_url?: string | null;
   published_at?: string | null;
   overlay?: ClipOverlay | null;
+  export_settings?: ExportSettings | null;
 };
 
 export type ClipGenerationResult = {
@@ -194,6 +208,7 @@ export type ClipGenerationResult = {
   clips: ClipResult[];
   processing_time_seconds: number;
   download_folder_url: string;
+  export_settings?: ExportSettings | null;
 };
 
 export type ClipPublicationStatus = {

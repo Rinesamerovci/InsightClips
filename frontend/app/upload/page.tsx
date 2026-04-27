@@ -5,18 +5,65 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, CreditCard,
-  FileVideo2, Loader2, Moon, RefreshCcw, SunMedium,
+  FileVideo2, Loader2, Monitor, Moon, RefreshCcw, Smartphone, SunMedium,
   UploadCloud, XCircle, Zap, ShieldCheck, Clock,
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
 import {
-  type PrepareUploadResponse, type UploadPriceResponse, type UploadState,
+  type ExportMode, type ExportSettings, type PrepareUploadResponse,
+  type UploadPriceResponse, type UploadState,
 } from "@/lib/api";
 
 const ACCEPTED_TYPES = ["video/mp4","video/quicktime","video/webm","video/x-m4v"];
 const ACCEPTED_EXT   = [".mp4",".mov",".webm",".m4v"];
 const PREFLIGHT_MODE = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
+const EXPORT_MODE_DETAILS: Record<
+  ExportMode,
+  {
+    label: string;
+    title: string;
+    aspect: string;
+    helper: string;
+    platform: string;
+    icon: typeof Smartphone;
+  }
+> = {
+  portrait: {
+    label: "Portrait",
+    title: "Vertical social export",
+    aspect: "9:16",
+    helper: "Optimized for TikTok, Shorts, and Reels with a mobile-first crop.",
+    platform: "TikTok / Shorts",
+    icon: Smartphone,
+  },
+  landscape: {
+    label: "Landscape",
+    title: "Wide video export",
+    aspect: "16:9",
+    helper: "Keeps the original widescreen framing for presentations and desktop playback.",
+    platform: "YouTube / Web",
+    icon: Monitor,
+  },
+};
+
+function buildExportSettings(exportMode: ExportMode): ExportSettings {
+  if (exportMode === "portrait") {
+    return {
+      export_mode: "portrait",
+      crop_mode: "center_crop",
+      mobile_optimized: true,
+      face_tracking_enabled: false,
+    };
+  }
+
+  return {
+    export_mode: "landscape",
+    crop_mode: "none",
+    mobile_optimized: false,
+    face_tracking_enabled: false,
+  };
+}
 
 function fmtBytes(b: number) {
   if (!Number.isFinite(b) || b <= 0) return "0 B";
@@ -50,8 +97,15 @@ function validate(file: File): string | null {
 }
 
 /* ─── RESULT CARD ─── */
-type RCProps = { result: UploadPriceResponse; state: UploadState; prep: PrepareUploadResponse | null; dark: boolean };
-function ResultCard({ result, state, prep, dark: d }: RCProps) {
+type RCProps = {
+  result: UploadPriceResponse;
+  state: UploadState;
+  prep: PrepareUploadResponse | null;
+  dark: boolean;
+  exportMode: ExportMode;
+};
+function ResultCard({ result, state, prep, dark: d, exportMode }: RCProps) {
+  const exportDetails = EXPORT_MODE_DETAILS[exportMode];
   const map = {
     free_ready:       { Icon: CheckCircle2, label: "Free upload available", c: "#3a9e38", bg: d?"rgba(16,52,14,.9)":"rgba(220,252,210,.92)", bd: d?"rgba(58,158,56,.38)":"rgba(140,215,130,.65)" },
     awaiting_payment: { Icon: CreditCard,   label: "Payment required",      c: "#9e8a20", bg: d?"rgba(52,42,6,.9)":"rgba(255,252,218,.92)",  bd: d?"rgba(158,135,32,.38)":"rgba(215,198,110,.65)" },
@@ -116,6 +170,10 @@ function ResultCard({ result, state, prep, dark: d }: RCProps) {
           </div>
           <div style={{ opacity:.75, fontFamily:"monospace" }}>ID: {prep.podcast_id}</div>
           <div style={{ opacity:.65, marginTop:4 }}>Status: <strong>{prep.status}</strong></div>
+          <div style={{ opacity:.65, marginTop:4 }}>
+            Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})
+          </div>
+          <div style={{ opacity:.65, marginTop:4 }}>{exportDetails.helper}</div>
         </div>
       )}
     </div>
@@ -132,6 +190,7 @@ export default function UploadPage() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("insightclips-theme") === "dark";
   });
+  const [exportMode,      setExportMode]      = useState<ExportMode>("portrait");
   const [dragging,        setDragging]        = useState(false);
   const [file,            setFile]            = useState<File | null>(null);
   const [state,           setState]           = useState<UploadState>("idle");
@@ -149,6 +208,8 @@ export default function UploadPage() {
   const muted   = d ? "rgba(150,200,120,.5)" : "rgba(55,95,38,.48)";
   const hi      = "#5a9e3a";
   const hi2     = "#7ab55c";
+  const exportDetails = EXPORT_MODE_DETAILS[exportMode];
+  const exportSettings = useMemo(() => buildExportSettings(exportMode), [exportMode]);
 
   const fileMeta = useMemo(() => {
     if (!file) return null;
@@ -192,6 +253,7 @@ export default function UploadPage() {
         title: titleFrom(f.name), filename: f.name, filesize_bytes: f.size,
         mime_type: f.type || undefined, duration_seconds: quote.duration_seconds,
         price: quote.price, status: quote.status, upload_reference: uploadReference, mock,
+        export_settings: exportSettings,
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -224,6 +286,12 @@ export default function UploadPage() {
     if (ve) { setState("error"); setErr(ve); return; }
     setState("file_selected");
     void runPreflight(f);
+  };
+
+  const selectExportMode = (mode: ExportMode) => {
+    setExportMode(mode);
+    setPrep(null);
+    if (err) setErr("");
   };
 
   const reserveRecord = async () => {
@@ -312,6 +380,28 @@ export default function UploadPage() {
 
         .chip { transition:transform .2s cubic-bezier(.34,1.56,.64,1); }
         .chip:hover { transform:scale(1.03); }
+
+        .mode-option {
+          transition:transform .22s cubic-bezier(.16,1,.3,1), border-color .22s, background .22s, box-shadow .22s;
+          cursor:pointer;
+        }
+        .mode-option:hover { transform:translateY(-2px); }
+        .mode-option.active { box-shadow:0 14px 32px rgba(90,158,58,.18); }
+
+        .mode-preview-frame {
+          position:relative;
+          border-radius:18px;
+          border:1px solid ${subBord};
+          background:${d ? "rgba(11,18,9,.92)" : "rgba(247,252,243,.96)"};
+          overflow:hidden;
+        }
+        .mode-preview-frame::after {
+          content:'';
+          position:absolute;
+          inset:0;
+          background:linear-gradient(145deg,rgba(122,181,92,.08),transparent 58%);
+          pointer-events:none;
+        }
 
         .sweep-bar {
           background:linear-gradient(90deg,transparent,rgba(90,158,58,.7),${hi2},rgba(90,158,58,.7),transparent);
@@ -435,6 +525,157 @@ export default function UploadPage() {
           }}>
             <AlertTriangle size={15} style={{ marginTop:1, flexShrink:0 }}/>
             <span><strong>120-minute limit.</strong> Videos over this length are blocked automatically during pre-flight.</span>
+          </div>
+
+          <div className="a2 glass" style={{
+            borderRadius:22, border:`1px solid ${bord}`, background:card,
+            padding:"24px 24px 22px", marginBottom:16,
+          }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))", gap:18, alignItems:"start" }}>
+              <div>
+                <div style={{ fontSize:10, letterSpacing:".26em", textTransform:"uppercase", color:hi2, fontWeight:700, marginBottom:8 }}>
+                  Export mode
+                </div>
+                <h2 style={{ fontFamily:"'DM Serif Display',serif", fontStyle:"italic", fontSize:24, fontWeight:400, marginBottom:10 }}>
+                  Choose how your clips should be framed
+                </h2>
+                <p style={{ fontSize:13, color:muted as string, lineHeight:1.72, marginBottom:16 }}>
+                  Portrait is tuned for TikTok and YouTube Shorts. Landscape keeps the classic widescreen layout.
+                </p>
+
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))", gap:10 }}>
+                  {(["portrait", "landscape"] as ExportMode[]).map((mode) => {
+                    const details = EXPORT_MODE_DETAILS[mode];
+                    const Icon = details.icon;
+                    const active = exportMode === mode;
+
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => selectExportMode(mode)}
+                        className={`mode-option${active ? " active" : ""}`}
+                        style={{
+                          textAlign:"left",
+                          borderRadius:18,
+                          padding:"16px 16px 15px",
+                          border:`1px solid ${active ? hi : subBord}`,
+                          background:active
+                            ? (d ? "rgba(90,158,58,.16)" : "rgba(90,158,58,.1)")
+                            : (d ? "rgba(11,18,9,.55)" : "rgba(248,252,245,.82)"),
+                          color:d ? "#e8f5df" : "#152412",
+                        }}
+                      >
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:12 }}>
+                          <div style={{
+                            width:38, height:38, borderRadius:12,
+                            background:active ? "rgba(255,255,255,.14)" : (d ? "rgba(90,158,58,.11)" : "rgba(90,158,58,.08)"),
+                            border:`1px solid ${active ? "rgba(255,255,255,.2)" : subBord}`,
+                            display:"flex", alignItems:"center", justifyContent:"center",
+                          }}>
+                            <Icon size={18} color={active ? "#dff0d8" : hi}/>
+                          </div>
+                          <div style={{
+                            borderRadius:999, padding:"4px 10px",
+                            border:`1px solid ${active ? "rgba(255,255,255,.22)" : subBord}`,
+                            fontSize:10, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase",
+                            color:active ? "#dff0d8" : hi2,
+                          }}>
+                            {details.aspect}
+                          </div>
+                        </div>
+                        <div style={{ fontFamily:"'Bricolage Grotesque',sans-serif", fontSize:18, fontWeight:700, marginBottom:4 }}>
+                          {details.label}
+                        </div>
+                        <div style={{ fontSize:12, fontWeight:600, color:active ? (d ? "#dff0d8" : "#285019") : hi2, marginBottom:6 }}>
+                          {details.title}
+                        </div>
+                        <div style={{ fontSize:12, lineHeight:1.6, color:active ? (d ? "rgba(232,245,223,.82)" : "rgba(21,36,18,.8)") : muted as string }}>
+                          {details.helper}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mode-preview-frame" style={{ padding:"18px 18px 16px" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:14 }}>
+                  <div>
+                    <div style={{ fontSize:10, letterSpacing:".22em", textTransform:"uppercase", color:hi2, fontWeight:700, marginBottom:5 }}>
+                      Selected output
+                    </div>
+                    <div style={{ fontFamily:"'Bricolage Grotesque',sans-serif", fontSize:20, fontWeight:700 }}>
+                      {exportDetails.label} preview
+                    </div>
+                  </div>
+                  <div style={{
+                    borderRadius:999, border:`1px solid ${subBord}`,
+                    background:d ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+                    padding:"6px 12px", fontSize:11, fontWeight:700, color:hi,
+                  }}>
+                    {exportDetails.platform}
+                  </div>
+                </div>
+
+                <div style={{
+                  minHeight:190, borderRadius:18, border:`1px solid ${subBord}`,
+                  background:d
+                    ? "linear-gradient(160deg, rgba(18,35,13,.96), rgba(11,18,9,.92))"
+                    : "linear-gradient(160deg, rgba(238,248,231,.96), rgba(248,252,245,.98))",
+                  display:"flex", alignItems:"center", justifyContent:"center", padding:"20px 16px",
+                }}>
+                  <div style={{
+                    width:exportMode === "portrait" ? 102 : 182,
+                    height:exportMode === "portrait" ? 182 : 102,
+                    borderRadius:20,
+                    border:`1px solid ${exportMode === "portrait" ? hi : bord}`,
+                    background:exportMode === "portrait"
+                      ? "linear-gradient(180deg, rgba(90,158,58,.22), rgba(122,181,92,.08))"
+                      : "linear-gradient(180deg, rgba(90,158,58,.16), rgba(122,181,92,.06))",
+                    boxShadow:exportMode === "portrait"
+                      ? "0 18px 42px rgba(90,158,58,.2)"
+                      : "0 14px 30px rgba(90,158,58,.12)",
+                    display:"flex", flexDirection:"column", justifyContent:"space-between",
+                    padding:"14px 12px",
+                  }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                      <div style={{ width:36, height:5, borderRadius:999, background:hi, opacity:.72 }}/>
+                      <div style={{ fontSize:9, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase", color:hi2 }}>
+                        {exportDetails.aspect}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize:12, fontWeight:700, color:d ? "#e8f5df" : "#1c3216", marginBottom:4 }}>
+                        {exportMode === "portrait" ? "Social-safe framing" : "Original wide framing"}
+                      </div>
+                      <div style={{ fontSize:11, lineHeight:1.55, color:muted as string }}>
+                        {exportMode === "portrait"
+                          ? "Focused for vertical feeds and fullscreen phone playback."
+                          : "Best when you want the full widescreen composition."}
+                      </div>
+                    </div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
+                      {[1, 2].map((item) => (
+                        <div
+                          key={item}
+                          style={{
+                            height:exportMode === "portrait" ? 34 : 22,
+                            borderRadius:10,
+                            background:d ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
+                            border:`1px solid ${subBord}`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <p style={{ fontSize:12, color:muted as string, lineHeight:1.65, marginTop:14 }}>
+                  {exportDetails.helper}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* DROP ZONE */}
@@ -580,6 +821,27 @@ export default function UploadPage() {
                     </div>
                   ))}
                 </div>
+
+                <div className="chip" style={{
+                  borderRadius:12, padding:"12px 14px",
+                  background:d?"rgba(90,158,58,.09)":"rgba(90,158,58,.06)",
+                  border:`1px solid ${subBord}`,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:5 }}>
+                    <div style={{ fontSize:9, letterSpacing:".18em", textTransform:"uppercase", color:muted as string, fontWeight:600 }}>
+                      Export mode
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:hi2, letterSpacing:".14em", textTransform:"uppercase" }}>
+                      {prep ? "Saved" : "Pending save"}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:d?"#dff0d8":"#1e3418", marginBottom:4 }}>
+                    {exportDetails.label} ({exportDetails.aspect})
+                  </div>
+                  <div style={{ fontSize:12, lineHeight:1.6, color:muted as string }}>
+                    {exportDetails.helper}
+                  </div>
+                </div>
               </div>
 
               {/* Actions */}
@@ -656,7 +918,7 @@ export default function UploadPage() {
           {/* RESULT */}
           {result && (
             <div style={{ marginBottom:16 }}>
-              <ResultCard result={result} state={state} prep={prep} dark={d}/>
+              <ResultCard result={result} state={state} prep={prep} dark={d} exportMode={exportMode}/>
             </div>
           )}
 
@@ -679,7 +941,7 @@ export default function UploadPage() {
                       {state === "free_ready" ? "Reserve your free upload" : "Create payment record"}
                     </div>
                     <div style={{ fontSize:13, color:muted as string, lineHeight:1.65, display:"flex", alignItems:"center", gap:7 }}>
-                      <Clock size={13}/> Payment checkout and AI processing come in the next step.
+                      <Clock size={13}/> {exportDetails.label} export selected. {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
                     </div>
                   </div>
                 </div>
@@ -700,7 +962,7 @@ export default function UploadPage() {
                   }}
                 >
                   {preparing ? <Loader2 size={14} style={{ animation:"spin 1s linear infinite" }}/> : <CheckCircle2 size={14}/>}
-                  {preparing ? "Saving…" : "Create record"}
+                  {preparing ? "Saving..." : `Create ${exportDetails.label.toLowerCase()} record`}
                 </button>
               </div>
             </div>

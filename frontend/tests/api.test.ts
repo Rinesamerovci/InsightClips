@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   getClipMetrics,
   getRecommendations,
+  prepareUpload,
   publishClips,
   revokeClipDownload,
   searchClips,
@@ -41,12 +42,80 @@ function withMockFetch(
 }
 
 export async function runApiTests(): Promise<void> {
+  await testPrepareUploadPostsExportSettings();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
   await testPublishClipsPostsPublicationPayload();
   await testRevokeClipDownloadPostsRevocationRequest();
   await testRecommendationsFallbackProducesEstimatedResults();
   await testMetricsFallbackProducesEstimatedSummary();
+}
+
+async function testPrepareUploadPostsExportSettings(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url, init) => {
+    if (url.endsWith("/upload/prepare")) {
+      return jsonResponse({
+        podcast_id: "pod-portrait",
+        status: "ready_for_processing",
+        storage_ready: true,
+        checkout_required: false,
+        payment_status: "not_required",
+        price: 0,
+        currency: "USD",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "center_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: false,
+        },
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url} (${init?.method ?? "GET"})`);
+  });
+
+  try {
+    const result = await prepareUpload(
+      {
+        title: "Portrait Episode",
+        filename: "portrait.mp4",
+        filesize_bytes: 100,
+        duration_seconds: 1800,
+        price: 0,
+        status: "free_ready",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "center_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: false,
+        },
+      },
+      { token: "token-123" },
+    );
+
+    assert.equal(result.podcast_id, "pod-portrait");
+    assert.equal(result.export_settings?.export_mode, "portrait");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        title: "Portrait Episode",
+        filename: "portrait.mp4",
+        filesize_bytes: 100,
+        duration_seconds: 1800,
+        price: 0,
+        status: "free_ready",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "center_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: false,
+        },
+      }),
+    );
+  } finally {
+    restore();
+  }
 }
 
 async function testSearchClipsUsesBackendDiscoveryRoute(): Promise<void> {

@@ -175,6 +175,8 @@ def prepare_upload(
     payload: UploadPrepareRequest,
     current_user: AuthenticatedUser,
 ) -> UploadPrepareResponse:
+    resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else None
+
     if payload.storage_path:
         if payload.filesize_bytes is None:
             raise UploadWorkflowError(
@@ -235,6 +237,15 @@ def prepare_upload(
         "mime_type": payload.mime_type,
         "detected_format": calculated_response.detected_format,
     }
+    if resolved_export_settings is not None:
+        insert_payload.update(
+            {
+                "export_mode": resolved_export_settings.export_mode,
+                "crop_mode": resolved_export_settings.crop_mode,
+                "mobile_optimized": resolved_export_settings.mobile_optimized,
+                "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
+            }
+        )
 
     response = service_supabase.table("podcasts").insert(insert_payload).execute()
     rows = response.data or []
@@ -251,4 +262,5 @@ def prepare_upload(
         checkout_required=checkout_required,
         payment_status=payment_status,
         price=calculated_response.price,
+        export_settings=resolved_export_settings,
     )

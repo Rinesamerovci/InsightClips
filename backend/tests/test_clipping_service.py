@@ -21,6 +21,7 @@ from app.services.clipping_service import (  # noqa: E402
     build_ffmpeg_clip_command,
     build_srt_content,
     generate_clips,
+    _build_video_filters,
     _resolve_clip_window,
 )
 
@@ -85,6 +86,34 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("aac", command)
         self.assertIn("+faststart", command)
         self.assertIn("subtitles=", command[command.index("-vf") + 1])
+
+    def test_build_ffmpeg_clip_command_adds_portrait_crop_and_scale(self) -> None:
+        command = build_ffmpeg_clip_command(
+            Path("input.mp4"),
+            Path("output.mp4"),
+            Path("captions.srt"),
+            start_seconds=12.345,
+            duration_seconds=18.2,
+            export_settings=ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+                face_tracking_enabled=True,
+            ).resolve(),
+            crop_window=clipping_service_module.CropWindow(
+                source_width=1920,
+                source_height=1080,
+                crop_width=606,
+                crop_height=1080,
+                offset_x=1197,
+                offset_y=0,
+            ),
+        )
+
+        self.assertIn("-vf", command)
+        filters = command[command.index("-vf") + 1]
+        self.assertIn("crop=606:1080:1197:0", filters)
+        self.assertIn("scale=1080:1920", filters)
+        self.assertIn("subtitles=", filters)
 
     def test_build_ffmpeg_clip_command_uses_filter_complex_when_overlay_is_enabled(self) -> None:
         overlay = OverlayDecision(
@@ -228,6 +257,71 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(podcasts_update_payload["export_mode"], "portrait")
         self.assertEqual(podcasts_update_payload["crop_mode"], "smart_crop")
         self.assertTrue(podcasts_update_payload["face_tracking_enabled"])
+
+    def test_generate_clips_resolves_portrait_crop_window_for_smart_crop_exports(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-smart-crop")
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock())))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=MagicMock())),
+        )
+        podcasts_table = SimpleNamespace(
+            update=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock()))))
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: clips_table if name == "clips" else podcasts_table if name == "podcasts" else MagicMock()
+        )
+        captured_crop = {}
+
+        def fake_ffmpeg(*args, **kwargs):
+            captured_crop["crop_window"] = kwargs["crop_window"]
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(
+                    clipping_service_module,
+                    "_get_podcast_row",
+                    return_value={"id": "podcast-123", "storage_path": "podcast.mp4"},
+                ):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(
+                            clipping_service_module,
+                            "compute_portrait_crop_window",
+                            return_value=clipping_service_module.CropWindow(
+                                source_width=1920,
+                                source_height=1080,
+                                crop_width=606,
+                                crop_height=1080,
+                                offset_x=1180,
+                                offset_y=0,
+                                strategy="smart_crop",
+                                face_detected=True,
+                            ),
+                        ):
+                            with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                                with patch.object(
+                                    clipping_service_module,
+                                    "_store_clip_assets",
+                                    return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                                ):
+                                    generate_clips(
+                                        "podcast-123",
+                                        self.score_segments,
+                                        self.transcription,
+                                        ExportSettingsInput(
+                                            export_mode="portrait",
+                                            crop_mode="smart_crop",
+                                            face_tracking_enabled=True,
+                                        ),
+                                    )
+
+        self.assertEqual(captured_crop["crop_window"].offset_x, 1180)
+
+    def test_build_video_filters_keeps_landscape_exports_unchanged(self) -> None:
+        filters = _build_video_filters(Path("captions.srt"))
+        self.assertTrue(filters.startswith("subtitles="))
 
     def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
         stale_segment = ScoreSegment(

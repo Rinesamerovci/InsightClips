@@ -33,7 +33,7 @@ const EXPORT_MODE_DETAILS: Record<
     label: "Portrait",
     title: "Vertical social export",
     aspect: "9:16",
-    helper: "Optimized for TikTok, Shorts, and Reels with a mobile-first crop.",
+    helper: "Optimized for TikTok, Shorts, and Reels with speaker-aware vertical reframing.",
     platform: "TikTok / Shorts",
     icon: Smartphone,
   },
@@ -51,9 +51,9 @@ function buildExportSettings(exportMode: ExportMode): ExportSettings {
   if (exportMode === "portrait") {
     return {
       export_mode: "portrait",
-      crop_mode: "center_crop",
+      crop_mode: "smart_crop",
       mobile_optimized: true,
-      face_tracking_enabled: false,
+      face_tracking_enabled: true,
     };
   }
 

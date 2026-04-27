@@ -64,9 +64,9 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
         currency: "USD",
         export_settings: {
           export_mode: "portrait",
-          crop_mode: "center_crop",
+          crop_mode: "smart_crop",
           mobile_optimized: true,
-          face_tracking_enabled: false,
+          face_tracking_enabled: true,
         },
       });
     }
@@ -85,9 +85,9 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
         status: "free_ready",
         export_settings: {
           export_mode: "portrait",
-          crop_mode: "center_crop",
+          crop_mode: "smart_crop",
           mobile_optimized: true,
-          face_tracking_enabled: false,
+          face_tracking_enabled: true,
         },
       },
       { token: "token-123" },
@@ -107,9 +107,9 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
         status: "free_ready",
         export_settings: {
           export_mode: "portrait",
-          crop_mode: "center_crop",
+          crop_mode: "smart_crop",
           mobile_optimized: true,
-          face_tracking_enabled: false,
+          face_tracking_enabled: true,
         },
       }),
     );

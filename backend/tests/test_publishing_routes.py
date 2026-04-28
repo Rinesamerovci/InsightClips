@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -31,6 +32,14 @@ class PublishingRouterTests(unittest.TestCase):
             email="demo@example.com",
             free_trial_used=False,
         )
+
+    def _workspace_case_dir(self, name: str) -> Path:
+        case_dir = BACKEND_ROOT / ".tmp-test-artifacts" / name
+        if case_dir.exists():
+            shutil.rmtree(case_dir, ignore_errors=True)
+        case_dir.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(case_dir, ignore_errors=True))
+        return case_dir
 
     @patch("app.routers.podcasts.publish_clips")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
@@ -94,6 +103,7 @@ class PublishingRouterTests(unittest.TestCase):
         get_download_content_mock.assert_called_once_with("clip-1")
         record_download_mock.assert_called_once_with("clip-1")
 
+    @patch("app.routers.podcasts.get_clip_download_target", return_value=(None, None))
     @patch("app.routers.podcasts.get_published_clip_download_content", return_value=(None, None, None))
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     @patch("app.routers.podcasts.get_clip_podcast_id", return_value="podcast-123")
@@ -102,12 +112,39 @@ class PublishingRouterTests(unittest.TestCase):
         get_clip_podcast_id_mock,
         podcast_belongs_mock,
         get_download_content_mock,
+        get_clip_download_target_mock,
     ) -> None:
         with self.assertRaises(HTTPException) as exc_info:
             asyncio.run(download_generated_clip("clip-1", self.user))
 
         self.assertEqual(exc_info.exception.status_code, 404)
         self.assertEqual(exc_info.exception.detail, "Clip download is unavailable or has been revoked.")
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        get_download_content_mock.assert_called_once_with("clip-1")
+        get_clip_download_target_mock.assert_called_once_with("clip-1")
+
+    @patch("app.routers.podcasts.get_published_clip_download_content", return_value=(None, None, None))
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    @patch("app.routers.podcasts.get_clip_podcast_id", return_value="podcast-123")
+    def test_download_generated_clip_returns_local_preview_for_private_clip(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        get_download_content_mock,
+    ) -> None:
+        case_dir = self._workspace_case_dir("private-preview")
+        preview_file = case_dir / "clip-01.mp4"
+        preview_file.write_bytes(b"private-preview")
+
+        with patch(
+            "app.routers.podcasts.get_clip_download_target",
+            return_value=(None, preview_file),
+        ):
+            response = asyncio.run(download_generated_clip("clip-1", self.user))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.media_type, "video/mp4")
         get_clip_podcast_id_mock.assert_called_once_with("clip-1")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         get_download_content_mock.assert_called_once_with("clip-1")

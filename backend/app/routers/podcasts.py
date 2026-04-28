@@ -31,6 +31,7 @@ from app.services.clipping_service import (
     ClippingError,
     build_clip_generation_result,
     generate_clips,
+    get_clip_download_target,
     get_clip_podcast_id,
     get_clips_for_podcast,
 )
@@ -141,19 +142,6 @@ async def generate_podcast_clips(
                 )
             score_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
             refreshed_scores = True
-
-        if transcription is None:
-            try:
-                transcription = await asyncio.to_thread(
-                    transcribe_podcast_media_for_user,
-                    podcast_id,
-                    current_user.id,
-                    model="base",
-                )
-            except AnalysisError:
-                if not score_segments:
-                    raise
-                transcription = None
 
         if refreshed_scores:
             await asyncio.to_thread(
@@ -285,6 +273,15 @@ async def download_generated_clip(
             media_type="video/mp4",
             filename=(filename or file_path.name),
         )
+
+    _, preview_file_path = get_clip_download_target(clip_id)
+    if preview_file_path and preview_file_path.exists():
+        return FileResponse(
+            path=preview_file_path,
+            media_type="video/mp4",
+            filename=preview_file_path.name,
+        )
+
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Clip download is unavailable or has been revoked.",

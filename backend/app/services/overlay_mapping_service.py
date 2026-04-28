@@ -64,7 +64,10 @@ def persist_overlay_mappings(result: OverlayMappingResult) -> None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return
 
-    service_supabase.table("clip_overlays").delete().eq("podcast_id", result.podcast_id).execute()
+    try:
+        service_supabase.table("clip_overlays").delete().eq("podcast_id", result.podcast_id).execute()
+    except Exception:
+        return
     if not result.overlay_decisions:
         return
 
@@ -92,7 +95,10 @@ def persist_overlay_mappings(result: OverlayMappingResult) -> None:
         }
         for decision in result.overlay_decisions
     ]
-    service_supabase.table("clip_overlays").insert(payload).execute()
+    try:
+        service_supabase.table("clip_overlays").insert(payload).execute()
+    except Exception:
+        return
 
 
 def get_overlay_decisions_for_podcast(podcast_id: str) -> dict[str, OverlayDecision]:

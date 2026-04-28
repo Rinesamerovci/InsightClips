@@ -1207,7 +1207,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* AI Clips teaser */}
+              {/* Clips workspace */}
               <div style={{
                 padding:"26px 28px", borderRadius:18,
                 border:`1px solid ${t.border}`,
@@ -1215,11 +1215,11 @@ export default function DashboardPage() {
                 animation:"slideUp .55s .52s cubic-bezier(.22,1,.36,1) both",
               }}>
                 <Play size={22} color={t.textFaint} style={{ marginBottom:12 }} strokeWidth={1.8}/>
-                <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:20, fontStyle:"italic", color:t.text, marginBottom:6 }}>AI Clips</div>
-                <p style={{ fontSize:13, color:t.textSub, lineHeight:1.65, marginBottom:16 }}>Smart moment extraction — dropping in the next release.</p>
+                <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:20, fontStyle:"italic", color:t.text, marginBottom:6 }}>Clips workspace</div>
+                <p style={{ fontSize:13, color:t.textSub, lineHeight:1.65, marginBottom:16 }}>Analysis ranks the best moments first. Open Clips to generate the rendered videos.</p>
                 <div style={{ display:"flex", alignItems:"center", gap:7 }}>
                   <div className="pdot" style={{ width:6, height:6, borderRadius:"50%", background:t.accent, flexShrink:0 }}/>
-                  <span style={{ fontSize:10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint }}>In development</span>
+                  <span style={{ fontSize:10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint }}>Ready after analysis</span>
                 </div>
               </div>
             </div>

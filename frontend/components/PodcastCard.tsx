@@ -184,6 +184,9 @@ export function PodcastCard({
                     <div style={{ fontSize: 10, color: "#7aaa55", marginTop: 1 }}>
                       {analysis!.total_scored_segments} segments
                     </div>
+                    <div style={{ fontSize: 10, color: "#526352", marginTop: 4, lineHeight: 1.45 }}>
+                      Analysis finds moments first. Open clips to render the final videos.
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -201,7 +204,7 @@ export function PodcastCard({
                     fontSize: 10, fontWeight: 700, color: "#2f7020",
                     textDecoration: "none", whiteSpace: "nowrap",
                   }}>
-                    Clips <ChevronRight size={10}/>
+                    Open clips <ChevronRight size={10}/>
                   </Link>
                 </div>
               </div>

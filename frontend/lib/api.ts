@@ -423,6 +423,49 @@ export function getBackendBaseUrl(): string {
   return configuredBackendUrl;
 }
 
+export function resolveBackendUrl(pathOrUrl: string): string {
+  const trimmed = pathOrUrl.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const backendBaseUrl = getBackendBaseUrl();
+  return new URL(
+    trimmed.startsWith("/") ? trimmed : `/${trimmed}`,
+    backendBaseUrl.endsWith("/") ? backendBaseUrl : `${backendBaseUrl}/`,
+  ).toString();
+}
+
+export function buildAuthenticatedBackendUrl(
+  pathOrUrl: string,
+  token?: string | null,
+): string {
+  const resolvedUrl = resolveBackendUrl(pathOrUrl);
+  if (!resolvedUrl || !token) {
+    return resolvedUrl;
+  }
+
+  try {
+    const url = new URL(resolvedUrl);
+    const backendUrl = new URL(getBackendBaseUrl());
+    const isBackendDownloadRoute =
+      url.origin === backendUrl.origin &&
+      /\/podcasts\/clips\/[^/]+\/download$/i.test(url.pathname);
+
+    if (isBackendDownloadRoute && !url.searchParams.has("access_token")) {
+      url.searchParams.set("access_token", token);
+    }
+
+    return url.toString();
+  } catch {
+    return resolvedUrl;
+  }
+}
+
 export async function postJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
   return requestJson<T>(path, { method: "POST", body, token });
 }

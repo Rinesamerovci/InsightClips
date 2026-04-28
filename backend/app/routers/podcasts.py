@@ -143,12 +143,17 @@ async def generate_podcast_clips(
             refreshed_scores = True
 
         if transcription is None:
-            transcription = await asyncio.to_thread(
-                transcribe_podcast_media_for_user,
-                podcast_id,
-                current_user.id,
-                model="base",
-            )
+            try:
+                transcription = await asyncio.to_thread(
+                    transcribe_podcast_media_for_user,
+                    podcast_id,
+                    current_user.id,
+                    model="base",
+                )
+            except AnalysisError:
+                if not score_segments:
+                    raise
+                transcription = None
 
         if refreshed_scores:
             await asyncio.to_thread(
@@ -193,10 +198,11 @@ async def get_podcast_clips(
 
     result = get_clips_for_podcast(podcast_id)
     if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No clips have been generated for this podcast yet.",
-    )
+        return build_clip_generation_result(
+            podcast_id,
+            [],
+            processing_time_seconds=0.0,
+        )
     return result
 
 

@@ -247,7 +247,17 @@ def prepare_upload(
             }
         )
 
-    response = service_supabase.table("podcasts").insert(insert_payload).execute()
+    try:
+        response = service_supabase.table("podcasts").insert(insert_payload).execute()
+    except Exception as exc:
+        if not _podcast_export_columns_missing(exc):
+            raise
+        fallback_payload = dict(insert_payload)
+        fallback_payload.pop("export_mode", None)
+        fallback_payload.pop("crop_mode", None)
+        fallback_payload.pop("mobile_optimized", None)
+        fallback_payload.pop("face_tracking_enabled", None)
+        response = service_supabase.table("podcasts").insert(fallback_payload).execute()
     rows = response.data or []
     if not rows:
         raise UploadWorkflowError("Podcast record could not be created.", status_code=500)
@@ -263,4 +273,18 @@ def prepare_upload(
         payment_status=payment_status,
         price=calculated_response.price,
         export_settings=resolved_export_settings,
+    )
+
+
+def _podcast_export_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "export_mode",
+            "crop_mode",
+            "mobile_optimized",
+            "face_tracking_enabled",
+            "42703",
+        )
     )

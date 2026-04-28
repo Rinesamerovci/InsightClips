@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +17,8 @@ PORTRAIT_ASPECT_RATIO = 9 / 16
 DEFAULT_PORTRAIT_WIDTH = 1080
 DEFAULT_PORTRAIT_HEIGHT = 1920
 DEFAULT_SAMPLE_COUNT = 5
+SMART_CROP_MIN_WIDTH_RATIO = 0.46
+SMART_CROP_FACE_WIDTH_MULTIPLIER = 3.2
 
 
 @dataclass(frozen=True)
@@ -49,7 +54,8 @@ def compute_portrait_crop_window(
 ) -> CropWindow:
     dimensions = read_video_dimensions(source_path)
     source_width, source_height = dimensions
-    crop_width, crop_height = _resolve_portrait_crop_size(source_width, source_height)
+    base_crop_width, crop_height = _resolve_portrait_crop_size(source_width, source_height)
+    crop_width = base_crop_width
 
     if crop_width >= source_width:
         return CropWindow(
@@ -63,16 +69,23 @@ def compute_portrait_crop_window(
             face_detected=False,
         )
 
-    face_center_x = None
+    face_detection = None
     if prefer_face_detection:
-        face_center_x = detect_primary_face_center_x(
+        face_detection = detect_primary_face(
             source_path,
             clip_start_seconds=clip_start_seconds,
             clip_duration_seconds=clip_duration_seconds,
             sample_count=sample_count,
         )
+        crop_width = _resolve_safe_smart_crop_width(
+            source_width,
+            source_height,
+            base_crop_width=base_crop_width,
+            face_width=face_detection.width if face_detection is not None else None,
+        )
+
     centered_x = int(round((source_width - crop_width) / 2))
-    if face_center_x is None:
+    if face_detection is None:
         return CropWindow(
             source_width=source_width,
             source_height=source_height,
@@ -80,11 +93,11 @@ def compute_portrait_crop_window(
             crop_height=crop_height,
             offset_x=_clamp(centered_x, 0, source_width - crop_width),
             offset_y=0,
-            strategy="center_crop",
+            strategy="safe_center_crop" if prefer_face_detection else "center_crop",
             face_detected=False,
         )
 
-    face_aligned_x = int(round(face_center_x - (crop_width / 2)))
+    face_aligned_x = int(round(face_detection.center_x - (crop_width / 2)))
     return CropWindow(
         source_width=source_width,
         source_height=source_height,
@@ -99,23 +112,22 @@ def compute_portrait_crop_window(
 
 def build_portrait_video_filters(crop_window: CropWindow) -> str:
     if crop_window.strategy == "full_frame":
-        return (
-            f"scale={crop_window.target_width}:{crop_window.target_height}:force_original_aspect_ratio=decrease,"
-            f"pad={crop_window.target_width}:{crop_window.target_height}:(ow-iw)/2:(oh-ih)/2"
-        )
-    return (
-        f"crop={crop_window.crop_width}:{crop_window.crop_height}:{crop_window.offset_x}:{crop_window.offset_y},"
-        f"scale={crop_window.target_width}:{crop_window.target_height}"
+        return _build_portrait_scale_pad_filters(crop_window)
+    return ",".join(
+        [
+            f"crop={crop_window.crop_width}:{crop_window.crop_height}:{crop_window.offset_x}:{crop_window.offset_y}",
+            _build_portrait_scale_pad_filters(crop_window),
+        ]
     )
 
 
-def detect_primary_face_center_x(
+def detect_primary_face(
     source_path: Path,
     *,
     clip_start_seconds: float,
     clip_duration_seconds: float,
     sample_count: int = DEFAULT_SAMPLE_COUNT,
-) -> float | None:
+) -> FaceDetection | None:
     if cv2 is None:
         return None
 
@@ -129,7 +141,7 @@ def detect_primary_face_center_x(
         if classifier is None:
             return None
 
-        frame_centers: list[tuple[float, float]] = []
+        frame_detections: list[FaceDetection] = []
         timestamps = _sample_timestamps(
             clip_start_seconds=clip_start_seconds,
             clip_duration_seconds=clip_duration_seconds,
@@ -146,18 +158,48 @@ def detect_primary_face_center_x(
             if detection is None:
                 continue
             normalized_center = detection.center_x / max(frame_width or frame.shape[1], 1)
-            frame_centers.append((detection.center_x, detection.weight * max(normalized_center, 0.25)))
+            weighted_detection = FaceDetection(
+                center_x=detection.center_x,
+                center_y=detection.center_y,
+                width=detection.width,
+                height=detection.height,
+                weight=detection.weight * max(normalized_center, 0.25),
+            )
+            frame_detections.append(weighted_detection)
 
-        if not frame_centers:
+        if not frame_detections:
             return None
 
-        weighted_sum = sum(center * weight for center, weight in frame_centers)
-        total_weight = sum(weight for _, weight in frame_centers)
+        total_weight = sum(item.weight for item in frame_detections)
         if total_weight <= 0:
             return None
-        return weighted_sum / total_weight
+        return FaceDetection(
+            center_x=sum(item.center_x * item.weight for item in frame_detections) / total_weight,
+            center_y=sum(item.center_y * item.weight for item in frame_detections) / total_weight,
+            width=int(round(sum(item.width * item.weight for item in frame_detections) / total_weight)),
+            height=int(round(sum(item.height * item.weight for item in frame_detections) / total_weight)),
+            weight=total_weight,
+        )
     finally:
         capture.release()
+
+
+def detect_primary_face_center_x(
+    source_path: Path,
+    *,
+    clip_start_seconds: float,
+    clip_duration_seconds: float,
+    sample_count: int = DEFAULT_SAMPLE_COUNT,
+) -> float | None:
+    detection = detect_primary_face(
+        source_path,
+        clip_start_seconds=clip_start_seconds,
+        clip_duration_seconds=clip_duration_seconds,
+        sample_count=sample_count,
+    )
+    if detection is None:
+        return None
+    return detection.center_x
 
 
 def read_video_dimensions(source_path: Path) -> tuple[int, int]:
@@ -172,8 +214,65 @@ def read_video_dimensions(source_path: Path) -> tuple[int, int]:
             finally:
                 capture.release()
 
+    ffprobe_dimensions = _read_video_dimensions_with_ffprobe(source_path)
+    if ffprobe_dimensions is not None:
+        return ffprobe_dimensions
+
     # Conservative fallback that keeps portrait exports functional when OpenCV is unavailable.
     return 1920, 1080
+
+
+def _read_video_dimensions_with_ffprobe(source_path: Path) -> tuple[int, int] | None:
+    if not shutil.which("ffprobe"):
+        return None
+
+    resolved_path = source_path.expanduser().resolve()
+    if not resolved_path.exists() or not resolved_path.is_file():
+        return None
+
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        str(resolved_path),
+    ]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+
+    stream = (payload.get("streams") or [{}])[0]
+    try:
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+    except (TypeError, ValueError):
+        return None
+
+    if width <= 0 or height <= 0:
+        return None
+
+    return width, height
 
 
 def _resolve_portrait_crop_size(source_width: int, source_height: int) -> tuple[int, int]:
@@ -183,6 +282,30 @@ def _resolve_portrait_crop_size(source_width: int, source_height: int) -> tuple[
         crop_width = min(source_width, 2)
     crop_height = source_height - (source_height % 2)
     return min(crop_width, source_width), crop_height
+
+
+def _resolve_safe_smart_crop_width(
+    source_width: int,
+    source_height: int,
+    *,
+    base_crop_width: int,
+    face_width: int | None,
+) -> int:
+    min_safe_width = int(source_width * SMART_CROP_MIN_WIDTH_RATIO)
+    face_safe_width = int((face_width or 0) * SMART_CROP_FACE_WIDTH_MULTIPLIER)
+    crop_width = max(base_crop_width, min_safe_width, face_safe_width)
+    crop_width = min(crop_width, source_width)
+    crop_width -= crop_width % 2
+    if crop_width <= 0:
+        crop_width = min(source_width - (source_width % 2), source_height - (source_height % 2))
+    return max(2, crop_width)
+
+
+def _build_portrait_scale_pad_filters(crop_window: CropWindow) -> str:
+    return (
+        f"scale={crop_window.target_width}:{crop_window.target_height}:force_original_aspect_ratio=decrease,"
+        f"pad={crop_window.target_width}:{crop_window.target_height}:(ow-iw)/2:(oh-ih)/2"
+    )
 
 
 def _sample_timestamps(

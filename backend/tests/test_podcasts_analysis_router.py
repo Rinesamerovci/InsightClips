@@ -17,7 +17,7 @@ from app.models.analysis import AnalysisResult, AnalyzePodcastRequest, ScoreSegm
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest  # noqa: E402
 from app.models.export_settings import ExportSettings  # noqa: E402
 from app.models.transcription import TranscriptionResult, TranscriptWord  # noqa: E402
-from app.routers.podcasts import analyze_podcast, generate_podcast_clips  # noqa: E402
+from app.routers.podcasts import analyze_podcast, generate_podcast_clips, get_podcast_clips  # noqa: E402
 
 
 class PodcastAnalysisRouterTests(unittest.TestCase):
@@ -114,6 +114,69 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         generate_clips_mock.assert_called_once()
         self.assertEqual(generate_clips_mock.call_args.args[3].resolve().export_mode, "portrait")
         analyze_and_score_mock.assert_not_called()
+        persist_analysis_result_mock.assert_not_called()
+
+    @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.persist_analysis_result")
+    @patch("app.routers.podcasts.build_analysis_result")
+    @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
+    @patch("app.routers.podcasts.get_scored_segments_for_podcast")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_generate_podcast_clips_falls_back_when_optional_transcription_fails(
+        self,
+        podcast_belongs_mock,
+        update_status_mock,
+        get_scored_segments_mock,
+        transcribe_podcast_mock,
+        build_analysis_result_mock,
+        persist_analysis_result_mock,
+        generate_clips_mock,
+    ) -> None:
+        get_scored_segments_mock.return_value = [
+            ScoreSegment(
+                segment_start_seconds=5.0,
+                segment_end_seconds=35.0,
+                duration_seconds=30.0,
+                virality_score=88.0,
+                transcript_snippet="refreshed segment",
+                sentiment="positive",
+                keywords=["refresh"],
+            )
+        ]
+        transcribe_podcast_mock.side_effect = Exception("not used")
+        from app.services.analysis_service import AnalysisError
+
+        transcribe_podcast_mock.side_effect = AnalysisError(
+            "This podcast does not have a staged media file available for transcription."
+        )
+        generate_clips_mock.return_value = [
+            ClipResult(
+                id="clip-1",
+                clip_number=1,
+                clip_start_seconds=5.0,
+                clip_end_seconds=35.0,
+                duration_seconds=30.0,
+                virality_score=88.0,
+                video_url="https://example.com/clip-1.mp4",
+                subtitle_text="refreshed segment",
+                status="ready",
+            )
+        ]
+
+        result = asyncio.run(
+            generate_podcast_clips(
+                "podcast-123",
+                GenerateClipsRequest(),
+                self.user,
+            )
+        )
+
+        self.assertEqual(result.total_clips_generated, 1)
+        get_scored_segments_mock.assert_called_once_with("podcast-123", limit=5)
+        transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
+        self.assertIsNone(generate_clips_mock.call_args.args[2])
+        build_analysis_result_mock.assert_not_called()
         persist_analysis_result_mock.assert_not_called()
 
     @patch("app.routers.podcasts.generate_clips")
@@ -343,6 +406,21 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertEqual(exc_info.exception.status_code, 404)
         podcast_belongs_mock.assert_called_once_with("podcast-404", "user-123")
+
+    @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_get_podcast_clips_returns_empty_result_when_none_generated(
+        self,
+        podcast_belongs_mock,
+        get_clips_mock,
+    ) -> None:
+        result = asyncio.run(get_podcast_clips("podcast-123", self.user))
+
+        self.assertEqual(result.podcast_id, "podcast-123")
+        self.assertEqual(result.total_clips_generated, 0)
+        self.assertEqual(result.clips, [])
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        get_clips_mock.assert_called_once_with("podcast-123")
 
 
 if __name__ == "__main__":

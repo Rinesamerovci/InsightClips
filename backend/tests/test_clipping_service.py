@@ -19,6 +19,7 @@ import app.services.clipping_service as clipping_service_module  # noqa: E402
 from app.services.clipping_service import (  # noqa: E402
     ClippingError,
     build_ffmpeg_clip_command,
+    build_segment_fallback_srt_content,
     build_srt_content,
     generate_clips,
     _build_video_filters,
@@ -112,7 +113,8 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("-vf", command)
         filters = command[command.index("-vf") + 1]
         self.assertIn("crop=606:1080:1197:0", filters)
-        self.assertIn("scale=1080:1920", filters)
+        self.assertIn("scale=1080:1920:force_original_aspect_ratio=decrease", filters)
+        self.assertIn("pad=1080:1920:(ow-iw)/2:(oh-ih)/2", filters)
         self.assertIn("subtitles=", filters)
 
     def test_build_ffmpeg_clip_command_uses_filter_complex_when_overlay_is_enabled(self) -> None:
@@ -157,6 +159,19 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("This is a strong", srt_content)
         self.assertIn("subtitles should stay aligned.", subtitle_text)
 
+    def test_build_segment_fallback_srt_content_spreads_segment_snippet_across_clip(self) -> None:
+        srt_content, subtitle_text = build_segment_fallback_srt_content(
+            self.score_segments[0],
+            clip_duration_seconds=4.2,
+        )
+
+        self.assertIn("00:00:00,000 -->", srt_content)
+        self.assertIn("This is a strong hook", srt_content)
+        self.assertEqual(
+            subtitle_text,
+            "This is a strong hook for a viral clip and the subtitles should stay aligned.",
+        )
+
     def test_generate_clips_persists_ready_rows(self) -> None:
         case_dir = self._workspace_case_dir("clipping-persist")
         delete_execute = MagicMock()
@@ -195,8 +210,10 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(len(clips), 1)
         self.assertEqual(clips[0].status, "ready")
         self.assertEqual(clips[0].export_settings.export_mode, "landscape")
+        self.assertEqual(clips[0].video_url, f"/podcasts/clips/{clips[0].id}/download")
         insert_payload = clips_table.insert.call_args.args[0]
         self.assertEqual(insert_payload[0]["podcast_id"], "podcast-123")
+        self.assertIsNone(insert_payload[0]["storage_url"])
         self.assertEqual(insert_payload[0]["status"], "ready")
         self.assertEqual(insert_payload[0]["export_mode"], "landscape")
         self.assertEqual(insert_payload[0]["crop_mode"], "none")
@@ -385,6 +402,43 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertLessEqual(captured_command["start"], 0.2)
         self.assertGreater(captured_command["duration"], 4.0)
 
+    def test_generate_clips_can_fallback_without_transcription(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-no-transcription")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))) ,
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        captured_command: dict[str, float] = {}
+
+        def fake_ffmpeg(*args, **kwargs):
+            captured_command["start"] = kwargs["start_seconds"]
+            captured_command["duration"] = kwargs["duration_seconds"]
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                clips = generate_clips("podcast-123", self.score_segments, None)
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].subtitle_text, self.score_segments[0].transcript_snippet)
+        self.assertEqual(clips[0].video_url, f"/podcasts/clips/{clips[0].id}/download")
+        self.assertEqual(captured_command["start"], 0.0)
+        self.assertGreater(captured_command["duration"], 5.0)
+
     def test_generate_clips_raises_when_segment_has_no_overlapping_words(self) -> None:
         invalid_segment = ScoreSegment(
             segment_start_seconds=10.0,
@@ -411,6 +465,7 @@ class ClippingServiceTests(unittest.TestCase):
                             generate_clips("podcast-123", [invalid_segment], self.transcription)
 
         self.assertIn("No clips could be generated", exc_info.exception.detail)
+        self.assertIn("No transcript words overlapped the requested clip window.", exc_info.exception.detail)
 
     def test_generate_clips_marks_overlay_missing_asset_without_crashing_export(self) -> None:
         case_dir = self._workspace_case_dir("clipping-missing-overlay")

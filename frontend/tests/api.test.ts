@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  buildAuthenticatedBackendUrl,
   getClipMetrics,
   getRecommendations,
   prepareUpload,
@@ -42,6 +43,8 @@ function withMockFetch(
 }
 
 export async function runApiTests(): Promise<void> {
+  testBuildAuthenticatedBackendUrlSignsProtectedDownloads();
+  testBuildAuthenticatedBackendUrlLeavesPublicUrlsUntouched();
   await testPrepareUploadPostsExportSettings();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
@@ -49,6 +52,21 @@ export async function runApiTests(): Promise<void> {
   await testRevokeClipDownloadPostsRevocationRequest();
   await testRecommendationsFallbackProducesEstimatedResults();
   await testMetricsFallbackProducesEstimatedSummary();
+}
+
+function testBuildAuthenticatedBackendUrlSignsProtectedDownloads(): void {
+  const url = buildAuthenticatedBackendUrl("/podcasts/clips/clip-7/download", "token-123");
+
+  assert.equal(
+    url,
+    "http://localhost:8000/podcasts/clips/clip-7/download?access_token=token-123",
+  );
+}
+
+function testBuildAuthenticatedBackendUrlLeavesPublicUrlsUntouched(): void {
+  const url = buildAuthenticatedBackendUrl("https://example.com/clip-1.mp4", "token-123");
+
+  assert.equal(url, "https://example.com/clip-1.mp4");
 }
 
 async function testPrepareUploadPostsExportSettings(): Promise<void> {

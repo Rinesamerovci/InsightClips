@@ -9,7 +9,12 @@ import {
 } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { clearBackendToken, postJson, storeBackendToken } from '@/lib/api'
+import {
+  clearBackendToken,
+  getStoredBackendToken,
+  postJson,
+  storeBackendToken,
+} from '@/lib/api'
 import { supabase, type SupabaseUser } from '@/lib/supabase'
 
 type BackendAuthResponse = {
@@ -36,7 +41,9 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<SupabaseUser | null>(null)
-  const [backendToken, setBackendToken] = useState<string | null>(null)
+  const [backendToken, setBackendToken] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : getStoredBackendToken(),
+  )
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
@@ -51,9 +58,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return null
     }
 
-    const verified = await postJson<BackendAuthResponse>('/auth/verify', {
-      supabase_token: session.access_token,
-    })
+    const cachedToken = getStoredBackendToken()
+    let verified: BackendAuthResponse
+
+    try {
+      verified = await postJson<BackendAuthResponse>('/auth/verify', {
+        supabase_token: session.access_token,
+      })
+    } catch (error) {
+      if (cachedToken) {
+        setBackendToken(cachedToken)
+        return cachedToken
+      }
+      throw error
+    }
 
     storeBackendToken(verified.access_token)
     setBackendToken(verified.access_token)
@@ -81,13 +99,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setUser(session?.user ?? null)
+      setBackendToken(getStoredBackendToken())
 
       if (session?.access_token) {
         try {
           await syncBackendSession()
         } catch {
-          clearBackendToken()
-          setBackendToken(null)
+          const cachedToken = getStoredBackendToken()
+          if (cachedToken) {
+            setBackendToken(cachedToken)
+          } else {
+            clearBackendToken()
+            setBackendToken(null)
+          }
         }
       }
 

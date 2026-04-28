@@ -18,6 +18,7 @@ import {
 
 import { useAuth } from "@/context/AuthContext";
 import {
+  buildAuthenticatedBackendUrl,
   downloadClip,
   generateClips,
   getBackendBaseUrl,
@@ -122,6 +123,10 @@ function truncateText(value: string, maxLength: number): string {
 
 function isPreviewable(url: string): boolean {
   return /^https?:\/\//i.test(url);
+}
+
+function getPreviewAspectRatio(exportSettings?: ClipResult["export_settings"] | null): string {
+  return exportSettings?.export_mode === "portrait" ? "9 / 16" : "16 / 9";
 }
 
 function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSearchResult[] {
@@ -527,10 +532,8 @@ function ClipsPageContent() {
         return;
       }
 
-      const [generated, recommended] = await Promise.all([
-        generateClips(selectedPodcastId, token),
-        getRecommendations(selectedPodcastId, token).catch(() => null),
-      ]);
+      const generated = await generateClips(selectedPodcastId, token);
+      const recommended = await getRecommendations(selectedPodcastId, token).catch(() => null);
 
       setClips(generated.clips);
       setSearchResults(
@@ -1296,6 +1299,14 @@ function ClipsPageContent() {
                     const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
                     const overlayState = getOverlayState(clip.overlay);
+                    const previewUrl = buildAuthenticatedBackendUrl(
+                      clip.video_url ?? "",
+                      backendToken,
+                    );
+                    const previewAspectRatio = getPreviewAspectRatio(
+                      clip.export_settings ?? selectedPodcast?.export_settings ?? null,
+                    );
+                    const portraitPreview = previewAspectRatio === "9 / 16";
                     const overlayBadgeColor =
                       overlayState.variant === "enabled" ? t.accent : t.textSub;
                     const overlayBadgeBorder =
@@ -1324,15 +1335,37 @@ function ClipsPageContent() {
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
+                            padding: 16,
                           }}
                         >
-                          {isPreviewable(clip.video_url ?? "") ? (
-                            <video
-                              controls
-                              preload="metadata"
-                              src={clip.video_url}
-                              style={{ width: "100%", height: 220, objectFit: "cover" }}
-                            />
+                          {isPreviewable(previewUrl) ? (
+                            <div
+                              style={{
+                                width: "100%",
+                                maxWidth: portraitPreview ? 250 : "100%",
+                                aspectRatio: previewAspectRatio,
+                                margin: "0 auto",
+                                borderRadius: 18,
+                                overflow: "hidden",
+                                background: "#000",
+                                boxShadow: dark
+                                  ? "0 14px 30px rgba(0,0,0,.34)"
+                                  : "0 14px 30px rgba(20,34,16,.14)",
+                              }}
+                            >
+                              <video
+                                controls
+                                preload="metadata"
+                                src={previewUrl}
+                                style={{
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "contain",
+                                  display: "block",
+                                  background: "#000",
+                                }}
+                              />
+                            </div>
                           ) : (
                             <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
                               <PlayCircle size={34} />

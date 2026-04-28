@@ -12,7 +12,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.models.analysis import ScoreSegment  # noqa: E402
-from app.models.export_settings import ExportSettingsInput  # noqa: E402
+from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
 from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
 from app.models.overlay import OverlayDecision  # noqa: E402
 import app.services.clipping_service as clipping_service_module  # noqa: E402
@@ -22,6 +22,7 @@ from app.services.clipping_service import (  # noqa: E402
     build_segment_fallback_srt_content,
     build_srt_content,
     generate_clips,
+    _build_subtitle_force_style,
     _build_video_filters,
     _resolve_clip_window,
 )
@@ -339,6 +340,40 @@ class ClippingServiceTests(unittest.TestCase):
     def test_build_video_filters_keeps_landscape_exports_unchanged(self) -> None:
         filters = _build_video_filters(Path("captions.srt"))
         self.assertTrue(filters.startswith("subtitles="))
+
+    def test_build_video_filters_includes_subtitle_style_for_renderer(self) -> None:
+        filters = _build_video_filters(
+            Path("captions.srt"),
+            export_settings=ExportSettings(
+                subtitle_style=SubtitleStyle(
+                    preset="boxed",
+                    font_family="Inter",
+                    font_size=26,
+                    primary_color="#F8FAFC",
+                    outline_color="#111827",
+                    background_color="#0F172A",
+                    background_opacity=0.7,
+                    position="top",
+                    bold=True,
+                )
+            ),
+        )
+
+        self.assertIn("FontName=Inter", filters)
+        self.assertIn("Fontsize=26", filters)
+        self.assertIn("Alignment=8", filters)
+        self.assertIn("Bold=-1", filters)
+
+    def test_subtitle_force_style_converts_hex_colors_to_ass_format(self) -> None:
+        style = _build_subtitle_force_style(
+            SubtitleStyle(
+                primary_color="#336699",
+                outline_color="#000000",
+            )
+        )
+
+        self.assertIn("PrimaryColour=&H00996633", style)
+        self.assertIn("BackColour=&HCC000000", style)
 
     def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
         stale_segment = ScoreSegment(

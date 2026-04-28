@@ -244,6 +244,7 @@ def prepare_upload(
                 "crop_mode": resolved_export_settings.crop_mode,
                 "mobile_optimized": resolved_export_settings.mobile_optimized,
                 "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
+                "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
             }
         )
 
@@ -257,6 +258,7 @@ def prepare_upload(
         fallback_payload.pop("crop_mode", None)
         fallback_payload.pop("mobile_optimized", None)
         fallback_payload.pop("face_tracking_enabled", None)
+        fallback_payload.pop("subtitle_style", None)
         response = service_supabase.table("podcasts").insert(fallback_payload).execute()
     rows = response.data or []
     if not rows:
@@ -285,6 +287,7 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "crop_mode",
             "mobile_optimized",
             "face_tracking_enabled",
+            "subtitle_style",
             "42703",
         )
     )

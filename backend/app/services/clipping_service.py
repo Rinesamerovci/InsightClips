@@ -158,7 +158,7 @@ def build_srt_content(
 def generate_clips(
     podcast_id: str,
     score_segments: list[ScoreSegment],
-    transcription: TranscriptionResult,
+    transcription: TranscriptionResult | None,
     export_settings: ExportSettingsInput | ExportSettings | None = None,
 ) -> list[ClipResult]:
     podcast_row = _get_podcast_row(podcast_id)
@@ -173,6 +173,7 @@ def generate_clips(
     generated_results: list[ClipResult] = []
     overlay_decisions: list[OverlayDecision] = []
     rows_to_persist: list[dict[str, Any]] = []
+    last_generation_error: ClippingError | None = None
 
     for clip_number, segment in enumerate(selected_segments, start=1):
         clip_id = str(uuid.uuid4())
@@ -187,11 +188,17 @@ def generate_clips(
         subtitle_path = output_dir / subtitle_filename
 
         try:
-            srt_content, subtitle_text = build_srt_content(
-                transcription,
-                clip_start_seconds=clip_start,
-                clip_end_seconds=clip_end,
-            )
+            if transcription is not None:
+                srt_content, subtitle_text = build_srt_content(
+                    transcription,
+                    clip_start_seconds=clip_start,
+                    clip_end_seconds=clip_end,
+                )
+            else:
+                srt_content, subtitle_text = build_segment_fallback_srt_content(
+                    segment,
+                    clip_duration_seconds=clip_duration,
+                )
             draft_clip = ClipResult(
                 id=clip_id,
                 clip_number=clip_number,
@@ -219,14 +226,11 @@ def generate_clips(
                 export_settings=resolved_export_settings,
                 overlay=overlay_decision,
             )
-            storage_url, subtitle_url = _store_clip_assets(
-                podcast_id,
-                clip_filename=clip_filename,
-                clip_path=clip_path,
-                subtitle_filename=subtitle_filename,
-                subtitle_path=subtitle_path,
-            )
-            video_url = storage_url or _build_backend_download_path(clip_id)
+            # Keep generation responsive by returning locally rendered clips immediately.
+            # Uploading generated assets to remote storage is deferred to the publish flow.
+            storage_url = None
+            subtitle_url = None
+            video_url = _build_backend_download_path(clip_id)
             generated_results.append(
                 draft_clip.model_copy(
                     update={
@@ -255,10 +259,16 @@ def generate_clips(
                     "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
                 }
             )
-        except ClippingError:
+        except ClippingError as exc:
+            last_generation_error = exc
             continue
 
     if not generated_results:
+        if last_generation_error is not None:
+            raise ClippingError(
+                f"No clips could be generated from the selected segments. {last_generation_error.detail}",
+                status_code=last_generation_error.status_code,
+            )
         raise ClippingError("No clips could be generated from the selected segments.")
 
     _persist_generated_clips(podcast_id, rows_to_persist)
@@ -294,15 +304,7 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return None
 
-    response = (
-        service_supabase.table("clips")
-        .select(
-            "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled"
-        )
-        .eq("podcast_id", podcast_id)
-        .order("clip_number")
-        .execute()
-    )
+    response = _select_clip_rows_for_podcast(podcast_id)
     rows = response.data or []
     if not rows:
         return None
@@ -385,8 +387,15 @@ def _select_segments(score_segments: list[ScoreSegment]) -> list[ScoreSegment]:
 
 def _resolve_clip_window(
     segment: ScoreSegment,
-    transcription: TranscriptionResult,
+    transcription: TranscriptionResult | None,
 ) -> tuple[float, float]:
+    if transcription is None:
+        return _expand_clip_window(
+            segment.segment_start_seconds,
+            segment.segment_end_seconds,
+            max_duration=max(segment.segment_end_seconds, segment.segment_start_seconds + 1.0),
+        )
+
     matched_window = _match_segment_snippet_window(segment, transcription.words)
     if matched_window is not None:
         start, end = matched_window
@@ -526,6 +535,52 @@ def _finalize_subtitle_cue(words: list[TranscriptWord], clip_start_seconds: floa
     else:
         text = _join_transcript_tokens(tokens)
     return _SubtitleCue(start=start, end=end, text=text)
+
+
+def build_segment_fallback_srt_content(
+    segment: ScoreSegment,
+    *,
+    clip_duration_seconds: float,
+) -> tuple[str, str]:
+    subtitle_text = _join_transcript_tokens(segment.transcript_snippet.split())
+    if not subtitle_text:
+        raise ClippingError("Unable to build fallback subtitles for the requested clip.")
+
+    tokens = subtitle_text.split()
+    lines: list[str] = []
+    current_tokens: list[str] = []
+    for token in tokens:
+        current_tokens.append(token)
+        if len(current_tokens) >= MAX_SUBTITLE_WORDS_PER_CUE:
+            lines.append(" ".join(current_tokens))
+            current_tokens = []
+    if current_tokens:
+        lines.append(" ".join(current_tokens))
+
+    if not lines:
+        lines = [subtitle_text]
+
+    cue_count = len(lines)
+    duration_per_cue = max(0.8, clip_duration_seconds / cue_count)
+    srt_lines: list[str] = []
+    for index, line in enumerate(lines, start=1):
+        start_seconds = min(clip_duration_seconds, (index - 1) * duration_per_cue)
+        end_seconds = clip_duration_seconds if index == cue_count else min(
+            clip_duration_seconds,
+            index * duration_per_cue,
+        )
+        if end_seconds <= start_seconds:
+            end_seconds = min(clip_duration_seconds, start_seconds + 0.8)
+        srt_lines.extend(
+            [
+                str(index),
+                f"{_format_srt_timestamp(start_seconds)} --> {_format_srt_timestamp(end_seconds)}",
+                line,
+                "",
+            ]
+        )
+
+    return "\n".join(srt_lines).strip(), subtitle_text
 
 
 def _join_transcript_tokens(tokens: Any) -> str:
@@ -757,13 +812,7 @@ def _get_podcast_row(podcast_id: str) -> dict[str, Any]:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         raise ClippingError("Supabase must be configured before clips can be generated.", status_code=503)
 
-    response = (
-        service_supabase.table("podcasts")
-        .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled")
-        .eq("id", podcast_id)
-        .limit(1)
-        .execute()
-    )
+    response = _select_podcast_row(podcast_id)
     rows = response.data or []
     if not rows:
         raise ClippingError("Podcast was not found.", status_code=404)
@@ -841,7 +890,28 @@ def _persist_generated_clips(podcast_id: str, rows: list[dict[str, Any]]) -> Non
         return
     service_supabase.table("clips").delete().eq("podcast_id", podcast_id).execute()
     if rows:
-        service_supabase.table("clips").insert(rows).execute()
+        try:
+            service_supabase.table("clips").insert(rows).execute()
+        except Exception as exc:
+            if not _clip_optional_columns_missing(exc):
+                raise
+            base_rows = [
+                {
+                    "id": row["id"],
+                    "podcast_id": row["podcast_id"],
+                    "clip_number": row["clip_number"],
+                    "clip_start_sec": row["clip_start_sec"],
+                    "clip_end_sec": row["clip_end_sec"],
+                    "virality_score": row["virality_score"],
+                    "storage_path": row["storage_path"],
+                    "storage_url": row["storage_url"],
+                    "subtitle_url": row["subtitle_url"],
+                    "subtitle_text": row["subtitle_text"],
+                    "status": row["status"],
+                }
+                for row in rows
+            ]
+            service_supabase.table("clips").insert(base_rows).execute()
 
 
 def _resolve_export_settings(
@@ -889,15 +959,96 @@ def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
 def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSettings) -> None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return
-    service_supabase.table("podcasts").update(
-        {
-            "export_mode": export_settings.export_mode,
-            "crop_mode": export_settings.crop_mode,
-            "mobile_optimized": export_settings.mobile_optimized,
-            "face_tracking_enabled": export_settings.face_tracking_enabled,
-        }
-    ).eq("id", podcast_id).execute()
+    try:
+        service_supabase.table("podcasts").update(
+            {
+                "export_mode": export_settings.export_mode,
+                "crop_mode": export_settings.crop_mode,
+                "mobile_optimized": export_settings.mobile_optimized,
+                "face_tracking_enabled": export_settings.face_tracking_enabled,
+            }
+        ).eq("id", podcast_id).execute()
+    except Exception as exc:
+        if not _podcast_export_columns_missing(exc):
+            raise
 
 
 def _build_backend_download_path(clip_id: str) -> str:
     return f"/podcasts/clips/{clip_id}/download"
+
+
+def _select_clip_rows_for_podcast(podcast_id: str) -> Any:
+    try:
+        return (
+            service_supabase.table("clips")
+            .select(
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled"
+            )
+            .eq("podcast_id", podcast_id)
+            .order("clip_number")
+            .execute()
+        )
+    except Exception as exc:
+        if not _clip_optional_columns_missing(exc):
+            raise
+        return (
+            service_supabase.table("clips")
+            .select(
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status"
+            )
+            .eq("podcast_id", podcast_id)
+            .order("clip_number")
+            .execute()
+        )
+
+
+def _select_podcast_row(podcast_id: str) -> Any:
+    try:
+        return (
+            service_supabase.table("podcasts")
+            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled")
+            .eq("id", podcast_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        if not _podcast_export_columns_missing(exc):
+            raise
+        return (
+            service_supabase.table("podcasts")
+            .select("id,storage_path")
+            .eq("id", podcast_id)
+            .limit(1)
+            .execute()
+        )
+
+
+def _clip_optional_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "published",
+            "download_url",
+            "published_at",
+            "export_mode",
+            "crop_mode",
+            "mobile_optimized",
+            "face_tracking_enabled",
+            "42703",
+        )
+    )
+
+
+def _podcast_export_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "export_mode",
+            "crop_mode",
+            "mobile_optimized",
+            "face_tracking_enabled",
+            "42703",
+        )
+    )

@@ -123,7 +123,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.get_scored_segments_for_podcast")
     @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
-    def test_generate_podcast_clips_falls_back_when_optional_transcription_fails(
+    def test_generate_podcast_clips_reuses_existing_scores_without_retranscribing(
         self,
         podcast_belongs_mock,
         update_status_mock,
@@ -144,12 +144,6 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
                 keywords=["refresh"],
             )
         ]
-        transcribe_podcast_mock.side_effect = Exception("not used")
-        from app.services.analysis_service import AnalysisError
-
-        transcribe_podcast_mock.side_effect = AnalysisError(
-            "This podcast does not have a staged media file available for transcription."
-        )
         generate_clips_mock.return_value = [
             ClipResult(
                 id="clip-1",
@@ -174,7 +168,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertEqual(result.total_clips_generated, 1)
         get_scored_segments_mock.assert_called_once_with("podcast-123", limit=5)
-        transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
+        transcribe_podcast_mock.assert_not_called()
         self.assertIsNone(generate_clips_mock.call_args.args[2])
         build_analysis_result_mock.assert_not_called()
         persist_analysis_result_mock.assert_not_called()

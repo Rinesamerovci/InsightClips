@@ -140,6 +140,10 @@ class UploadServiceTests(unittest.TestCase):
                                 export_settings={
                                     "export_mode": "portrait",
                                     "mobile_optimized": True,
+                                    "subtitle_style": {
+                                        "preset": "boxed",
+                                        "background_opacity": 0.5,
+                                    },
                                 },
                             ),
                             self.user,
@@ -150,8 +154,10 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload["crop_mode"], "center_crop")
         self.assertTrue(insert_payload["mobile_optimized"])
         self.assertFalse(insert_payload["face_tracking_enabled"])
+        self.assertEqual(insert_payload["subtitle_style"]["preset"], "boxed")
         self.assertEqual(response.export_settings.export_mode, "portrait")
         self.assertEqual(response.export_settings.crop_mode, "center_crop")
+        self.assertEqual(response.export_settings.subtitle_style.preset, "boxed")
 
 
 if __name__ == "__main__":

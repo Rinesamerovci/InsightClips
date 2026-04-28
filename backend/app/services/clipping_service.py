@@ -11,7 +11,7 @@ from app.config import BACKEND_DIR, ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
-from app.models.export_settings import ExportSettings, ExportSettingsInput
+from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
 from app.utils.reframing import CropWindow, build_portrait_video_filters, compute_portrait_crop_window
@@ -257,6 +257,7 @@ def generate_clips(
                     "crop_mode": resolved_export_settings.crop_mode,
                     "mobile_optimized": resolved_export_settings.mobile_optimized,
                     "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
+                    "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
                 }
             )
         except ClippingError as exc:
@@ -603,14 +604,46 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def _build_subtitle_filter(subtitle_path: Path) -> str:
+def _build_subtitle_filter(subtitle_path: Path, subtitle_style: SubtitleStyle | None = None) -> str:
     normalized = subtitle_path.resolve().as_posix().replace(":", r"\:")
     safe_path = normalized.replace("'", r"\'")
-    style = (
-        "FontName=Arial,Fontsize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H64000000,"
-        "BackColour=&H32000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=32"
-    )
+    style = _build_subtitle_force_style(subtitle_style or SubtitleStyle())
     return f"subtitles='{safe_path}':force_style='{style}'"
+
+
+def _build_subtitle_force_style(subtitle_style: SubtitleStyle) -> str:
+    alignment_by_position = {
+        "top": 8,
+        "center": 5,
+        "bottom": 2,
+    }
+    background_opacity = max(0.0, min(float(subtitle_style.background_opacity), 1.0))
+    border_style = 3 if background_opacity > 0 else 1
+    margin_v = 44 if subtitle_style.position == "bottom" else 32
+    style_parts = {
+        "FontName": subtitle_style.font_family,
+        "Fontsize": str(subtitle_style.font_size),
+        "PrimaryColour": _hex_to_ass_color(subtitle_style.primary_color, opacity=1),
+        "OutlineColour": _hex_to_ass_color(subtitle_style.outline_color, opacity=0.6),
+        "BackColour": _hex_to_ass_color(subtitle_style.background_color, opacity=background_opacity),
+        "BorderStyle": str(border_style),
+        "Outline": "1",
+        "Shadow": "0",
+        "Alignment": str(alignment_by_position[subtitle_style.position]),
+        "MarginV": str(margin_v),
+        "Bold": "-1" if subtitle_style.bold else "0",
+        "Italic": "-1" if subtitle_style.italic else "0",
+    }
+    return ",".join(f"{key}={value}" for key, value in style_parts.items())
+
+
+def _hex_to_ass_color(hex_color: str, *, opacity: float) -> str:
+    cleaned = hex_color.lstrip("#")
+    red = cleaned[0:2]
+    green = cleaned[2:4]
+    blue = cleaned[4:6]
+    alpha = round((1 - max(0.0, min(opacity, 1.0))) * 255)
+    return f"&H{alpha:02X}{blue}{green}{red}"
 
 
 def _build_video_filters(
@@ -630,7 +663,7 @@ def _build_video_filters(
             offset_y=0,
         )
         filters.append(build_portrait_video_filters(portrait_crop))
-    filters.append(_build_subtitle_filter(subtitle_path))
+    filters.append(_build_subtitle_filter(subtitle_path, export_settings.subtitle_style if export_settings else None))
     return ",".join(filters)
 
 
@@ -953,6 +986,7 @@ def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
         crop_mode=crop_mode,  # type: ignore[arg-type]
         mobile_optimized=bool(row.get("mobile_optimized") or False),
         face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
+        subtitle_style=row.get("subtitle_style") or SubtitleStyle(),
     )
 
 
@@ -966,6 +1000,7 @@ def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSet
                 "crop_mode": export_settings.crop_mode,
                 "mobile_optimized": export_settings.mobile_optimized,
                 "face_tracking_enabled": export_settings.face_tracking_enabled,
+                "subtitle_style": export_settings.subtitle_style.model_dump(mode="json"),
             }
         ).eq("id", podcast_id).execute()
     except Exception as exc:
@@ -982,7 +1017,7 @@ def _select_clip_rows_for_podcast(podcast_id: str) -> Any:
         return (
             service_supabase.table("clips")
             .select(
-                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled"
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style"
             )
             .eq("podcast_id", podcast_id)
             .order("clip_number")
@@ -1006,7 +1041,7 @@ def _select_podcast_row(podcast_id: str) -> Any:
     try:
         return (
             service_supabase.table("podcasts")
-            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled")
+            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style")
             .eq("id", podcast_id)
             .limit(1)
             .execute()
@@ -1035,6 +1070,7 @@ def _clip_optional_columns_missing(exc: Exception) -> bool:
             "crop_mode",
             "mobile_optimized",
             "face_tracking_enabled",
+            "subtitle_style",
             "42703",
         )
     )
@@ -1049,6 +1085,7 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "crop_mode",
             "mobile_optimized",
             "face_tracking_enabled",
+            "subtitle_style",
             "42703",
         )
     )

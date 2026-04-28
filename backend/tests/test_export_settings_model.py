@@ -10,7 +10,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.models.export_settings import ExportSettings, ExportSettingsInput  # noqa: E402
+from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
 
 
 class ExportSettingsModelTests(unittest.TestCase):
@@ -31,6 +31,48 @@ class ExportSettingsModelTests(unittest.TestCase):
             ExportSettings(export_mode="portrait", crop_mode="center_crop", face_tracking_enabled=True)
 
         self.assertIn("Face tracking requires", str(exc_info.exception))
+
+    def test_subtitle_style_accepts_valid_manual_settings(self) -> None:
+        settings = ExportSettingsInput(
+            subtitle_style={
+                "preset": "boxed",
+                "font_family": "Inter",
+                "font_size": 28,
+                "primary_color": "#f8fafc",
+                "outline_color": "#111827",
+                "background_color": "#000000",
+                "background_opacity": 0.6,
+                "position": "top",
+                "bold": True,
+            }
+        ).resolve()
+
+        self.assertEqual(settings.subtitle_style.primary_color, "#F8FAFC")
+        self.assertEqual(settings.subtitle_style.position, "top")
+        self.assertTrue(settings.subtitle_style.bold)
+
+    def test_subtitle_style_rejects_invalid_color(self) -> None:
+        with self.assertRaises(ValidationError) as exc_info:
+            SubtitleStyle(primary_color="white")
+
+        self.assertIn("#RRGGBB", str(exc_info.exception))
+
+    def test_subtitle_style_rejects_invalid_size(self) -> None:
+        with self.assertRaises(ValidationError):
+            SubtitleStyle(font_size=100)
+
+    def test_subtitle_style_supports_named_presets(self) -> None:
+        style = SubtitleStyle.for_preset("bold")
+
+        self.assertEqual(style.preset, "bold")
+        self.assertTrue(style.bold)
+
+    def test_subtitle_style_preset_applies_defaults_with_manual_overrides(self) -> None:
+        style = SubtitleStyle(preset="bold", font_size=30)
+
+        self.assertEqual(style.font_size, 30)
+        self.assertTrue(style.bold)
+        self.assertEqual(style.background_opacity, 0.25)
 
 
 if __name__ == "__main__":

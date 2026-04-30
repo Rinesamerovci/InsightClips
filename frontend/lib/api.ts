@@ -31,12 +31,28 @@ export type UploadState =
 export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
 export type ExportMode = "landscape" | "portrait";
 export type CropMode = "none" | "center_crop" | "smart_crop";
+export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
+export type SubtitlePosition = "top" | "center" | "bottom";
+
+export type SubtitleStyle = {
+  preset: SubtitleStylePreset;
+  font_family: string;
+  font_size: number;
+  primary_color: string;
+  outline_color: string;
+  background_color: string;
+  background_opacity: number;
+  position: SubtitlePosition;
+  bold: boolean;
+  italic: boolean;
+};
 
 export type ExportSettings = {
   export_mode: ExportMode;
   crop_mode: CropMode;
   mobile_optimized?: boolean;
   face_tracking_enabled?: boolean;
+  subtitle_style?: SubtitleStyle;
 };
 
 export type UploadPriceRequest = {
@@ -392,6 +408,7 @@ function buildMockPrepareResponse(payload: PrepareUploadRequest): PrepareUploadR
     payment_status: status === "ready_for_processing" ? "not_required" : "pending",
     price: payload.price ?? 0,
     currency: "USD",
+    export_settings: payload.export_settings,
   };
 }
 

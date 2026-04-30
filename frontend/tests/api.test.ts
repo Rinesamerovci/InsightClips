@@ -85,6 +85,18 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
           crop_mode: "smart_crop",
           mobile_optimized: true,
           face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "Arial",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
         },
       });
     }
@@ -106,6 +118,18 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
           crop_mode: "smart_crop",
           mobile_optimized: true,
           face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "Arial",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
         },
       },
       { token: "token-123" },
@@ -113,6 +137,7 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
 
     assert.equal(result.podcast_id, "pod-portrait");
     assert.equal(result.export_settings?.export_mode, "portrait");
+    assert.equal(result.export_settings?.subtitle_style?.preset, "bold");
     assert.equal(calls[0]?.init?.method, "POST");
     assert.equal(
       calls[0]?.init?.body,
@@ -128,6 +153,18 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
           crop_mode: "smart_crop",
           mobile_optimized: true,
           face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "Arial",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
         },
       }),
     );

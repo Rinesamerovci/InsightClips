@@ -9,11 +9,19 @@ import {
   UploadCloud, XCircle, Zap, ShieldCheck, Clock,
 } from "lucide-react";
 
+import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
   type ExportMode, type ExportSettings, type PrepareUploadResponse,
+  type SubtitleStyle,
   type UploadPriceResponse, type UploadState,
 } from "@/lib/api";
+import {
+  SUBTITLE_PRESET_DETAILS,
+  buildSubtitleStyleFromPreset,
+  formatSubtitlePosition,
+  hasSubtitleManualOverrides,
+} from "@/lib/subtitle-style";
 
 const ACCEPTED_TYPES = ["video/mp4","video/quicktime","video/webm","video/x-m4v"];
 const ACCEPTED_EXT   = [".mp4",".mov",".webm",".m4v"];
@@ -47,13 +55,14 @@ const EXPORT_MODE_DETAILS: Record<
   },
 };
 
-function buildExportSettings(exportMode: ExportMode): ExportSettings {
+function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyle): ExportSettings {
   if (exportMode === "portrait") {
     return {
       export_mode: "portrait",
       crop_mode: "smart_crop",
       mobile_optimized: true,
       face_tracking_enabled: true,
+      subtitle_style: subtitleStyle,
     };
   }
 
@@ -62,6 +71,7 @@ function buildExportSettings(exportMode: ExportMode): ExportSettings {
     crop_mode: "none",
     mobile_optimized: false,
     face_tracking_enabled: false,
+    subtitle_style: subtitleStyle,
   };
 }
 
@@ -191,6 +201,7 @@ export default function UploadPage() {
     return window.localStorage.getItem("insightclips-theme") === "dark";
   });
   const [exportMode,      setExportMode]      = useState<ExportMode>("portrait");
+  const [subtitleStyle,   setSubtitleStyle]   = useState<SubtitleStyle>(() => buildSubtitleStyleFromPreset("classic"));
   const [dragging,        setDragging]        = useState(false);
   const [file,            setFile]            = useState<File | null>(null);
   const [state,           setState]           = useState<UploadState>("idle");
@@ -209,7 +220,16 @@ export default function UploadPage() {
   const hi      = "#5a9e3a";
   const hi2     = "#7ab55c";
   const exportDetails = EXPORT_MODE_DETAILS[exportMode];
-  const exportSettings = useMemo(() => buildExportSettings(exportMode), [exportMode]);
+  const exportSettings = useMemo(
+    () => buildExportSettings(exportMode, subtitleStyle),
+    [exportMode, subtitleStyle],
+  );
+  const activeSubtitlePreset = SUBTITLE_PRESET_DETAILS[subtitleStyle.preset];
+  const subtitleHasManualOverrides = hasSubtitleManualOverrides(subtitleStyle);
+  const subtitleStyleLabel = subtitleHasManualOverrides
+    ? `${activeSubtitlePreset.label} + custom`
+    : activeSubtitlePreset.label;
+  const subtitleStyleSummary = `${formatSubtitlePosition(subtitleStyle.position)} aligned · ${subtitleStyle.font_size}px · ${subtitleStyle.primary_color.toUpperCase()}`;
 
   const fileMeta = useMemo(() => {
     if (!file) return null;
@@ -290,6 +310,21 @@ export default function UploadPage() {
 
   const selectExportMode = (mode: ExportMode) => {
     setExportMode(mode);
+    setPrep(null);
+    if (err) setErr("");
+  };
+
+  const selectSubtitlePreset = (preset: SubtitleStyle["preset"]) => {
+    setSubtitleStyle(buildSubtitleStyleFromPreset(preset));
+    setPrep(null);
+    if (err) setErr("");
+  };
+
+  const updateSubtitleStyle = (changes: Partial<Pick<SubtitleStyle, "primary_color" | "font_size" | "position">>) => {
+    setSubtitleStyle((current) => ({
+      ...current,
+      ...changes,
+    }));
     setPrep(null);
     if (err) setErr("");
   };
@@ -678,6 +713,23 @@ export default function UploadPage() {
             </div>
           </div>
 
+          <SubtitleStylePanel
+            dark={d}
+            exportMode={exportMode}
+            styleValue={subtitleStyle}
+            onPresetChange={selectSubtitlePreset}
+            onColorChange={(color) => updateSubtitleStyle({ primary_color: color })}
+            onFontSizeChange={(size) => updateSubtitleStyle({ font_size: size })}
+            onPositionChange={(position) => updateSubtitleStyle({ position })}
+            palette={{
+              border: bord,
+              subBorder: subBord,
+              muted: muted as string,
+              hi,
+              hi2,
+            }}
+          />
+
           {/* DROP ZONE */}
           <div
             className={`a2 drop-zone glass${dragging ? " over" : ""}`}
@@ -842,6 +894,30 @@ export default function UploadPage() {
                     {exportDetails.helper}
                   </div>
                 </div>
+
+                <div className="chip" style={{
+                  borderRadius:12, padding:"12px 14px",
+                  background:d?"rgba(90,158,58,.09)":"rgba(90,158,58,.06)",
+                  border:`1px solid ${subBord}`,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:5 }}>
+                    <div style={{ fontSize:9, letterSpacing:".18em", textTransform:"uppercase", color:muted as string, fontWeight:600 }}>
+                      Subtitle style
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:hi2, letterSpacing:".14em", textTransform:"uppercase" }}>
+                      {prep ? "Saved" : subtitleHasManualOverrides ? "Custom tuned" : "Preset"}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:d?"#dff0d8":"#1e3418", marginBottom:4 }}>
+                    {subtitleStyleLabel}
+                  </div>
+                  <div style={{ fontSize:12, lineHeight:1.6, color:muted as string, marginBottom:4 }}>
+                    {subtitleStyleSummary}
+                  </div>
+                  <div style={{ fontSize:12, lineHeight:1.6, color:muted as string }}>
+                    {activeSubtitlePreset.description}
+                  </div>
+                </div>
               </div>
 
               {/* Actions */}
@@ -941,7 +1017,7 @@ export default function UploadPage() {
                       {state === "free_ready" ? "Reserve your free upload" : "Create payment record"}
                     </div>
                     <div style={{ fontSize:13, color:muted as string, lineHeight:1.65, display:"flex", alignItems:"center", gap:7 }}>
-                      <Clock size={13}/> {exportDetails.label} export selected. {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
+                      <Clock size={13}/> {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
                     </div>
                   </div>
                 </div>

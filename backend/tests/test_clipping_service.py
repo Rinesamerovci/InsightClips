@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import shutil
 import sys
 import unittest
@@ -36,6 +37,49 @@ class ClippingServiceTests(unittest.TestCase):
         case_dir.mkdir(parents=True, exist_ok=True)
         self.addCleanup(lambda: shutil.rmtree(case_dir, ignore_errors=True))
         return case_dir
+
+    def _build_sample_video(self, output_path: Path, *, duration_seconds: float = 1.6) -> None:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c=0x203040:s=1280x720:d={duration_seconds:.2f}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def _assert_playable_mp4(self, output_path: Path) -> None:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(output_path),
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def setUp(self) -> None:
         self.transcription = TranscriptionResult(
@@ -362,6 +406,7 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("FontName=Inter", filters)
         self.assertIn("Fontsize=26", filters)
         self.assertIn("Alignment=8", filters)
+        self.assertIn("BorderStyle=3", filters)
         self.assertIn("Bold=-1", filters)
 
     def test_subtitle_force_style_converts_hex_colors_to_ass_format(self) -> None:
@@ -374,6 +419,85 @@ class ClippingServiceTests(unittest.TestCase):
 
         self.assertIn("PrimaryColour=&H00996633", style)
         self.assertIn("BackColour=&HCC000000", style)
+
+    def test_subtitle_force_style_applies_preset_specific_readability_tuning(self) -> None:
+        bold_style = _build_subtitle_force_style(SubtitleStyle.for_preset("bold"), export_mode="portrait")
+        minimal_style = _build_subtitle_force_style(SubtitleStyle.for_preset("minimal"))
+        boxed_style = _build_subtitle_force_style(SubtitleStyle.for_preset("boxed"))
+
+        self.assertIn("Outline=3", bold_style)
+        self.assertIn("Shadow=1", bold_style)
+        self.assertIn("MarginL=58", bold_style)
+        self.assertIn("MarginV=64", bold_style)
+        self.assertIn("BorderStyle=1", minimal_style)
+        self.assertIn("Shadow=1", minimal_style)
+        self.assertIn("BackColour=&HFF000000", minimal_style)
+        self.assertIn("BorderStyle=3", boxed_style)
+        self.assertIn("Outline=0", boxed_style)
+        self.assertIn("Shadow=0", boxed_style)
+
+    def test_run_ffmpeg_clip_generation_keeps_styled_exports_playable(self) -> None:
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg is required for styled export integration coverage.")
+
+        case_dir = self._workspace_case_dir("clipping-styled-export")
+        source_path = case_dir / "source.mp4"
+        subtitle_path = case_dir / "captions.srt"
+        self._build_sample_video(source_path)
+        subtitle_path.write_text(
+            "1\n00:00:00,000 --> 00:00:01,200\nReadable styled subtitles stay synced.\n",
+            encoding="utf-8",
+        )
+
+        scenarios = [
+            (
+                "landscape-bold",
+                ExportSettings(subtitle_style=SubtitleStyle.for_preset("bold")),
+                None,
+            ),
+            (
+                "portrait-boxed",
+                ExportSettings(
+                    export_mode="portrait",
+                    crop_mode="center_crop",
+                    subtitle_style=SubtitleStyle(
+                        preset="boxed",
+                        font_family="Arial",
+                        font_size=22,
+                        primary_color="#F8FAFC",
+                        outline_color="#111827",
+                        background_color="#0F172A",
+                        background_opacity=0.65,
+                        position="top",
+                        bold=True,
+                    ),
+                ),
+                clipping_service_module.CropWindow(
+                    source_width=1280,
+                    source_height=720,
+                    crop_width=405,
+                    crop_height=720,
+                    offset_x=438,
+                    offset_y=0,
+                ),
+            ),
+        ]
+
+        for name, export_settings, crop_window in scenarios:
+            with self.subTest(name=name):
+                output_path = case_dir / f"{name}.mp4"
+                clipping_service_module._run_ffmpeg_clip_generation(
+                    source_path,
+                    output_path,
+                    subtitle_path,
+                    start_seconds=0.0,
+                    duration_seconds=1.4,
+                    export_settings=export_settings,
+                    crop_window=crop_window,
+                )
+                self.assertTrue(output_path.exists())
+                self.assertGreater(output_path.stat().st_size, 0)
+                self._assert_playable_mp4(output_path)
 
     def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
         stale_segment = ScoreSegment(

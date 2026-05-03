@@ -22,6 +22,18 @@ type PrepareRequestBody = {
     crop_mode?: "none" | "center_crop" | "smart_crop";
     mobile_optimized?: boolean;
     face_tracking_enabled?: boolean;
+    subtitle_style?: {
+      preset: "classic" | "bold" | "minimal" | "boxed";
+      font_family: string;
+      font_size: number;
+      primary_color: string;
+      outline_color: string;
+      background_color: string;
+      background_opacity: number;
+      position: "top" | "center" | "bottom";
+      bold: boolean;
+      italic: boolean;
+    };
   };
 };
 

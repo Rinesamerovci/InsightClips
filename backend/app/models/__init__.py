@@ -9,7 +9,7 @@ from app.models.clip_insights import (
     ClipSearchResponse,
     PodcastClipMetrics,
 )
-from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle
+from app.models.export_settings import AudioEnhancementSettings, ExportSettings, ExportSettingsInput, SubtitleStyle
 from app.models.media import MediaInspectionResult
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.publishing import (
@@ -36,6 +36,7 @@ __all__ = [
     "AnalysisResult",
     "AnalysisSummary",
     "AnalyzePodcastRequest",
+    "AudioEnhancementSettings",
     "ClipGenerationResult",
     "ClipMetricRow",
     "ClipPublicationResult",

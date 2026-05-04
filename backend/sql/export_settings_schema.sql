@@ -3,7 +3,8 @@ alter table public.podcasts
   add column if not exists crop_mode text not null default 'none',
   add column if not exists mobile_optimized boolean not null default false,
   add column if not exists face_tracking_enabled boolean not null default false,
-  add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb;
+  add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb,
+  add column if not exists audio_enhancement jsonb not null default '{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}'::jsonb;
 
 alter table public.podcasts
   drop constraint if exists podcasts_export_mode_check;
@@ -66,12 +67,39 @@ alter table public.podcasts
     )
   );
 
+alter table public.podcasts
+  drop constraint if exists podcasts_audio_enhancement_check;
+
+alter table public.podcasts
+  add constraint podcasts_audio_enhancement_check check (
+    jsonb_typeof(audio_enhancement) = 'object'
+    and audio_enhancement ? 'enabled'
+    and jsonb_typeof(audio_enhancement -> 'enabled') = 'boolean'
+    and audio_enhancement ? 'normalize_loudness'
+    and jsonb_typeof(audio_enhancement -> 'normalize_loudness') = 'boolean'
+    and audio_enhancement ? 'target_lufs'
+    and case
+      when jsonb_typeof(audio_enhancement -> 'target_lufs') = 'number'
+      then (audio_enhancement ->> 'target_lufs')::numeric between -24 and -8
+      else false
+    end
+    and audio_enhancement ? 'true_peak_db'
+    and case
+      when jsonb_typeof(audio_enhancement -> 'true_peak_db') = 'number'
+      then (audio_enhancement ->> 'true_peak_db')::numeric between -6 and 0
+      else false
+    end
+    and audio_enhancement ? 'status'
+    and audio_enhancement ->> 'status' in ('enabled', 'disabled')
+  );
+
 alter table public.clips
   add column if not exists export_mode text not null default 'landscape',
   add column if not exists crop_mode text not null default 'none',
   add column if not exists mobile_optimized boolean not null default false,
   add column if not exists face_tracking_enabled boolean not null default false,
-  add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb;
+  add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb,
+  add column if not exists audio_enhancement jsonb not null default '{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}'::jsonb;
 
 alter table public.clips
   drop constraint if exists clips_export_mode_check;
@@ -132,4 +160,30 @@ alter table public.clips
       subtitle_style ->> 'preset' <> 'boxed'
       or (subtitle_style ->> 'background_opacity')::numeric > 0
     )
+  );
+
+alter table public.clips
+  drop constraint if exists clips_audio_enhancement_check;
+
+alter table public.clips
+  add constraint clips_audio_enhancement_check check (
+    jsonb_typeof(audio_enhancement) = 'object'
+    and audio_enhancement ? 'enabled'
+    and jsonb_typeof(audio_enhancement -> 'enabled') = 'boolean'
+    and audio_enhancement ? 'normalize_loudness'
+    and jsonb_typeof(audio_enhancement -> 'normalize_loudness') = 'boolean'
+    and audio_enhancement ? 'target_lufs'
+    and case
+      when jsonb_typeof(audio_enhancement -> 'target_lufs') = 'number'
+      then (audio_enhancement ->> 'target_lufs')::numeric between -24 and -8
+      else false
+    end
+    and audio_enhancement ? 'true_peak_db'
+    and case
+      when jsonb_typeof(audio_enhancement -> 'true_peak_db') = 'number'
+      then (audio_enhancement ->> 'true_peak_db')::numeric between -6 and 0
+      else false
+    end
+    and audio_enhancement ? 'status'
+    and audio_enhancement ->> 'status' in ('enabled', 'disabled')
   );

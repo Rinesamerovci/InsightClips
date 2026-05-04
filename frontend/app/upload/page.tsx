@@ -12,7 +12,7 @@ import {
 import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
-  type ExportMode, type ExportSettings, type PrepareUploadResponse,
+  type AudioEnhancementSettings, type ExportMode, type ExportSettings, type PrepareUploadResponse,
   type SubtitleStyle,
   type UploadPriceResponse, type UploadState,
 } from "@/lib/api";
@@ -26,6 +26,13 @@ import {
 const ACCEPTED_TYPES = ["video/mp4","video/quicktime","video/webm","video/x-m4v"];
 const ACCEPTED_EXT   = [".mp4",".mov",".webm",".m4v"];
 const PREFLIGHT_MODE = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
+const DEFAULT_AUDIO_ENHANCEMENT: AudioEnhancementSettings = {
+  enabled: true,
+  normalize_loudness: true,
+  target_lufs: -16,
+  true_peak_db: -1.5,
+  status: "enabled",
+};
 const EXPORT_MODE_DETAILS: Record<
   ExportMode,
   {
@@ -63,6 +70,7 @@ function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyl
       mobile_optimized: true,
       face_tracking_enabled: true,
       subtitle_style: subtitleStyle,
+      audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
     };
   }
 
@@ -72,6 +80,7 @@ function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyl
     mobile_optimized: false,
     face_tracking_enabled: false,
     subtitle_style: subtitleStyle,
+    audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
   };
 }
 

@@ -12,6 +12,7 @@ from app.models.upload import (
     UploadPreflightStatus,
     UploadStatus,
 )
+from app.models.export_settings import ExportSettings
 from app.services.media_service import inspect_staged_media
 from app.services.profile_service import get_profile_by_id, mark_free_trial_used
 from app.utils.media import validate_media_type
@@ -175,7 +176,7 @@ def prepare_upload(
     payload: UploadPrepareRequest,
     current_user: AuthenticatedUser,
 ) -> UploadPrepareResponse:
-    resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else None
+    resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else ExportSettings()
 
     if payload.storage_path:
         if payload.filesize_bytes is None:
@@ -237,16 +238,16 @@ def prepare_upload(
         "mime_type": payload.mime_type,
         "detected_format": calculated_response.detected_format,
     }
-    if resolved_export_settings is not None:
-        insert_payload.update(
-            {
-                "export_mode": resolved_export_settings.export_mode,
-                "crop_mode": resolved_export_settings.crop_mode,
-                "mobile_optimized": resolved_export_settings.mobile_optimized,
-                "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
-                "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
-            }
-        )
+    insert_payload.update(
+        {
+            "export_mode": resolved_export_settings.export_mode,
+            "crop_mode": resolved_export_settings.crop_mode,
+            "mobile_optimized": resolved_export_settings.mobile_optimized,
+            "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
+            "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
+            "audio_enhancement": resolved_export_settings.audio_enhancement.model_dump(mode="json"),
+        }
+    )
 
     try:
         response = service_supabase.table("podcasts").insert(insert_payload).execute()
@@ -259,6 +260,7 @@ def prepare_upload(
         fallback_payload.pop("mobile_optimized", None)
         fallback_payload.pop("face_tracking_enabled", None)
         fallback_payload.pop("subtitle_style", None)
+        fallback_payload.pop("audio_enhancement", None)
         response = service_supabase.table("podcasts").insert(fallback_payload).execute()
     rows = response.data or []
     if not rows:
@@ -288,6 +290,7 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",
+            "audio_enhancement",
             "42703",
         )
     )

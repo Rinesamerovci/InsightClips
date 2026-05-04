@@ -97,6 +97,13 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
             bold: true,
             italic: false,
           },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: true,
+            target_lufs: -14,
+            true_peak_db: -1,
+            status: "enabled",
+          },
         },
       });
     }
@@ -130,6 +137,13 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
             bold: true,
             italic: false,
           },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: true,
+            target_lufs: -14,
+            true_peak_db: -1,
+            status: "enabled",
+          },
         },
       },
       { token: "token-123" },
@@ -138,6 +152,7 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
     assert.equal(result.podcast_id, "pod-portrait");
     assert.equal(result.export_settings?.export_mode, "portrait");
     assert.equal(result.export_settings?.subtitle_style?.preset, "bold");
+    assert.equal(result.export_settings?.audio_enhancement?.status, "enabled");
     assert.equal(calls[0]?.init?.method, "POST");
     assert.equal(
       calls[0]?.init?.body,
@@ -164,6 +179,13 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
             position: "center",
             bold: true,
             italic: false,
+          },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: true,
+            target_lufs: -14,
+            true_peak_db: -1,
+            status: "enabled",
           },
         },
       }),

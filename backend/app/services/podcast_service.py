@@ -6,7 +6,7 @@ from app.models.podcast import PodcastRecord, PodcastResponse
 
 PODCAST_COLUMNS = (
     "id,user_id,title,duration,status,storage_path,export_mode,crop_mode,"
-    "mobile_optimized,face_tracking_enabled,subtitle_style,created_at,updated_at"
+    "mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement,created_at,updated_at"
 )
 
 
@@ -43,6 +43,7 @@ def _build_export_settings(row: dict[str, object]) -> ExportSettings:
         mobile_optimized=mobile_optimized,
         face_tracking_enabled=face_tracking_enabled,
         subtitle_style=row.get("subtitle_style") or {},
+        audio_enhancement=row.get("audio_enhancement") or {},
     )
 
 
@@ -145,6 +146,7 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",
+            "audio_enhancement",
             "42703",
         )
     )

@@ -39,6 +39,7 @@ import {
   buildDiscoveryItem,
   type ClipStatusFilter,
 } from "@/lib/clip-insights";
+import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 
 const T = {
   dark: {
@@ -1307,12 +1308,38 @@ function ClipsPageContent() {
                       clip.export_settings ?? selectedPodcast?.export_settings ?? null,
                     );
                     const portraitPreview = previewAspectRatio === "9 / 16";
+                    const audioFeedback = getAudioEnhancementFeedback({
+                      audioEnhancement:
+                        clip.export_settings?.audio_enhancement ??
+                        selectedPodcast?.export_settings?.audio_enhancement ??
+                        null,
+                      clipStatus: clip.status,
+                      context: "clip",
+                    });
                     const overlayBadgeColor =
                       overlayState.variant === "enabled" ? t.accent : t.textSub;
                     const overlayBadgeBorder =
                       overlayState.variant === "enabled" ? t.accent : t.borderSub;
                     const overlayBadgeBackground =
                       overlayState.variant === "enabled" ? t.chip : "transparent";
+                    const audioBadgeColor =
+                      audioFeedback.tone === "enabled"
+                        ? t.accent
+                        : audioFeedback.tone === "failed"
+                          ? t.errorText
+                          : t.textSub;
+                    const audioBadgeBorder =
+                      audioFeedback.tone === "enabled"
+                        ? t.accent
+                        : audioFeedback.tone === "failed"
+                          ? t.errorBd
+                          : t.borderSub;
+                    const audioBadgeBackground =
+                      audioFeedback.tone === "enabled"
+                        ? t.chip
+                        : audioFeedback.tone === "failed"
+                          ? t.errorBg
+                          : "transparent";
 
                     return (
                       <article
@@ -1437,6 +1464,21 @@ function ClipsPageContent() {
                                 <span
                                   style={{
                                     borderRadius: 999,
+                                    background: audioBadgeBackground,
+                                    border: `1px solid ${audioBadgeBorder}`,
+                                    color: audioBadgeColor,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".1em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {audioFeedback.badge}
+                                </span>
+                                <span
+                                  style={{
+                                    borderRadius: 999,
                                     background: "transparent",
                                     border: `1px solid ${t.borderSub}`,
                                     color: t.textSub,
@@ -1522,6 +1564,42 @@ function ClipsPageContent() {
                                   Search: {clip.match_reason}
                                 </div>
                               ) : null}
+                            </div>
+
+                            <div
+                              style={{
+                                borderRadius: 16,
+                                border: `1px solid ${t.borderSub}`,
+                                background:
+                                  audioFeedback.tone === "enabled"
+                                    ? t.chip
+                                    : audioFeedback.tone === "failed"
+                                      ? t.errorBg
+                                      : "transparent",
+                                padding: "12px 14px",
+                              }}
+                            >
+                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                                Audio Status
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  color:
+                                    audioFeedback.tone === "enabled"
+                                      ? t.accent
+                                      : audioFeedback.tone === "failed"
+                                        ? t.errorText
+                                        : t.text,
+                                  lineHeight: 1.55,
+                                }}
+                              >
+                                {audioFeedback.title}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                {audioFeedback.description}
+                              </div>
                             </div>
 
                             <div

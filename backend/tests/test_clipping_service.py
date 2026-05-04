@@ -23,6 +23,7 @@ from app.services.clipping_service import (  # noqa: E402
     build_segment_fallback_srt_content,
     build_srt_content,
     generate_clips,
+    _build_audio_filter,
     _build_subtitle_force_style,
     _build_video_filters,
     _resolve_clip_window,
@@ -49,8 +50,15 @@ class ClippingServiceTests(unittest.TestCase):
                 "lavfi",
                 "-i",
                 f"color=c=0x203040:s=1280x720:d={duration_seconds:.2f}",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=440:duration={duration_seconds:.2f}",
                 "-c:v",
                 "libx264",
+                "-c:a",
+                "aac",
+                "-shortest",
                 "-pix_fmt",
                 "yuv420p",
                 str(output_path),
@@ -132,6 +140,8 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("aac", command)
         self.assertIn("+faststart", command)
         self.assertIn("subtitles=", command[command.index("-vf") + 1])
+        self.assertIn("-af", command)
+        self.assertIn("loudnorm=I=-16.0:TP=-1.5:LRA=11.0", command)
 
     def test_build_ffmpeg_clip_command_adds_portrait_crop_and_scale(self) -> None:
         command = build_ffmpeg_clip_command(
@@ -190,8 +200,21 @@ class ClippingServiceTests(unittest.TestCase):
         )
 
         self.assertIn("-filter_complex", command)
+        self.assertIn("-af", command)
         self.assertIn("-map", command)
         self.assertIn("overlay=", command[command.index("-filter_complex") + 1])
+
+    def test_build_ffmpeg_clip_command_skips_audio_filter_when_enhancement_is_disabled(self) -> None:
+        command = build_ffmpeg_clip_command(
+            Path("input.mp4"),
+            Path("output.mp4"),
+            Path("captions.srt"),
+            start_seconds=0,
+            duration_seconds=10,
+            export_settings=ExportSettingsInput(audio_enhancement={"enabled": False}).resolve(),
+        )
+
+        self.assertNotIn("-af", command)
 
     def test_build_srt_content_offsets_timestamps_relative_to_clip_start(self) -> None:
         srt_content, subtitle_text = build_srt_content(
@@ -262,6 +285,7 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload[0]["status"], "ready")
         self.assertEqual(insert_payload[0]["export_mode"], "landscape")
         self.assertEqual(insert_payload[0]["crop_mode"], "none")
+        self.assertEqual(insert_payload[0]["audio_enhancement"]["status"], "enabled")
         podcasts_table.update.assert_called_once()
 
     def test_generate_clips_persists_portrait_export_preferences(self) -> None:
@@ -305,6 +329,11 @@ class ClippingServiceTests(unittest.TestCase):
                                         export_mode="portrait",
                                         crop_mode="smart_crop",
                                         face_tracking_enabled=True,
+                                        audio_enhancement={
+                                            "enabled": True,
+                                            "target_lufs": -14.0,
+                                            "true_peak_db": -1.0,
+                                        },
                                     ),
                                 )
 
@@ -315,10 +344,12 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload[0]["export_mode"], "portrait")
         self.assertEqual(insert_payload[0]["crop_mode"], "smart_crop")
         self.assertTrue(insert_payload[0]["face_tracking_enabled"])
+        self.assertEqual(insert_payload[0]["audio_enhancement"]["target_lufs"], -14.0)
         podcasts_update_payload = podcasts_table.update.call_args.args[0]
         self.assertEqual(podcasts_update_payload["export_mode"], "portrait")
         self.assertEqual(podcasts_update_payload["crop_mode"], "smart_crop")
         self.assertTrue(podcasts_update_payload["face_tracking_enabled"])
+        self.assertEqual(podcasts_update_payload["audio_enhancement"]["true_peak_db"], -1.0)
 
     def test_generate_clips_resolves_portrait_crop_window_for_smart_crop_exports(self) -> None:
         case_dir = self._workspace_case_dir("clipping-smart-crop")
@@ -384,6 +415,19 @@ class ClippingServiceTests(unittest.TestCase):
     def test_build_video_filters_keeps_landscape_exports_unchanged(self) -> None:
         filters = _build_video_filters(Path("captions.srt"))
         self.assertTrue(filters.startswith("subtitles="))
+
+    def test_build_audio_filter_maps_normalization_settings(self) -> None:
+        audio_filter = _build_audio_filter(
+            ExportSettingsInput(
+                audio_enhancement={
+                    "enabled": True,
+                    "target_lufs": -14.0,
+                    "true_peak_db": -1.0,
+                }
+            ).resolve()
+        )
+
+        self.assertEqual(audio_filter, "loudnorm=I=-14.0:TP=-1.0:LRA=11.0")
 
     def test_build_video_filters_includes_subtitle_style_for_renderer(self) -> None:
         filters = _build_video_filters(

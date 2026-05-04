@@ -10,7 +10,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
+from app.models.export_settings import AudioEnhancementSettings, ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
 
 
 class ExportSettingsModelTests(unittest.TestCase):
@@ -73,6 +73,25 @@ class ExportSettingsModelTests(unittest.TestCase):
         self.assertEqual(style.font_size, 30)
         self.assertTrue(style.bold)
         self.assertEqual(style.background_opacity, 0.25)
+
+    def test_audio_enhancement_defaults_to_enabled_status(self) -> None:
+        settings = ExportSettingsInput().resolve()
+
+        self.assertTrue(settings.audio_enhancement.enabled)
+        self.assertTrue(settings.audio_enhancement.normalize_loudness)
+        self.assertEqual(settings.audio_enhancement.target_lufs, -16.0)
+        self.assertEqual(settings.audio_enhancement.status, "enabled")
+
+    def test_audio_enhancement_can_be_disabled_cleanly(self) -> None:
+        settings = ExportSettingsInput(audio_enhancement={"enabled": False}).resolve()
+
+        self.assertFalse(settings.audio_enhancement.enabled)
+        self.assertFalse(settings.audio_enhancement.normalize_loudness)
+        self.assertEqual(settings.audio_enhancement.status, "disabled")
+
+    def test_audio_enhancement_rejects_unsafe_loudness_target(self) -> None:
+        with self.assertRaises(ValidationError):
+            AudioEnhancementSettings(target_lufs=-40.0)
 
 
 if __name__ == "__main__":

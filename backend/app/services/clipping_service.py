@@ -44,6 +44,56 @@ class _SubtitleCue:
     text: str
 
 
+@dataclass(frozen=True)
+class _SubtitleRenderTuning:
+    outline: int
+    shadow: int
+    outline_opacity: float
+    margin_v_bottom: int
+    margin_v_other: int
+    margin_h: int
+    force_border_style: int | None = None
+    minimum_background_opacity: float = 0.0
+
+
+SUBTITLE_PRESET_RENDER_TUNING: dict[str, _SubtitleRenderTuning] = {
+    "classic": _SubtitleRenderTuning(
+        outline=2,
+        shadow=0,
+        outline_opacity=0.82,
+        margin_v_bottom=44,
+        margin_v_other=32,
+        margin_h=32,
+    ),
+    "bold": _SubtitleRenderTuning(
+        outline=3,
+        shadow=1,
+        outline_opacity=0.92,
+        margin_v_bottom=52,
+        margin_v_other=38,
+        margin_h=38,
+    ),
+    "minimal": _SubtitleRenderTuning(
+        outline=2,
+        shadow=1,
+        outline_opacity=0.75,
+        margin_v_bottom=42,
+        margin_v_other=28,
+        margin_h=28,
+    ),
+    "boxed": _SubtitleRenderTuning(
+        outline=0,
+        shadow=0,
+        outline_opacity=0.88,
+        margin_v_bottom=48,
+        margin_v_other=36,
+        margin_h=36,
+        force_border_style=3,
+        minimum_background_opacity=0.45,
+    ),
+}
+
+
 def build_ffmpeg_clip_command(
     source_path: Path,
     output_path: Path,
@@ -604,33 +654,52 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def _build_subtitle_filter(subtitle_path: Path, subtitle_style: SubtitleStyle | None = None) -> str:
+def _build_subtitle_filter(
+    subtitle_path: Path,
+    subtitle_style: SubtitleStyle | None = None,
+    *,
+    export_mode: str = "landscape",
+) -> str:
     normalized = subtitle_path.resolve().as_posix().replace(":", r"\:")
     safe_path = normalized.replace("'", r"\'")
-    style = _build_subtitle_force_style(subtitle_style or SubtitleStyle())
+    style = _build_subtitle_force_style(subtitle_style or SubtitleStyle(), export_mode=export_mode)
     return f"subtitles='{safe_path}':force_style='{style}'"
 
 
-def _build_subtitle_force_style(subtitle_style: SubtitleStyle) -> str:
+def _build_subtitle_force_style(
+    subtitle_style: SubtitleStyle,
+    *,
+    export_mode: str = "landscape",
+) -> str:
     alignment_by_position = {
         "top": 8,
         "center": 5,
         "bottom": 2,
     }
+    tuning = SUBTITLE_PRESET_RENDER_TUNING.get(subtitle_style.preset, SUBTITLE_PRESET_RENDER_TUNING["classic"])
     background_opacity = max(0.0, min(float(subtitle_style.background_opacity), 1.0))
-    border_style = 3 if background_opacity > 0 else 1
-    margin_v = 44 if subtitle_style.position == "bottom" else 32
+    if tuning.force_border_style == 3:
+        background_opacity = max(background_opacity, tuning.minimum_background_opacity)
+    border_style = tuning.force_border_style or (3 if background_opacity > 0 else 1)
+    margin_v = tuning.margin_v_bottom if subtitle_style.position == "bottom" else tuning.margin_v_other
+    margin_h = tuning.margin_h
+    if export_mode == "portrait":
+        margin_v += 12 if subtitle_style.position == "bottom" else 8
+        margin_h += 20
     style_parts = {
         "FontName": subtitle_style.font_family,
         "Fontsize": str(subtitle_style.font_size),
         "PrimaryColour": _hex_to_ass_color(subtitle_style.primary_color, opacity=1),
-        "OutlineColour": _hex_to_ass_color(subtitle_style.outline_color, opacity=0.6),
+        "OutlineColour": _hex_to_ass_color(subtitle_style.outline_color, opacity=tuning.outline_opacity),
         "BackColour": _hex_to_ass_color(subtitle_style.background_color, opacity=background_opacity),
         "BorderStyle": str(border_style),
-        "Outline": "1",
-        "Shadow": "0",
+        "Outline": str(tuning.outline),
+        "Shadow": str(tuning.shadow),
         "Alignment": str(alignment_by_position[subtitle_style.position]),
+        "MarginL": str(margin_h),
+        "MarginR": str(margin_h),
         "MarginV": str(margin_v),
+        "WrapStyle": "2",
         "Bold": "-1" if subtitle_style.bold else "0",
         "Italic": "-1" if subtitle_style.italic else "0",
     }
@@ -663,7 +732,13 @@ def _build_video_filters(
             offset_y=0,
         )
         filters.append(build_portrait_video_filters(portrait_crop))
-    filters.append(_build_subtitle_filter(subtitle_path, export_settings.subtitle_style if export_settings else None))
+    filters.append(
+        _build_subtitle_filter(
+            subtitle_path,
+            export_settings.subtitle_style if export_settings else None,
+            export_mode=export_settings.export_mode if export_settings else "landscape",
+        )
+    )
     return ",".join(filters)
 
 

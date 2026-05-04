@@ -39,7 +39,7 @@ type PrepareRequestBody = {
       normalize_loudness: boolean;
       target_lufs: number;
       true_peak_db: number;
-      status: "enabled" | "disabled";
+      status: "enabled" | "disabled" | "failed";
     };
   };
 };

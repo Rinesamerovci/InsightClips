@@ -73,11 +73,20 @@ export function PodcastCard({
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    if (!analysisLoading) { setIdx(0); setProg(20); return; }
+    if (!analysisLoading) {
+      const resetTimeout = window.setTimeout(() => {
+        setIdx(0);
+        setProg(20);
+      }, 0);
+
+      return () => window.clearTimeout(resetTimeout);
+    }
+
     const iv = window.setInterval(() => {
-      setIdx(c => (c + 1) % stages.length);
-      setProg(c => Math.min(c + Math.floor(Math.random() * 9 + 3), 84));
+      setIdx((current) => (current + 1) % stages.length);
+      setProg((current) => Math.min(current + Math.floor(Math.random() * 9 + 3), 84));
     }, 2800);
+
     return () => window.clearInterval(iv);
   }, [analysisLoading, stages.length]);
 

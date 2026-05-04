@@ -22,6 +22,7 @@ import {
   formatSubtitlePosition,
   hasSubtitleManualOverrides,
 } from "@/lib/subtitle-style";
+import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 
 const ACCEPTED_TYPES = ["video/mp4","video/quicktime","video/webm","video/x-m4v"];
 const ACCEPTED_EXT   = [".mp4",".mov",".webm",".m4v"];
@@ -125,6 +126,12 @@ type RCProps = {
 };
 function ResultCard({ result, state, prep, dark: d, exportMode }: RCProps) {
   const exportDetails = EXPORT_MODE_DETAILS[exportMode];
+  const preparedAudioFeedback = prep
+    ? getAudioEnhancementFeedback({
+        audioEnhancement: prep.export_settings?.audio_enhancement,
+        context: "saved",
+      })
+    : null;
   const map = {
     free_ready:       { Icon: CheckCircle2, label: "Free upload available", c: "#3a9e38", bg: d?"rgba(16,52,14,.9)":"rgba(220,252,210,.92)", bd: d?"rgba(58,158,56,.38)":"rgba(140,215,130,.65)" },
     awaiting_payment: { Icon: CreditCard,   label: "Payment required",      c: "#9e8a20", bg: d?"rgba(52,42,6,.9)":"rgba(255,252,218,.92)",  bd: d?"rgba(158,135,32,.38)":"rgba(215,198,110,.65)" },
@@ -193,6 +200,14 @@ function ResultCard({ result, state, prep, dark: d, exportMode }: RCProps) {
             Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})
           </div>
           <div style={{ opacity:.65, marginTop:4 }}>{exportDetails.helper}</div>
+          {preparedAudioFeedback && (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${cfg.bd}` }}>
+              <div style={{ opacity:.75 }}>
+                Audio: <strong>{preparedAudioFeedback.badge}</strong>
+              </div>
+              <div style={{ opacity:.65, marginTop:4 }}>{preparedAudioFeedback.description}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -239,6 +254,11 @@ export default function UploadPage() {
     ? `${activeSubtitlePreset.label} + custom`
     : activeSubtitlePreset.label;
   const subtitleStyleSummary = `${formatSubtitlePosition(subtitleStyle.position)} aligned · ${subtitleStyle.font_size}px · ${subtitleStyle.primary_color.toUpperCase()}`;
+
+  const selectedAudioFeedback = getAudioEnhancementFeedback({
+    audioEnhancement: exportSettings.audio_enhancement,
+    context: "setup",
+  });
 
   const fileMeta = useMemo(() => {
     if (!file) return null;
@@ -718,6 +738,23 @@ export default function UploadPage() {
                 <p style={{ fontSize:12, color:muted as string, lineHeight:1.65, marginTop:14 }}>
                   {exportDetails.helper}
                 </p>
+                <div style={{
+                  marginTop:14,
+                  borderRadius:14,
+                  border:`1px solid ${subBord}`,
+                  background:d ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.05)",
+                  padding:"12px 13px",
+                }}>
+                  <div style={{ fontSize:10, letterSpacing:".18em", textTransform:"uppercase", color:hi2, fontWeight:700, marginBottom:6 }}>
+                    Audio leveling
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:d ? "#e8f5df" : "#1e3418", marginBottom:4 }}>
+                    {selectedAudioFeedback.title}
+                  </div>
+                  <div style={{ fontSize:12, color:muted as string, lineHeight:1.6 }}>
+                    {selectedAudioFeedback.description}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -927,6 +964,27 @@ export default function UploadPage() {
                     {activeSubtitlePreset.description}
                   </div>
                 </div>
+
+                <div className="chip" style={{
+                  borderRadius:12, padding:"12px 14px",
+                  background:d?"rgba(90,158,58,.09)":"rgba(90,158,58,.06)",
+                  border:`1px solid ${subBord}`,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:5 }}>
+                    <div style={{ fontSize:9, letterSpacing:".18em", textTransform:"uppercase", color:muted as string, fontWeight:600 }}>
+                      Audio leveling
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:hi2, letterSpacing:".14em", textTransform:"uppercase" }}>
+                      {selectedAudioFeedback.badge}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:d?"#dff0d8":"#1e3418", marginBottom:4 }}>
+                    {selectedAudioFeedback.title}
+                  </div>
+                  <div style={{ fontSize:12, lineHeight:1.6, color:muted as string }}>
+                    {selectedAudioFeedback.description}
+                  </div>
+                </div>
               </div>
 
               {/* Actions */}
@@ -1026,7 +1084,7 @@ export default function UploadPage() {
                       {state === "free_ready" ? "Reserve your free upload" : "Create payment record"}
                     </div>
                     <div style={{ fontSize:13, color:muted as string, lineHeight:1.65, display:"flex", alignItems:"center", gap:7 }}>
-                      <Clock size={13}/> {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
+                      <Clock size={13}/> {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {selectedAudioFeedback.tone === "enabled" ? "Audio leveling will be included." : "Audio leveling is currently off."} {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
                     </div>
                   </div>
                 </div>

@@ -47,12 +47,21 @@ export type SubtitleStyle = {
   italic: boolean;
 };
 
+export type AudioEnhancementSettings = {
+  enabled: boolean;
+  normalize_loudness: boolean;
+  target_lufs: number;
+  true_peak_db: number;
+  status: "enabled" | "disabled";
+};
+
 export type ExportSettings = {
   export_mode: ExportMode;
   crop_mode: CropMode;
   mobile_optimized?: boolean;
   face_tracking_enabled?: boolean;
   subtitle_style?: SubtitleStyle;
+  audio_enhancement?: AudioEnhancementSettings;
 };
 
 export type UploadPriceRequest = {

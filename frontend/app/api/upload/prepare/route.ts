@@ -34,6 +34,13 @@ type PrepareRequestBody = {
       bold: boolean;
       italic: boolean;
     };
+    audio_enhancement?: {
+      enabled: boolean;
+      normalize_loudness: boolean;
+      target_lufs: number;
+      true_peak_db: number;
+      status: "enabled" | "disabled";
+    };
   };
 };
 

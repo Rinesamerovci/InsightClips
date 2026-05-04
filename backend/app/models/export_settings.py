@@ -9,6 +9,7 @@ ExportMode = Literal["landscape", "portrait"]
 CropMode = Literal["none", "center_crop", "smart_crop"]
 SubtitleStylePreset = Literal["classic", "bold", "minimal", "boxed"]
 SubtitlePosition = Literal["top", "center", "bottom"]
+AudioEnhancementStatus = Literal["enabled", "disabled"]
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -82,6 +83,25 @@ class SubtitleStyle(BaseModel):
         return cls(preset=preset, **cls.PRESET_OVERRIDES[preset])
 
 
+class AudioEnhancementSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    normalize_loudness: bool = True
+    target_lufs: float = Field(default=-16.0, ge=-24.0, le=-8.0)
+    true_peak_db: float = Field(default=-1.5, ge=-6.0, le=0.0)
+    status: AudioEnhancementStatus = "enabled"
+
+    @model_validator(mode="after")
+    def derive_status_and_flags(self) -> "AudioEnhancementSettings":
+        if not self.enabled:
+            self.normalize_loudness = False
+            self.status = "disabled"
+        else:
+            self.status = "enabled" if self.normalize_loudness else "disabled"
+        return self
+
+
 class ExportSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -90,6 +110,7 @@ class ExportSettings(BaseModel):
     mobile_optimized: bool = False
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
+    audio_enhancement: AudioEnhancementSettings = Field(default_factory=AudioEnhancementSettings)
 
     @model_validator(mode="after")
     def validate_export_preferences(self) -> "ExportSettings":
@@ -108,6 +129,7 @@ class ExportSettingsInput(BaseModel):
     mobile_optimized: bool = False
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle | None = None
+    audio_enhancement: AudioEnhancementSettings | None = None
 
     @model_validator(mode="after")
     def validate_request_preferences(self) -> "ExportSettingsInput":
@@ -125,4 +147,5 @@ class ExportSettingsInput(BaseModel):
             mobile_optimized=self.mobile_optimized,
             face_tracking_enabled=self.face_tracking_enabled,
             subtitle_style=self.subtitle_style or SubtitleStyle(),
+            audio_enhancement=self.audio_enhancement or AudioEnhancementSettings(),
         )

@@ -150,6 +150,9 @@ def build_ffmpeg_clip_command(
         )
     else:
         command.extend(["-vf", _build_video_filters(subtitle_path, export_settings=export_settings, crop_window=crop_window)])
+    audio_filter = _build_audio_filter(export_settings)
+    if audio_filter is not None:
+        command.extend(["-af", audio_filter])
     command.extend(
         [
             "-c:v",
@@ -308,6 +311,7 @@ def generate_clips(
                     "mobile_optimized": resolved_export_settings.mobile_optimized,
                     "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
                     "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
+                    "audio_enhancement": resolved_export_settings.audio_enhancement.model_dump(mode="json"),
                 }
             )
         except ClippingError as exc:
@@ -715,6 +719,18 @@ def _hex_to_ass_color(hex_color: str, *, opacity: float) -> str:
     return f"&H{alpha:02X}{blue}{green}{red}"
 
 
+def _build_audio_filter(export_settings: ExportSettings | None = None) -> str | None:
+    audio_enhancement = (export_settings or ExportSettings()).audio_enhancement
+    if not audio_enhancement.enabled or not audio_enhancement.normalize_loudness:
+        return None
+    return (
+        "loudnorm="
+        f"I={audio_enhancement.target_lufs:.1f}:"
+        f"TP={audio_enhancement.true_peak_db:.1f}:"
+        "LRA=11.0"
+    )
+
+
 def _build_video_filters(
     subtitle_path: Path,
     *,
@@ -1062,6 +1078,7 @@ def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
         mobile_optimized=bool(row.get("mobile_optimized") or False),
         face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
         subtitle_style=row.get("subtitle_style") or SubtitleStyle(),
+        audio_enhancement=row.get("audio_enhancement") or {},
     )
 
 
@@ -1076,6 +1093,7 @@ def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSet
                 "mobile_optimized": export_settings.mobile_optimized,
                 "face_tracking_enabled": export_settings.face_tracking_enabled,
                 "subtitle_style": export_settings.subtitle_style.model_dump(mode="json"),
+                "audio_enhancement": export_settings.audio_enhancement.model_dump(mode="json"),
             }
         ).eq("id", podcast_id).execute()
     except Exception as exc:
@@ -1092,7 +1110,7 @@ def _select_clip_rows_for_podcast(podcast_id: str) -> Any:
         return (
             service_supabase.table("clips")
             .select(
-                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style"
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement"
             )
             .eq("podcast_id", podcast_id)
             .order("clip_number")
@@ -1116,7 +1134,7 @@ def _select_podcast_row(podcast_id: str) -> Any:
     try:
         return (
             service_supabase.table("podcasts")
-            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style")
+            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement")
             .eq("id", podcast_id)
             .limit(1)
             .execute()
@@ -1146,6 +1164,7 @@ def _clip_optional_columns_missing(exc: Exception) -> bool:
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",
+            "audio_enhancement",
             "42703",
         )
     )
@@ -1161,6 +1180,7 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",
+            "audio_enhancement",
             "42703",
         )
     )

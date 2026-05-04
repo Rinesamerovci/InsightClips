@@ -110,6 +110,10 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(response.status, "ready_for_processing")
         self.assertTrue(response.storage_ready)
         self.assertFalse(response.checkout_required)
+        self.assertIsNotNone(response.export_settings)
+        self.assertEqual(response.export_settings.audio_enhancement.status, "enabled")
+        insert_payload = insert_mock.call_args.args[0]
+        self.assertEqual(insert_payload["audio_enhancement"]["status"], "enabled")
         mark_free_trial_used_mock.assert_called_once_with("user-123")
 
     def test_prepare_upload_persists_export_settings(self) -> None:
@@ -144,6 +148,11 @@ class UploadServiceTests(unittest.TestCase):
                                         "preset": "boxed",
                                         "background_opacity": 0.5,
                                     },
+                                    "audio_enhancement": {
+                                        "enabled": True,
+                                        "target_lufs": -14.0,
+                                        "true_peak_db": -1.0,
+                                    },
                                 },
                             ),
                             self.user,
@@ -155,9 +164,13 @@ class UploadServiceTests(unittest.TestCase):
         self.assertTrue(insert_payload["mobile_optimized"])
         self.assertFalse(insert_payload["face_tracking_enabled"])
         self.assertEqual(insert_payload["subtitle_style"]["preset"], "boxed")
+        self.assertTrue(insert_payload["audio_enhancement"]["enabled"])
+        self.assertEqual(insert_payload["audio_enhancement"]["target_lufs"], -14.0)
+        self.assertEqual(insert_payload["audio_enhancement"]["status"], "enabled")
         self.assertEqual(response.export_settings.export_mode, "portrait")
         self.assertEqual(response.export_settings.crop_mode, "center_crop")
         self.assertEqual(response.export_settings.subtitle_style.preset, "boxed")
+        self.assertEqual(response.export_settings.audio_enhancement.true_peak_db, -1.0)
 
 
 if __name__ == "__main__":

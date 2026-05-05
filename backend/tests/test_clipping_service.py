@@ -543,6 +543,43 @@ class ClippingServiceTests(unittest.TestCase):
                 self.assertGreater(output_path.stat().st_size, 0)
                 self._assert_playable_mp4(output_path)
 
+    def test_run_ffmpeg_clip_generation_retries_without_loudnorm_when_normalization_fails(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-audio-fallback")
+        source_path = case_dir / "source.mp4"
+        subtitle_path = case_dir / "captions.srt"
+        output_path = case_dir / "output.mp4"
+        subtitle_path.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nAudio fallback stays exportable.\n",
+            encoding="utf-8",
+        )
+
+        commands: list[list[str]] = []
+
+        def fake_run(command, **kwargs):
+            commands.append(command)
+            if "-af" in command:
+                return SimpleNamespace(returncode=1, stderr="loudnorm filter failed", stdout="")
+            output_path.write_bytes(b"clip")
+            return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+        with patch.object(clipping_service_module.shutil, "which", return_value="ffmpeg"):
+            with patch.object(clipping_service_module.subprocess, "run", side_effect=fake_run):
+                final_settings = clipping_service_module._run_ffmpeg_clip_generation(
+                    source_path,
+                    output_path,
+                    subtitle_path,
+                    start_seconds=0.0,
+                    duration_seconds=1.0,
+                    export_settings=ExportSettings(),
+                )
+
+        self.assertEqual(len(commands), 2)
+        self.assertIn("-af", commands[0])
+        self.assertNotIn("-af", commands[1])
+        self.assertTrue(output_path.exists())
+        self.assertEqual(final_settings.audio_enhancement.status, "failed")
+        self.assertFalse(final_settings.audio_enhancement.normalize_loudness)
+
     def test_resolve_clip_window_prefers_matching_snippet_over_stale_segment_range(self) -> None:
         stale_segment = ScoreSegment(
             segment_start_seconds=0.0,

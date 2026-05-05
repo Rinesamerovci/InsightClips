@@ -9,7 +9,7 @@ ExportMode = Literal["landscape", "portrait"]
 CropMode = Literal["none", "center_crop", "smart_crop"]
 SubtitleStylePreset = Literal["classic", "bold", "minimal", "boxed"]
 SubtitlePosition = Literal["top", "center", "bottom"]
-AudioEnhancementStatus = Literal["enabled", "disabled"]
+AudioEnhancementStatus = Literal["enabled", "disabled", "failed"]
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -94,6 +94,10 @@ class AudioEnhancementSettings(BaseModel):
 
     @model_validator(mode="after")
     def derive_status_and_flags(self) -> "AudioEnhancementSettings":
+        if self.status == "failed":
+            self.enabled = True
+            self.normalize_loudness = False
+            return self
         if not self.enabled:
             self.normalize_loudness = False
             self.status = "disabled"

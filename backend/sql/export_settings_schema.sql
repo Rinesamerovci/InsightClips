@@ -90,7 +90,7 @@ alter table public.podcasts
       else false
     end
     and audio_enhancement ? 'status'
-    and audio_enhancement ->> 'status' in ('enabled', 'disabled')
+    and audio_enhancement ->> 'status' in ('enabled', 'disabled', 'failed')
   );
 
 alter table public.clips
@@ -185,5 +185,5 @@ alter table public.clips
       else false
     end
     and audio_enhancement ? 'status'
-    and audio_enhancement ->> 'status' in ('enabled', 'disabled')
+    and audio_enhancement ->> 'status' in ('enabled', 'disabled', 'failed')
   );

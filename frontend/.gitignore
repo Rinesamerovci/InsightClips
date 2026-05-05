@@ -15,10 +15,14 @@
 
 # next.js
 /.next/
+/.next-build/
+/.next-build-webpack/
 /out/
 
 # production
 /build
+/.test-dist
+/node_modules/.cache
 
 # misc
 .DS_Store
@@ -39,3 +43,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+__pycache__/
+*.pyc
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+.generated/

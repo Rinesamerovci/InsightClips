@@ -12,8 +12,10 @@ from app.models.upload import (
     UploadPreflightStatus,
     UploadStatus,
 )
+from app.models.export_settings import ExportSettings
 from app.services.media_service import inspect_staged_media
 from app.services.profile_service import get_profile_by_id, mark_free_trial_used
+from app.utils.media import validate_media_type
 
 FREE_TRIAL_MAX_MINUTES = 30
 ABSOLUTE_MAX_MINUTES = 120
@@ -40,7 +42,10 @@ class UploadPriceDecision:
 
 
 def _get_latest_free_trial_state(current_user: AuthenticatedUser) -> bool:
-    profile = get_profile_by_id(current_user.id)
+    try:
+        profile = get_profile_by_id(current_user.id)
+    except Exception:
+        return current_user.free_trial_used
     if profile:
         return profile.free_trial_used
     return current_user.free_trial_used
@@ -109,29 +114,45 @@ def calculate_upload_price(
             status_code=413,
             code="file_too_large",
         )
-    if not payload.storage_path:
-        raise UploadWorkflowError(
-            "storage_path is required for duration inspection.",
-            status_code=400,
-            code="missing_storage_path",
+
+    detected_format = validate_media_type(payload.filename, payload.mime_type)
+
+    if payload.storage_path:
+        inspection = inspect_staged_media(
+            payload.storage_path,
+            filename=payload.filename,
+            mime_type=payload.mime_type,
         )
-    inspection = inspect_staged_media(
-        payload.storage_path,
-        filename=payload.filename,
-        mime_type=payload.mime_type,
-    )
+        duration_seconds = inspection.duration_seconds
+        duration_minutes = inspection.duration_minutes
+        validation_flags = inspection.validation_flags
+        detected_format = inspection.detected_format
+    elif payload.duration_seconds is not None:
+        duration_seconds = round(payload.duration_seconds, 2)
+        duration_minutes = round(duration_seconds / 60, 2)
+        validation_flags = {
+            "client_duration_provided": True,
+            "mime_type_supported": True,
+        }
+    else:
+        raise UploadWorkflowError(
+            "Either storage_path or duration_seconds is required for duration inspection.",
+            status_code=400,
+            code="missing_duration_source",
+        )
+
     free_trial_used = _get_latest_free_trial_state(current_user)
-    price_decision = determine_upload_price(inspection.duration_minutes, free_trial_used)
+    price_decision = determine_upload_price(duration_minutes, free_trial_used)
 
     return UploadCalculatePriceResponse(
-        duration_seconds=inspection.duration_seconds,
-        duration_minutes=inspection.duration_minutes,
+        duration_seconds=duration_seconds,
+        duration_minutes=duration_minutes,
         price=price_decision.price,
         free_trial_available=price_decision.free_trial_available,
         status=price_decision.status,
         message=price_decision.message,
-        detected_format=inspection.detected_format,
-        validation_flags=inspection.validation_flags,
+        detected_format=detected_format,
+        validation_flags=validation_flags,
     )
 
 
@@ -155,6 +176,8 @@ def prepare_upload(
     payload: UploadPrepareRequest,
     current_user: AuthenticatedUser,
 ) -> UploadPrepareResponse:
+    resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else ExportSettings()
+
     if payload.storage_path:
         if payload.filesize_bytes is None:
             raise UploadWorkflowError(
@@ -162,6 +185,7 @@ def prepare_upload(
                 status_code=400,
                 code="missing_filesize_bytes",
             )
+
         calculated_response = calculate_upload_price(
             UploadCalculatePriceRequest(
                 filename=payload.filename,
@@ -195,15 +219,18 @@ def prepare_upload(
 
     _assert_prepare_matches_quote(payload, calculated_response)
     final_status: UploadStatus = calculated_response.status
+    persisted_status: UploadStatus = (
+        "ready_for_processing" if final_status == "free_ready" else final_status
+    )
     payment_status = _derive_payment_status(final_status)
-    storage_ready = final_status in {"free_ready", "ready_for_processing"}
-    checkout_required = final_status == "awaiting_payment"
+    storage_ready = persisted_status == "ready_for_processing"
+    checkout_required = persisted_status == "awaiting_payment"
 
     insert_payload = {
         "user_id": current_user.id,
         "title": payload.title,
         "duration": round(calculated_response.duration_seconds),
-        "status": final_status,
+        "status": persisted_status,
         "price": calculated_response.price,
         "payment_status": payment_status,
         "source_filename": payload.filename,
@@ -211,8 +238,30 @@ def prepare_upload(
         "mime_type": payload.mime_type,
         "detected_format": calculated_response.detected_format,
     }
+    insert_payload.update(
+        {
+            "export_mode": resolved_export_settings.export_mode,
+            "crop_mode": resolved_export_settings.crop_mode,
+            "mobile_optimized": resolved_export_settings.mobile_optimized,
+            "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
+            "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
+            "audio_enhancement": resolved_export_settings.audio_enhancement.model_dump(mode="json"),
+        }
+    )
 
-    response = service_supabase.table("podcasts").insert(insert_payload).execute()
+    try:
+        response = service_supabase.table("podcasts").insert(insert_payload).execute()
+    except Exception as exc:
+        if not _podcast_export_columns_missing(exc):
+            raise
+        fallback_payload = dict(insert_payload)
+        fallback_payload.pop("export_mode", None)
+        fallback_payload.pop("crop_mode", None)
+        fallback_payload.pop("mobile_optimized", None)
+        fallback_payload.pop("face_tracking_enabled", None)
+        fallback_payload.pop("subtitle_style", None)
+        fallback_payload.pop("audio_enhancement", None)
+        response = service_supabase.table("podcasts").insert(fallback_payload).execute()
     rows = response.data or []
     if not rows:
         raise UploadWorkflowError("Podcast record could not be created.", status_code=500)
@@ -222,9 +271,26 @@ def prepare_upload(
 
     return UploadPrepareResponse(
         podcast_id=str(rows[0]["id"]),
-        status=final_status,
+        status=persisted_status,
         storage_ready=storage_ready,
         checkout_required=checkout_required,
         payment_status=payment_status,
         price=calculated_response.price,
+        export_settings=resolved_export_settings,
+    )
+
+
+def _podcast_export_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "export_mode",
+            "crop_mode",
+            "mobile_optimized",
+            "face_tracking_enabled",
+            "subtitle_style",
+            "audio_enhancement",
+            "42703",
+        )
     )

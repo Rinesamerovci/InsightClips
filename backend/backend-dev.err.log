@@ -1,8 +1,0 @@
-INFO:     Started server process [25376]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-WARNING:psycopg.pool:error connecting in 'pool-1': failed to resolve host 'db.bkyihrdrrktcrfjfisnr.supabase.co': [Errno 11001] getaddrinfo failed
-WARNING:psycopg.pool:error connecting in 'pool-1': failed to resolve host 'db.bkyihrdrrktcrfjfisnr.supabase.co': [Errno 11001] getaddrinfo failed
-WARNING:psycopg.pool:error connecting in 'pool-1': failed to resolve host 'db.bkyihrdrrktcrfjfisnr.supabase.co': [Errno 11001] getaddrinfo failed
-WARNING:psycopg.pool:error connecting in 'pool-1': failed to resolve host 'db.bkyihrdrrktcrfjfisnr.supabase.co': [Errno 11001] getaddrinfo failed

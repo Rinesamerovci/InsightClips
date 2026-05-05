@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.export_settings import ExportSettings
+
 
 class PodcastRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -11,6 +13,8 @@ class PodcastRecord(BaseModel):
     title: str
     duration: int
     status: str
+    storage_path: str | None = None
+    export_settings: ExportSettings | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -21,6 +25,8 @@ class PodcastResponse(BaseModel):
     title: str
     duration: int
     status: str
+    storage_path: str | None = None
+    export_settings: ExportSettings | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

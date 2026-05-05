@@ -18,6 +18,7 @@ from app.utils.media import (  # noqa: E402
     inspect_media,
     validate_media_type,
 )
+from app.utils.reframing import CropWindow, FaceDetection, build_portrait_video_filters, compute_portrait_crop_window  # noqa: E402
 
 
 class MediaUtilsTests(unittest.TestCase):
@@ -39,7 +40,7 @@ class MediaUtilsTests(unittest.TestCase):
 
     def test_get_duration_seconds_reads_duration_from_probe_payload(self) -> None:
         with patch("app.utils.media._probe_media", return_value={"format": {"duration": "12.345"}}):
-            self.assertAlmostEqual(get_duration_seconds(Path("sample.mp4")), 12.345)
+            self.assertAlmostEqual(get_duration_seconds(Path("sample.mp4")), 12.35)
 
     def test_get_duration_seconds_rejects_missing_duration(self) -> None:
         with patch("app.utils.media._probe_media", return_value={"format": {}}):
@@ -62,6 +63,67 @@ class MediaUtilsTests(unittest.TestCase):
         self.assertEqual(result.detected_format, "mov")
         self.assertEqual(result.mime_type, "video/mp4")
         self.assertTrue(result.validation_flags["duration_detected"])
+
+    def test_compute_portrait_crop_window_uses_face_center_when_available(self) -> None:
+        with patch("app.utils.reframing.read_video_dimensions", return_value=(1920, 1080)):
+            with patch(
+                "app.utils.reframing.detect_primary_face",
+                return_value=FaceDetection(center_x=1500.0, center_y=220.0, width=200, height=200, weight=1.0),
+            ):
+                crop = compute_portrait_crop_window(
+                    Path("sample.mp4"),
+                    clip_start_seconds=2.0,
+                    clip_duration_seconds=6.0,
+                )
+
+        self.assertEqual(crop.crop_width, 882)
+        self.assertEqual(crop.offset_x, 1038)
+        self.assertEqual(crop.strategy, "smart_crop")
+        self.assertTrue(crop.face_detected)
+
+    def test_compute_portrait_crop_window_falls_back_to_center_crop_without_face(self) -> None:
+        with patch("app.utils.reframing.read_video_dimensions", return_value=(1920, 1080)):
+            with patch("app.utils.reframing.detect_primary_face", return_value=None):
+                crop = compute_portrait_crop_window(
+                    Path("sample.mp4"),
+                    clip_start_seconds=0.0,
+                    clip_duration_seconds=4.0,
+                )
+
+        self.assertEqual(crop.crop_width, 882)
+        self.assertEqual(crop.offset_x, 519)
+        self.assertEqual(crop.strategy, "safe_center_crop")
+        self.assertFalse(crop.face_detected)
+
+    def test_compute_portrait_crop_window_skips_face_detection_for_center_crop(self) -> None:
+        with patch("app.utils.reframing.read_video_dimensions", return_value=(1920, 1080)):
+            with patch("app.utils.reframing.detect_primary_face_center_x") as detect_mock:
+                crop = compute_portrait_crop_window(
+                    Path("sample.mp4"),
+                    clip_start_seconds=0.0,
+                    clip_duration_seconds=4.0,
+                    prefer_face_detection=False,
+                )
+
+        detect_mock.assert_not_called()
+        self.assertEqual(crop.offset_x, 657)
+        self.assertEqual(crop.strategy, "center_crop")
+
+    def test_build_portrait_video_filters_returns_crop_and_scale_chain(self) -> None:
+        filters = build_portrait_video_filters(
+            CropWindow(
+                source_width=1920,
+                source_height=1080,
+                crop_width=606,
+                crop_height=1080,
+                offset_x=1197,
+                offset_y=0,
+            )
+        )
+
+        self.assertIn("crop=606:1080:1197:0", filters)
+        self.assertIn("scale=1080:1920:force_original_aspect_ratio=decrease", filters)
+        self.assertIn("pad=1080:1920:(ow-iw)/2:(oh-ih)/2", filters)
 
 
 if __name__ == "__main__":

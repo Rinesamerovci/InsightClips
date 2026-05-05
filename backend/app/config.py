@@ -1,12 +1,23 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+APP_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = APP_DIR.parent
+ROOT_DIR = BACKEND_DIR.parent
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env.local", ".env"),
+        env_file=(
+            ROOT_DIR / ".env.local",
+            ROOT_DIR / ".env",
+            BACKEND_DIR / ".env.local",
+            BACKEND_DIR / ".env",
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -38,6 +49,23 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET"))
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
+    groq_api_key: str = Field(default="", validation_alias=AliasChoices("GROQ_API_KEY"))
+    transcription_api_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("GROQ_API_BASE_URL", "TRANSCRIPTION_API_BASE_URL"),
+    )
+    transcription_timeout_seconds: int = Field(
+        default=300,
+        validation_alias=AliasChoices(
+            "GROQ_TRANSCRIPTION_TIMEOUT_SECONDS",
+            "TRANSCRIPTION_TIMEOUT_SECONDS",
+            "OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS",
+        ),
+    )
+    transcription_chunk_duration_seconds: int = Field(
+        default=600,
+        validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
+    )
 
 
 @lru_cache(maxsize=1)

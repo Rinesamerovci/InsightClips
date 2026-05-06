@@ -270,7 +270,7 @@ def generate_clips(
                 segment,
             )
             subtitle_path.write_text(srt_content, encoding="utf-8")
-            final_overlay = _render_clip_with_optional_overlay(
+            final_overlay, clip_export_settings = _render_clip_with_optional_overlay(
                 source_path,
                 clip_path,
                 subtitle_path,
@@ -289,6 +289,7 @@ def generate_clips(
                     update={
                         "video_url": video_url,
                         "overlay": final_overlay,
+                        "export_settings": clip_export_settings,
                     }
                 )
             )
@@ -306,12 +307,12 @@ def generate_clips(
                     "subtitle_url": subtitle_url or str(subtitle_path),
                     "subtitle_text": subtitle_text,
                     "status": "ready",
-                    "export_mode": resolved_export_settings.export_mode,
-                    "crop_mode": resolved_export_settings.crop_mode,
-                    "mobile_optimized": resolved_export_settings.mobile_optimized,
-                    "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
-                    "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
-                    "audio_enhancement": resolved_export_settings.audio_enhancement.model_dump(mode="json"),
+                    "export_mode": clip_export_settings.export_mode,
+                    "crop_mode": clip_export_settings.crop_mode,
+                    "mobile_optimized": clip_export_settings.mobile_optimized,
+                    "face_tracking_enabled": clip_export_settings.face_tracking_enabled,
+                    "subtitle_style": clip_export_settings.subtitle_style.model_dump(mode="json"),
+                    "audio_enhancement": clip_export_settings.audio_enhancement.model_dump(mode="json"),
                 }
             )
         except ClippingError as exc:
@@ -820,7 +821,7 @@ def _render_clip_with_optional_overlay(
     duration_seconds: float,
     export_settings: ExportSettings,
     overlay: OverlayDecision,
-) -> OverlayDecision:
+) -> tuple[OverlayDecision, ExportSettings]:
     crop_window = _resolve_crop_window(
         source_path,
         start_seconds=start_seconds,
@@ -828,7 +829,7 @@ def _render_clip_with_optional_overlay(
         export_settings=export_settings,
     )
     if not overlay.applied:
-        _run_ffmpeg_clip_generation(
+        final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
             clip_path,
             subtitle_path,
@@ -837,11 +838,13 @@ def _render_clip_with_optional_overlay(
             export_settings=export_settings,
             crop_window=crop_window,
         )
-        return overlay.model_copy(update={"rendered": False, "render_status": "no_match"})
+        if final_export_settings is None:
+            final_export_settings = export_settings
+        return overlay.model_copy(update={"rendered": False, "render_status": "no_match"}), final_export_settings
 
     overlay_asset_path = _resolve_overlay_asset_path(overlay.asset_path)
     if overlay_asset_path is None:
-        _run_ffmpeg_clip_generation(
+        final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
             clip_path,
             subtitle_path,
@@ -850,10 +853,12 @@ def _render_clip_with_optional_overlay(
             export_settings=export_settings,
             crop_window=crop_window,
         )
-        return overlay.model_copy(update={"rendered": False, "render_status": "missing_asset"})
+        if final_export_settings is None:
+            final_export_settings = export_settings
+        return overlay.model_copy(update={"rendered": False, "render_status": "missing_asset"}), final_export_settings
 
     try:
-        _run_ffmpeg_clip_generation(
+        final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
             clip_path,
             subtitle_path,
@@ -864,9 +869,11 @@ def _render_clip_with_optional_overlay(
             overlay=overlay,
             overlay_asset_path=overlay_asset_path,
         )
-        return overlay.model_copy(update={"rendered": True, "render_status": "rendered"})
+        if final_export_settings is None:
+            final_export_settings = export_settings
+        return overlay.model_copy(update={"rendered": True, "render_status": "rendered"}), final_export_settings
     except ClippingError:
-        _run_ffmpeg_clip_generation(
+        final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
             clip_path,
             subtitle_path,
@@ -875,7 +882,9 @@ def _render_clip_with_optional_overlay(
             export_settings=export_settings,
             crop_window=crop_window,
         )
-        return overlay.model_copy(update={"rendered": False, "render_status": "render_fallback"})
+        if final_export_settings is None:
+            final_export_settings = export_settings
+        return overlay.model_copy(update={"rendered": False, "render_status": "render_fallback"}), final_export_settings
 
 
 def _run_ffmpeg_clip_generation(
@@ -889,21 +898,49 @@ def _run_ffmpeg_clip_generation(
     crop_window: CropWindow | None = None,
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
-) -> None:
+) -> ExportSettings:
     if not shutil.which("ffmpeg"):
         raise ClippingError("ffmpeg is required to generate clips.", status_code=500)
 
+    resolved_export_settings = export_settings.model_copy(deep=True) if export_settings is not None else ExportSettings()
     command = build_ffmpeg_clip_command(
         source_path,
         clip_path,
         subtitle_path,
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
-        export_settings=export_settings,
+        export_settings=resolved_export_settings,
         crop_window=crop_window,
         overlay=overlay,
         overlay_asset_path=overlay_asset_path,
     )
+    try:
+        _execute_ffmpeg_command(command, clip_path)
+        return resolved_export_settings
+    except ClippingError as exc:
+        if _build_audio_filter(resolved_export_settings) is None:
+            raise
+
+        fallback_export_settings = _build_failed_audio_export_settings(resolved_export_settings)
+        fallback_command = build_ffmpeg_clip_command(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+            export_settings=fallback_export_settings,
+            crop_window=crop_window,
+            overlay=overlay,
+            overlay_asset_path=overlay_asset_path,
+        )
+        try:
+            _execute_ffmpeg_command(fallback_command, clip_path)
+            return fallback_export_settings
+        except ClippingError:
+            raise exc
+
+
+def _execute_ffmpeg_command(command: list[str], clip_path: Path) -> None:
     try:
         result = subprocess.run(
             command,
@@ -918,6 +955,17 @@ def _run_ffmpeg_clip_generation(
     if result.returncode != 0 or not clip_path.exists():
         stderr = (result.stderr or result.stdout).strip()
         raise ClippingError(stderr or "ffmpeg failed to generate the clip.", status_code=502)
+
+
+def _build_failed_audio_export_settings(export_settings: ExportSettings) -> ExportSettings:
+    failed_audio = export_settings.audio_enhancement.model_copy(
+        update={
+            "enabled": True,
+            "normalize_loudness": False,
+            "status": "failed",
+        }
+    )
+    return export_settings.model_copy(update={"audio_enhancement": failed_audio}, deep=True)
 
 
 def _prepare_output_directory(podcast_id: str) -> Path:

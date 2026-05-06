@@ -89,6 +89,13 @@ class ExportSettingsModelTests(unittest.TestCase):
         self.assertFalse(settings.audio_enhancement.normalize_loudness)
         self.assertEqual(settings.audio_enhancement.status, "disabled")
 
+    def test_audio_enhancement_failed_status_is_preserved_for_runtime_fallback(self) -> None:
+        settings = AudioEnhancementSettings(status="failed")
+
+        self.assertTrue(settings.enabled)
+        self.assertFalse(settings.normalize_loudness)
+        self.assertEqual(settings.status, "failed")
+
     def test_audio_enhancement_rejects_unsafe_loudness_target(self) -> None:
         with self.assertRaises(ValidationError):
             AudioEnhancementSettings(target_lufs=-40.0)

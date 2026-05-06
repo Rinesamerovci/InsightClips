@@ -16,6 +16,7 @@ import app.services.publishing_service as publishing_service_module  # noqa: E40
 from app.services.clipping_service import get_clips_for_podcast  # noqa: E402
 from app.services.publishing_service import (  # noqa: E402
     PublishingError,
+    get_clip_publication_status,
     get_published_clip_download_content,
     publish_clips,
     revoke_clip_download,
@@ -114,6 +115,23 @@ class FakeUpdateQuery:
         return SimpleNamespace(data=updated)
 
 
+class FakeUpsertQuery:
+    def __init__(self, rows: list[dict[str, object]], payload: dict[str, object]) -> None:
+        self._rows = rows
+        self._payload = payload
+
+    def execute(self) -> SimpleNamespace:
+        for index, row in enumerate(self._rows):
+            if (
+                row.get("clip_id") == self._payload.get("clip_id")
+                and row.get("destination") == self._payload.get("destination")
+            ):
+                self._rows[index].update(self._payload)
+                return SimpleNamespace(data=[self._rows[index]])
+        self._rows.append(dict(self._payload))
+        return SimpleNamespace(data=[self._rows[-1]])
+
+
 class FakeClipsTable:
     def __init__(self, rows: list[dict[str, object]]) -> None:
         self.rows = rows
@@ -125,15 +143,31 @@ class FakeClipsTable:
         return FakeUpdateQuery(self.rows, payload)
 
 
+class FakePublicationsTable:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def upsert(self, payload: dict[str, object], on_conflict: str | None = None) -> FakeUpsertQuery:
+        if on_conflict != "clip_id,destination":
+            raise AssertionError(f"Unexpected conflict target: {on_conflict}")
+        return FakeUpsertQuery(self.rows, payload)
+
+    def select(self, _: str) -> FakeSelectQuery:
+        return FakeSelectQuery(self.rows)
+
+
 class FakeSupabase:
     def __init__(
         self,
         rows: list[dict[str, object]],
         storage: FakeStorage,
         overlay_rows: list[dict[str, object]] | None = None,
+        publication_rows: list[dict[str, object]] | None = None,
     ) -> None:
         self._clips_table = FakeClipsTable(rows)
         self._overlay_rows = overlay_rows or []
+        self.publication_rows = publication_rows if publication_rows is not None else []
+        self._publications_table = FakePublicationsTable(self.publication_rows)
         self.storage = SimpleNamespace(from_=lambda _: storage)
 
     def table(self, name: str):
@@ -141,6 +175,8 @@ class FakeSupabase:
             return self._clips_table
         if name == "clip_overlays":
             return SimpleNamespace(select=lambda _: FakeSelectQuery(self._overlay_rows))
+        if name == "clip_publications":
+            return self._publications_table
         raise AssertionError(f"Unexpected table requested: {name}")
 
 
@@ -186,15 +222,71 @@ class PublishingServiceTests(unittest.TestCase):
         fake_supabase = FakeSupabase(rows, storage)
 
         with patch.object(publishing_service_module, "service_supabase", fake_supabase):
-            result = publish_clips("podcast-123", ["clip-1"])
+            result = publish_clips(
+                "podcast-123",
+                ["clip-1"],
+                destination="youtube",
+                metadata={"caption": "launch"},
+            )
 
         self.assertEqual(result.total_clips_published, 1)
         self.assertTrue(result.published_clips[0].published)
+        self.assertEqual(result.published_clips[0].status, "published")
+        self.assertEqual(result.published_clips[0].destination, "youtube")
+        self.assertEqual(result.published_clips[0].metadata, {"caption": "launch"})
         self.assertEqual(result.published_clips[0].download_url, "/podcasts/clips/clip-1/download")
         self.assertTrue(bool(rows[0]["published"]))
         self.assertEqual(rows[0]["download_url"], "/podcasts/clips/clip-1/download")
         self.assertEqual(rows[0]["storage_path"], original_storage_path)
         self.assertEqual(storage.upload_calls[0][0], "podcast-123/clip-01.mp4")
+        self.assertEqual(fake_supabase.publication_rows[0]["clip_id"], "clip-1")
+        self.assertEqual(fake_supabase.publication_rows[0]["destination"], "youtube")
+        self.assertEqual(fake_supabase.publication_rows[0]["status"], "published")
+
+    def test_get_clip_publication_status_loads_publication_record(self) -> None:
+        case_dir = self._workspace_case_dir("publishing-status")
+        rows = self._build_clip_rows(case_dir)
+        storage = FakeStorage()
+        fake_supabase = FakeSupabase(
+            rows,
+            storage,
+            publication_rows=[
+                {
+                    "clip_id": "clip-1",
+                    "podcast_id": "podcast-123",
+                    "destination": "instagram",
+                    "status": "failed",
+                    "download_url": None,
+                    "published_at": None,
+                    "metadata": {"error": "upload failed"},
+                    "updated_at": "2026-05-05T12:00:00+00:00",
+                }
+            ],
+        )
+
+        with patch.object(publishing_service_module, "service_supabase", fake_supabase):
+            result = get_clip_publication_status("clip-1", destination="instagram")
+
+        self.assertIsNotNone(result)
+        self.assertFalse(result.published)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.destination, "instagram")
+        self.assertEqual(result.metadata, {"error": "upload failed"})
+
+    def test_publish_clips_rejects_clips_that_are_not_ready(self) -> None:
+        case_dir = self._workspace_case_dir("publishing-not-ready")
+        rows = self._build_clip_rows(case_dir)
+        rows[0]["status"] = "processing"
+        storage = FakeStorage()
+        fake_supabase = FakeSupabase(rows, storage)
+
+        with patch.object(publishing_service_module, "service_supabase", fake_supabase):
+            with self.assertRaises(PublishingError) as exc_info:
+                publish_clips("podcast-123", ["clip-1"])
+
+        self.assertEqual(exc_info.exception.status_code, 409)
+        self.assertIn("not ready", exc_info.exception.detail)
+        self.assertEqual(fake_supabase.publication_rows[0]["status"], "failed")
 
     def test_get_clips_for_podcast_includes_published_metadata(self) -> None:
         case_dir = self._workspace_case_dir("publishing-list")
@@ -249,6 +341,8 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertFalse(bool(rows[0]["published"]))
         self.assertIsNone(rows[0]["download_url"])
         self.assertIsNone(rows[0]["published_at"])
+        self.assertEqual(fake_supabase.publication_rows[0]["status"], "pending")
+        self.assertEqual(fake_supabase.publication_rows[0]["metadata"], {"revoked": True})
 
     def test_publish_clips_surfaces_upload_errors(self) -> None:
         case_dir = self._workspace_case_dir("publishing-error")
@@ -261,6 +355,8 @@ class PublishingServiceTests(unittest.TestCase):
                 publish_clips("podcast-123", ["clip-1"])
 
         self.assertIn("Clip upload failed", exc_info.exception.detail)
+        self.assertEqual(fake_supabase.publication_rows[0]["status"], "failed")
+        self.assertIn("Clip upload failed", str(fake_supabase.publication_rows[0]["metadata"]["error"]))
 
     def test_publish_clips_surfaces_signed_url_generation_errors(self) -> None:
         case_dir = self._workspace_case_dir("publishing-sign-error")

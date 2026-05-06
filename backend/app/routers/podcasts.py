@@ -240,7 +240,13 @@ async def publish_podcast_clips(
         )
 
     try:
-        return await asyncio.to_thread(publish_clips, podcast_id, payload.clip_ids)
+        return await asyncio.to_thread(
+            publish_clips,
+            podcast_id,
+            payload.clip_ids,
+            destination=payload.destination,
+            metadata=payload.metadata,
+        )
     except PublishingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

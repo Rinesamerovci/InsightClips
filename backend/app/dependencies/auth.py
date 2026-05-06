@@ -1,55 +1,61 @@
-from fastapi import Header, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr
+from fastapi import Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from app.database import service_supabase
 from app.services.profile_service import get_profile_by_id
 from app.utils.security import decode_backend_token
 
+bearer_scheme = HTTPBearer(auto_error=False)
+
 
 class AuthenticatedUser(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     email: EmailStr
     free_trial_used: bool = False
 
+    @field_validator("id")
+    @classmethod
+    def validate_user_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Authenticated user id cannot be empty.")
+        return cleaned
+
 
 async def get_current_user(
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> AuthenticatedUser:
-    if not authorization:
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header missing.",
         )
 
-    try:
-        scheme, token = authorization.split(" ", 1)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format.",
-        ) from exc
-
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format.",
-        )
-
-    return _resolve_authenticated_user(token)
+    return _resolve_authenticated_user(credentials.credentials)
 
 
 async def get_current_user_for_download(
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     access_token: str | None = Query(default=None, alias="access_token"),
 ) -> AuthenticatedUser:
     if access_token:
         return _resolve_authenticated_user(access_token)
 
-    return await get_current_user(authorization)
+    return await get_current_user(credentials)
 
 
 def _resolve_authenticated_user(token: str) -> AuthenticatedUser:
-    backend_payload = decode_backend_token(token)
+    cleaned_token = token.strip()
+    if not cleaned_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format.",
+        )
+
+    backend_payload = decode_backend_token(cleaned_token)
     if backend_payload:
         return AuthenticatedUser(
             id=str(backend_payload["sub"]),
@@ -58,7 +64,7 @@ def _resolve_authenticated_user(token: str) -> AuthenticatedUser:
         )
 
     try:
-        auth_response = service_supabase.auth.get_user(token)
+        auth_response = service_supabase.auth.get_user(cleaned_token)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

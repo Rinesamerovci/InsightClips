@@ -1,4 +1,12 @@
-import type { SubtitlePosition, SubtitleStyle, SubtitleStylePreset } from "./api";
+import type {
+  AudioEnhancementSettings,
+  CropMode,
+  ExportMode,
+  ExportSettings,
+  SubtitlePosition,
+  SubtitleStyle,
+  SubtitleStylePreset,
+} from "./api";
 
 export const SUBTITLE_PRESET_DETAILS: Record<
   SubtitleStylePreset,
@@ -76,6 +84,83 @@ export function buildSubtitleStyleFromPreset(preset: SubtitleStylePreset): Subti
   }
 }
 
+export function buildDefaultAudioEnhancementSettings(
+  overrides: Partial<AudioEnhancementSettings> = {},
+): AudioEnhancementSettings {
+  const enabled = overrides.enabled ?? true;
+  const normalizeLoudness = enabled
+    ? overrides.normalize_loudness ?? true
+    : false;
+  const status =
+    overrides.status ??
+    (enabled && normalizeLoudness ? "enabled" : "disabled");
+
+  return {
+    enabled,
+    normalize_loudness: normalizeLoudness,
+    target_lufs: overrides.target_lufs ?? -16,
+    true_peak_db: overrides.true_peak_db ?? -1.5,
+    status,
+  };
+}
+
+export function getDefaultCropMode(exportMode: ExportMode): CropMode {
+  return exportMode === "portrait" ? "smart_crop" : "none";
+}
+
+export function buildDefaultExportSettings(
+  exportMode: ExportMode = "portrait",
+  subtitleStyle: SubtitleStyle = buildSubtitleStyleFromPreset("classic"),
+  overrides: Partial<ExportSettings> = {},
+): ExportSettings {
+  const resolvedExportMode = overrides.export_mode ?? exportMode;
+  const resolvedSubtitleStyle =
+    overrides.subtitle_style ??
+    subtitleStyle ??
+    buildSubtitleStyleFromPreset("classic");
+  const cropMode =
+    overrides.crop_mode ??
+    (resolvedExportMode === "portrait" ? "smart_crop" : "none");
+  const faceTrackingEnabled =
+    resolvedExportMode === "portrait"
+      ? overrides.face_tracking_enabled ?? cropMode === "smart_crop"
+      : false;
+
+  return {
+    export_mode: resolvedExportMode,
+    crop_mode: resolvedExportMode === "landscape" ? "none" : cropMode,
+    mobile_optimized:
+      resolvedExportMode === "portrait"
+        ? overrides.mobile_optimized ?? true
+        : overrides.mobile_optimized ?? false,
+    face_tracking_enabled: faceTrackingEnabled,
+    subtitle_style: resolvedSubtitleStyle,
+    audio_enhancement: buildDefaultAudioEnhancementSettings(
+      overrides.audio_enhancement,
+    ),
+  };
+}
+
+export function normalizeExportSettings(
+  settings?: Partial<ExportSettings> | null,
+): ExportSettings {
+  const subtitleStyle = settings?.subtitle_style
+    ? buildSubtitleStyleFromPreset(settings.subtitle_style.preset)
+    : buildSubtitleStyleFromPreset("classic");
+  const mergedSubtitleStyle = settings?.subtitle_style
+    ? {
+        ...subtitleStyle,
+        ...settings.subtitle_style,
+      }
+    : subtitleStyle;
+
+  return buildDefaultExportSettings(
+    settings?.export_mode ?? "portrait",
+    mergedSubtitleStyle,
+    settings ?? {},
+  );
+}
+
 export function hasSubtitleManualOverrides(style: SubtitleStyle): boolean {
   const presetDefaults = buildSubtitleStyleFromPreset(style.preset);
 
@@ -94,5 +179,20 @@ export function formatSubtitlePosition(position: SubtitlePosition): string {
       return "Center";
     default:
       return "Bottom";
+  }
+}
+
+export function formatExportMode(mode: ExportMode): string {
+  return mode === "portrait" ? "Portrait" : "Landscape";
+}
+
+export function formatCropMode(mode: CropMode): string {
+  switch (mode) {
+    case "center_crop":
+      return "Center crop";
+    case "smart_crop":
+      return "Smart crop";
+    default:
+      return "Original frame";
   }
 }

@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import {
   buildAuthenticatedBackendUrl,
   getClipMetrics,
+  getUserExportSettings,
+  getUserProfile,
   getRecommendations,
   prepareUpload,
   publishClips,
   revokeClipDownload,
   searchClips,
+  updateUserExportSettings,
+  updateUserProfile,
 } from "../lib/api";
 
 type FetchCall = {
@@ -45,6 +49,10 @@ function withMockFetch(
 export async function runApiTests(): Promise<void> {
   testBuildAuthenticatedBackendUrlSignsProtectedDownloads();
   testBuildAuthenticatedBackendUrlLeavesPublicUrlsUntouched();
+  await testGetUserProfileUsesProtectedEndpoint();
+  await testUpdateUserProfilePatchesProfileFields();
+  await testGetUserExportSettingsUsesProtectedEndpoint();
+  await testUpdateUserExportSettingsPersistsPreferences();
   await testPrepareUploadPostsExportSettings();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
@@ -67,6 +75,281 @@ function testBuildAuthenticatedBackendUrlLeavesPublicUrlsUntouched(): void {
   const url = buildAuthenticatedBackendUrl("https://example.com/clip-1.mp4", "token-123");
 
   assert.equal(url, "https://example.com/clip-1.mp4");
+}
+
+async function testGetUserProfileUsesProtectedEndpoint(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/profile")) {
+      return jsonResponse({
+        id: "user-1",
+        email: "creator@example.com",
+        free_trial_used: false,
+        full_name: "Creator One",
+        profile_picture_url: "https://example.com/avatar.png",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "Arial",
+            font_size: 24,
+            primary_color: "#FFFFFF",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: true,
+            target_lufs: -16,
+            true_peak_db: -1.5,
+            status: "enabled",
+          },
+        },
+        created_at: "2026-04-23T09:00:00Z",
+        updated_at: "2026-04-24T09:00:00Z",
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getUserProfile("token-123");
+
+    assert.equal(result.id, "user-1");
+    assert.equal(result.full_name, "Creator One");
+    assert.equal(result.export_settings.export_mode, "portrait");
+    assert.equal(calls[0]?.init?.method, "GET");
+    assert.equal(
+      (calls[0]?.init?.headers as Record<string, string>)?.Authorization,
+      "Bearer token-123",
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testUpdateUserProfilePatchesProfileFields(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/profile")) {
+      return jsonResponse({
+        id: "user-1",
+        email: "creator@example.com",
+        free_trial_used: false,
+        full_name: "Updated Creator",
+        profile_picture_url: "https://example.com/new-avatar.png",
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
+          subtitle_style: {
+            preset: "classic",
+            font_family: "Arial",
+            font_size: 18,
+            primary_color: "#FFFFFF",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.2,
+            position: "bottom",
+            bold: false,
+            italic: false,
+          },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: true,
+            target_lufs: -16,
+            true_peak_db: -1.5,
+            status: "enabled",
+          },
+        },
+        created_at: "2026-04-23T09:00:00Z",
+        updated_at: "2026-04-24T09:00:00Z",
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await updateUserProfile(
+      {
+        full_name: "Updated Creator",
+        profile_picture_url: "https://example.com/new-avatar.png",
+      },
+      "token-123",
+    );
+
+    assert.equal(result.full_name, "Updated Creator");
+    assert.equal(result.profile_picture_url, "https://example.com/new-avatar.png");
+    assert.equal(calls[0]?.init?.method, "PATCH");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        full_name: "Updated Creator",
+        profile_picture_url: "https://example.com/new-avatar.png",
+      }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testGetUserExportSettingsUsesProtectedEndpoint(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/export-settings")) {
+      return jsonResponse({
+        user_id: "user-1",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "boxed",
+            font_family: "Arial",
+            font_size: 20,
+            primary_color: "#FFFFFF",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.55,
+            position: "bottom",
+            bold: true,
+            italic: false,
+          },
+          audio_enhancement: {
+            enabled: false,
+            normalize_loudness: false,
+            target_lufs: -16,
+            true_peak_db: -1.5,
+            status: "disabled",
+          },
+        },
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getUserExportSettings("token-123");
+
+    assert.equal(result.user_id, "user-1");
+    assert.equal(result.export_settings.subtitle_style?.preset, "boxed");
+    assert.equal(calls[0]?.init?.method, "GET");
+  } finally {
+    restore();
+  }
+}
+
+async function testUpdateUserExportSettingsPersistsPreferences(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/export-settings")) {
+      return jsonResponse({
+        user_id: "user-1",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "minimal",
+            font_family: "Arial",
+            font_size: 16,
+            primary_color: "#F8FAFC",
+            outline_color: "#222222",
+            background_color: "#000000",
+            background_opacity: 0,
+            position: "top",
+            bold: false,
+            italic: false,
+          },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: false,
+            target_lufs: -15,
+            true_peak_db: -1,
+            status: "disabled",
+          },
+        },
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await updateUserExportSettings(
+      {
+        export_mode: "portrait",
+        crop_mode: "smart_crop",
+        mobile_optimized: true,
+        face_tracking_enabled: true,
+        subtitle_style: {
+          preset: "minimal",
+          font_family: "Arial",
+          font_size: 16,
+          primary_color: "#F8FAFC",
+          outline_color: "#222222",
+          background_color: "#000000",
+          background_opacity: 0,
+          position: "top",
+          bold: false,
+          italic: false,
+        },
+        audio_enhancement: {
+          enabled: true,
+          normalize_loudness: false,
+          target_lufs: -15,
+          true_peak_db: -1,
+          status: "disabled",
+        },
+      },
+      "token-123",
+    );
+
+    assert.equal(result.export_settings.export_mode, "portrait");
+    assert.equal(result.export_settings.subtitle_style?.preset, "minimal");
+    assert.equal(calls[0]?.init?.method, "PATCH");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "minimal",
+            font_family: "Arial",
+            font_size: 16,
+            primary_color: "#F8FAFC",
+            outline_color: "#222222",
+            background_color: "#000000",
+            background_opacity: 0,
+            position: "top",
+            bold: false,
+            italic: false,
+          },
+          audio_enhancement: {
+            enabled: true,
+            normalize_loudness: false,
+            target_lufs: -15,
+            true_peak_db: -1,
+            status: "disabled",
+          },
+        },
+      }),
+    );
+  } finally {
+    restore();
+  }
 }
 
 async function testPrepareUploadPostsExportSettings(): Promise<void> {

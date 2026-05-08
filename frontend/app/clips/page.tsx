@@ -40,6 +40,7 @@ import {
   type ClipStatusFilter,
 } from "@/lib/clip-insights";
 import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
+import { formatCropMode, formatExportMode } from "@/lib/subtitle-style";
 
 const T = {
   dark: {
@@ -279,6 +280,10 @@ function ClipsPageContent() {
   const [downloadingClipId, setDownloadingClipId] = useState("");
   const [publishingClipIds, setPublishingClipIds] = useState<string[]>([]);
   const [revokingClipIds, setRevokingClipIds] = useState<string[]>([]);
+  const [actionFeedback, setActionFeedback] = useState<{
+    tone: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -526,6 +531,7 @@ function ClipsPageContent() {
 
     setGenerating(true);
     setError("");
+    setActionFeedback(null);
     try {
       const token = backendToken ?? (await syncBackendSession());
       if (!token) {
@@ -544,6 +550,10 @@ function ClipsPageContent() {
         setRecommendations(recommended.recommendations);
         setRecommendationsEstimated(Boolean(recommended.estimated));
       }
+      setActionFeedback({
+        tone: "success",
+        message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast?.title ?? "this podcast"}.`,
+      });
     } catch (generationError) {
       setError(
         generationError instanceof Error
@@ -557,6 +567,7 @@ function ClipsPageContent() {
 
   const handleDownload = async (clip: ClipSearchResult | ClipResult) => {
     setDownloadingClipId(clip.id);
+    setActionFeedback(null);
     try {
       const token = backendToken ?? (await syncBackendSession());
       if (!token) {
@@ -578,6 +589,10 @@ function ClipsPageContent() {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
+      setActionFeedback({
+        tone: "success",
+        message: `Download started for clip ${clip.clip_number}.`,
+      });
     } catch (downloadError) {
       try {
         const token = backendToken ?? (await syncBackendSession());
@@ -595,7 +610,20 @@ function ClipsPageContent() {
         anchor.click();
         anchor.remove();
         URL.revokeObjectURL(url);
+        setActionFeedback({
+          tone: "success",
+          message: `Download started for clip ${clip.clip_number}.`,
+        });
       } catch (fallbackError) {
+        setActionFeedback({
+          tone: "error",
+          message:
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : downloadError instanceof Error
+                ? downloadError.message
+                : "Clip download failed.",
+        });
         setError(
           fallbackError instanceof Error
             ? fallbackError.message
@@ -616,6 +644,7 @@ function ClipsPageContent() {
 
     setPublishingClipIds((current) => [...current, clip.id]);
     setError("");
+    setActionFeedback(null);
     try {
       const token = backendToken ?? (await syncBackendSession());
       if (!token) {
@@ -634,7 +663,16 @@ function ClipsPageContent() {
         download_url: publication.download_url ?? null,
         published_at: publication.published_at ?? null,
       }));
+      setActionFeedback({
+        tone: "success",
+        message: `Clip ${clip.clip_number} is now published and ready for download.`,
+      });
     } catch (publishError) {
+      setActionFeedback({
+        tone: "error",
+        message:
+          publishError instanceof Error ? publishError.message : "Clip publish failed.",
+      });
       setError(
         publishError instanceof Error ? publishError.message : "Clip publish failed.",
       );
@@ -646,6 +684,7 @@ function ClipsPageContent() {
   const handleRevoke = async (clip: ClipSearchResult | ClipResult) => {
     setRevokingClipIds((current) => [...current, clip.id]);
     setError("");
+    setActionFeedback(null);
     try {
       const token = backendToken ?? (await syncBackendSession());
       if (!token) {
@@ -659,7 +698,16 @@ function ClipsPageContent() {
         download_url: null,
         published_at: null,
       }));
+      setActionFeedback({
+        tone: "success",
+        message: `Clip ${clip.clip_number} is private again and downloads are disabled.`,
+      });
     } catch (revokeError) {
+      setActionFeedback({
+        tone: "error",
+        message:
+          revokeError instanceof Error ? revokeError.message : "Clip revoke failed.",
+      });
       setError(
         revokeError instanceof Error ? revokeError.message : "Clip revoke failed.",
       );
@@ -916,6 +964,43 @@ function ClipsPageContent() {
             }}
           >
             {error}
+          </div>
+        ) : null}
+
+        {actionFeedback ? (
+          <div
+            style={{
+              marginTop: 18,
+              borderRadius: 18,
+              padding: "14px 18px",
+              background:
+                actionFeedback.tone === "success"
+                  ? dark
+                    ? "rgba(18,48,14,.8)"
+                    : "rgba(228,251,220,.9)"
+                  : actionFeedback.tone === "error"
+                    ? t.errorBg
+                    : t.chip,
+              border: `1px solid ${
+                actionFeedback.tone === "success"
+                  ? dark
+                    ? "rgba(90,158,58,.35)"
+                    : "rgba(130,205,110,.5)"
+                  : actionFeedback.tone === "error"
+                    ? t.errorBd
+                    : t.borderSub
+              }`,
+              color:
+                actionFeedback.tone === "success"
+                  ? dark
+                    ? "#bfe4ab"
+                    : "#25591a"
+                  : actionFeedback.tone === "error"
+                    ? t.errorText
+                    : t.text,
+            }}
+          >
+            {actionFeedback.message}
           </div>
         ) : null}
 
@@ -1300,19 +1385,18 @@ function ClipsPageContent() {
                     const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
                     const overlayState = getOverlayState(clip.overlay);
+                    const effectiveExportSettings =
+                      clip.export_settings ?? selectedPodcast?.export_settings ?? null;
                     const previewUrl = buildAuthenticatedBackendUrl(
                       clip.video_url ?? "",
                       backendToken,
                     );
                     const previewAspectRatio = getPreviewAspectRatio(
-                      clip.export_settings ?? selectedPodcast?.export_settings ?? null,
+                      effectiveExportSettings,
                     );
                     const portraitPreview = previewAspectRatio === "9 / 16";
                     const audioFeedback = getAudioEnhancementFeedback({
-                      audioEnhancement:
-                        clip.export_settings?.audio_enhancement ??
-                        selectedPodcast?.export_settings?.audio_enhancement ??
-                        null,
+                      audioEnhancement: effectiveExportSettings?.audio_enhancement ?? null,
                       clipStatus: clip.status,
                       context: "clip",
                     });
@@ -1692,6 +1776,35 @@ function ClipsPageContent() {
                                 </div>
                               ) : null}
                             </div>
+
+                            <div
+                              style={{
+                                borderRadius: 16,
+                                border: `1px solid ${t.borderSub}`,
+                                background: "transparent",
+                                padding: "12px 14px",
+                              }}
+                            >
+                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                                Export Profile
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, lineHeight: 1.55 }}>
+                                {effectiveExportSettings
+                                  ? `${formatExportMode(effectiveExportSettings.export_mode)} / ${formatCropMode(effectiveExportSettings.crop_mode)}`
+                                  : "Inherited from the current workflow"}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                Subtitle preset: {effectiveExportSettings?.subtitle_style?.preset ?? "classic"}
+                                {effectiveExportSettings?.face_tracking_enabled
+                                  ? " / Face tracking on"
+                                  : ""}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                                {effectiveExportSettings?.mobile_optimized
+                                  ? "Optimized for mobile-first publishing."
+                                  : "Uses the original frame without mobile optimization."}
+                              </div>
+                            </div>
                           </div>
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
@@ -1715,7 +1828,7 @@ function ClipsPageContent() {
                                 }}
                               >
                                 {isRevoking ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                                Revoke
+                                {isRevoking ? "Making private..." : "Revoke"}
                               </button>
                             ) : (
                               <button
@@ -1737,7 +1850,7 @@ function ClipsPageContent() {
                                 }}
                               >
                                 {isPublishing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                                Publish
+                                {isPublishing ? "Publishing..." : "Publish"}
                               </button>
                             )}
 
@@ -1760,7 +1873,7 @@ function ClipsPageContent() {
                               }}
                             >
                               {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                              Download
+                              {isDownloading ? "Starting..." : "Download"}
                             </button>
                           </div>
                         </div>

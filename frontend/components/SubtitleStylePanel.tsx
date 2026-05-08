@@ -138,6 +138,46 @@ export default function SubtitleStylePanel({
 
           <div
             style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+                padding: "6px 10px",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: ".14em",
+                textTransform: "uppercase",
+                color: palette.hi,
+              }}
+            >
+              {exportMode === "portrait" ? "Portrait 9:16" : "Landscape 16:9"}
+            </div>
+            <div
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${palette.subBorder}`,
+                background: "transparent",
+                padding: "6px 10px",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: ".14em",
+                textTransform: "uppercase",
+                color: hasManualTuning ? palette.hi : palette.muted,
+              }}
+            >
+              {hasManualTuning ? "Custom tuned" : "Preset default"}
+            </div>
+          </div>
+
+          <div
+            style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
               gap: 10,

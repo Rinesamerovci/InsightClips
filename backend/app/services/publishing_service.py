@@ -6,7 +6,13 @@ import time
 from typing import Any
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
-from app.models.publishing import ClipPublicationResult, ClipPublicationStatus, ClipRevocationResult
+from app.models.publishing import (
+    ClipPublicationResult,
+    ClipPublicationStatus,
+    ClipPublicationStatusResponse,
+    ClipRevocationResult,
+    PublicationDestination,
+)
 from app.services.clipping_service import CLIP_STORAGE_BUCKET, _upload_with_overwrite
 
 PUBLISHED_DOWNLOAD_TTL_SECONDS = 900
@@ -19,7 +25,13 @@ class PublishingError(Exception):
         self.status_code = status_code
 
 
-def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult:
+def publish_clips(
+    podcast_id: str,
+    clip_ids: list[str],
+    *,
+    destination: PublicationDestination = "download",
+    metadata: dict[str, Any] | None = None,
+) -> ClipPublicationResult:
     started_at = time.perf_counter()
     cleaned_podcast_id = podcast_id.strip()
     if not cleaned_podcast_id:
@@ -28,6 +40,7 @@ def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult
     normalized_clip_ids = _normalize_clip_ids(clip_ids)
     if not normalized_clip_ids:
         raise PublishingError("At least one clip_id is required.", status_code=400)
+    cleaned_metadata = dict(metadata or {})
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         raise PublishingError("Supabase must be configured before clips can be published.", status_code=503)
 
@@ -45,10 +58,46 @@ def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult
     prepared_publications: list[tuple[str, dict[str, Any], ClipPublicationStatus]] = []
 
     for row in ordered_rows:
-        storage_key = _ensure_clip_uploaded(row)
-        _create_storage_signed_url(storage_key)
-
         clip_id = str(row["id"])
+        if str(row.get("status") or "").strip().lower() not in {"ready", "done", "completed"}:
+            _persist_publication_record(
+                clip_id=clip_id,
+                podcast_id=cleaned_podcast_id,
+                destination=destination,
+                status="failed",
+                download_url=None,
+                published_at=None,
+                metadata={**cleaned_metadata, "error": "Clip is not ready for publishing."},
+            )
+            raise PublishingError(
+                f"Clip {clip_id} is not ready for publishing.",
+                status_code=409,
+            )
+
+        _persist_publication_record(
+            clip_id=clip_id,
+            podcast_id=cleaned_podcast_id,
+            destination=destination,
+            status="pending",
+            download_url=None,
+            published_at=None,
+            metadata=cleaned_metadata,
+        )
+        try:
+            storage_key = _ensure_clip_uploaded(row)
+            _create_storage_signed_url(storage_key)
+        except PublishingError as exc:
+            _persist_publication_record(
+                clip_id=clip_id,
+                podcast_id=cleaned_podcast_id,
+                destination=destination,
+                status="failed",
+                download_url=None,
+                published_at=None,
+                metadata={**cleaned_metadata, "error": exc.detail},
+            )
+            raise
+
         download_url = _build_backend_download_path(clip_id)
         payload = {
             "published": True,
@@ -62,14 +111,26 @@ def publish_clips(podcast_id: str, clip_ids: list[str]) -> ClipPublicationResult
                 ClipPublicationStatus(
                     clip_id=clip_id,
                     published=True,
+                    status="published",
+                    destination=destination,
                     download_url=download_url,
                     published_at=published_at,
+                    metadata=cleaned_metadata,
                 ),
             )
         )
 
     for clip_id, payload, _ in prepared_publications:
         service_supabase.table("clips").update(payload).eq("id", clip_id).execute()
+        _persist_publication_record(
+            clip_id=clip_id,
+            podcast_id=cleaned_podcast_id,
+            destination=destination,
+            status="published",
+            download_url=str(payload["download_url"]),
+            published_at=published_at,
+            metadata=cleaned_metadata,
+        )
 
     statuses = [
         status
@@ -127,11 +188,73 @@ def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
             "published_at": None,
         }
     ).eq("id", cleaned_clip_id).execute()
+    _persist_publication_record(
+        clip_id=cleaned_clip_id,
+        podcast_id=str(rows[0].get("podcast_id") or ""),
+        destination="download",
+        status="pending",
+        download_url=None,
+        published_at=None,
+        metadata={"revoked": True},
+    )
 
     return ClipRevocationResult(
         clip_id=cleaned_clip_id,
         revoked=True,
         published=False,
+    )
+
+
+def get_clip_publication_status(
+    clip_id: str,
+    *,
+    destination: PublicationDestination = "download",
+) -> ClipPublicationStatusResponse | None:
+    cleaned_clip_id = clip_id.strip()
+    if not cleaned_clip_id:
+        raise PublishingError("clip_id is required.", status_code=400)
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        raise PublishingError("Supabase must be configured before publication status can be loaded.", status_code=503)
+
+    rows = (
+        service_supabase.table("clip_publications")
+        .select("clip_id,podcast_id,destination,status,download_url,published_at,metadata,updated_at")
+        .eq("clip_id", cleaned_clip_id)
+        .eq("destination", destination)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if rows:
+        row = rows[0]
+        return ClipPublicationStatusResponse(
+            clip_id=str(row["clip_id"]),
+            podcast_id=str(row["podcast_id"]),
+            published=str(row.get("status") or "") == "published",
+            status=row.get("status") or "pending",
+            destination=row.get("destination") or destination,
+            download_url=str(row.get("download_url") or "").strip() or None,
+            published_at=row.get("published_at"),
+            metadata=row.get("metadata") or {},
+            updated_at=row.get("updated_at"),
+        )
+
+    clip_rows = _select_clip_rows().eq("id", cleaned_clip_id).limit(1).execute().data or []
+    if not clip_rows:
+        return None
+    row = clip_rows[0]
+    is_published = bool(row.get("published"))
+    return ClipPublicationStatusResponse(
+        clip_id=cleaned_clip_id,
+        podcast_id=str(row.get("podcast_id") or ""),
+        published=is_published,
+        status="published" if is_published else "pending",
+        destination=destination,
+        download_url=str(row.get("download_url") or "").strip() or None,
+        published_at=row.get("published_at"),
+        metadata={},
+        updated_at=None,
     )
 
 
@@ -166,6 +289,36 @@ def _select_clip_rows():
     return service_supabase.table("clips").select(
         "id,podcast_id,clip_number,storage_path,storage_url,status,published,download_url,published_at"
     )
+
+
+def _persist_publication_record(
+    *,
+    clip_id: str,
+    podcast_id: str,
+    destination: PublicationDestination,
+    status: str,
+    download_url: str | None,
+    published_at: datetime | None,
+    metadata: dict[str, Any],
+) -> None:
+    if not podcast_id:
+        return
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "clip_id": clip_id,
+        "podcast_id": podcast_id,
+        "destination": destination,
+        "status": status,
+        "download_url": download_url,
+        "published_at": published_at.isoformat() if published_at else None,
+        "metadata": metadata,
+        "updated_at": updated_at,
+    }
+    service_supabase.table("clip_publications").upsert(
+        payload,
+        on_conflict="clip_id,destination",
+    ).execute()
 
 
 def _ensure_clip_uploaded(row: dict[str, Any]) -> str:

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -18,10 +19,16 @@ from app.dependencies.auth import AuthenticatedUser  # noqa: E402
 from app.models.publishing import (  # noqa: E402
     ClipPublicationResult,
     ClipPublicationStatus,
+    ClipPublicationStatusResponse,
     ClipRevocationResult,
+    PublishClipRequest,
     PublishClipsRequest,
 )
-from app.routers.clips import revoke_clip_download_route  # noqa: E402
+from app.routers.clips import (
+    get_clip_publication_status_route,
+    publish_clip_route,
+    revoke_clip_download_route,
+)  # noqa: E402
 from app.routers.podcasts import download_generated_clip, publish_podcast_clips  # noqa: E402
 
 
@@ -55,6 +62,8 @@ class PublishingRouterTests(unittest.TestCase):
                 ClipPublicationStatus(
                     clip_id="clip-1",
                     published=True,
+                    status="published",
+                    destination="download",
                     download_url="/podcasts/clips/clip-1/download",
                     published_at=datetime(2026, 4, 23, 9, 30, tzinfo=timezone.utc),
                 )
@@ -73,7 +82,36 @@ class PublishingRouterTests(unittest.TestCase):
         self.assertEqual(result.total_clips_published, 1)
         self.assertEqual(result.published_clips[0].clip_id, "clip-1")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
-        publish_clips_mock.assert_called_once_with("podcast-123", ["clip-1"])
+        publish_clips_mock.assert_called_once_with(
+            "podcast-123",
+            ["clip-1"],
+            destination="download",
+            metadata={},
+        )
+
+    @patch("app.routers.podcasts.publish_clips")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=False)
+    def test_publish_podcast_clips_rejects_unowned_podcast(
+        self,
+        podcast_belongs_mock,
+        publish_clips_mock,
+    ) -> None:
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(
+                publish_podcast_clips(
+                    "podcast-123",
+                    PublishClipsRequest(clip_ids=["clip-1"]),
+                    self.user,
+                )
+            )
+
+        self.assertEqual(exc_info.exception.status_code, 404)
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        publish_clips_mock.assert_not_called()
+
+    def test_publish_request_rejects_blank_clip_ids(self) -> None:
+        with self.assertRaises(ValidationError):
+            PublishClipsRequest(clip_ids=["clip-1", "   "])
 
     @patch("app.routers.podcasts.record_clip_download")
     @patch(
@@ -171,6 +209,95 @@ class PublishingRouterTests(unittest.TestCase):
         get_clip_podcast_id_mock.assert_called_once_with("clip-1")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         revoke_clip_download_mock.assert_called_once_with("clip-1")
+
+    @patch("app.routers.clips.publish_clips")
+    @patch("app.routers.clips.podcast_belongs_to_user", return_value=True)
+    @patch("app.routers.clips.get_clip_podcast_id", return_value="podcast-123")
+    def test_publish_clip_route_validates_ownership_and_returns_clip_status(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        publish_clips_mock,
+    ) -> None:
+        publish_clips_mock.return_value = ClipPublicationResult(
+            podcast_id="podcast-123",
+            total_clips_published=1,
+            published_clips=[
+                ClipPublicationStatus(
+                    clip_id="clip-1",
+                    published=True,
+                    status="published",
+                    destination="instagram",
+                    download_url="/podcasts/clips/clip-1/download",
+                    metadata={"caption": "ready"},
+                )
+            ],
+            processing_time_seconds=0.12,
+        )
+
+        result = asyncio.run(
+            publish_clip_route(
+                "clip-1",
+                PublishClipRequest(destination="instagram", metadata={"caption": "ready"}),
+                self.user,
+            )
+        )
+
+        self.assertEqual(result.status, "published")
+        self.assertEqual(result.destination, "instagram")
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        publish_clips_mock.assert_called_once_with(
+            "podcast-123",
+            ["clip-1"],
+            destination="instagram",
+            metadata={"caption": "ready"},
+        )
+
+    @patch("app.routers.clips.publish_clips")
+    @patch("app.routers.clips.podcast_belongs_to_user", return_value=False)
+    @patch("app.routers.clips.get_clip_podcast_id", return_value="podcast-123")
+    def test_publish_clip_route_rejects_unowned_clip(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        publish_clips_mock,
+    ) -> None:
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(publish_clip_route("clip-1", PublishClipRequest(), self.user))
+
+        self.assertEqual(exc_info.exception.status_code, 404)
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        publish_clips_mock.assert_not_called()
+
+    @patch("app.routers.clips.get_clip_publication_status")
+    @patch("app.routers.clips.podcast_belongs_to_user", return_value=True)
+    @patch("app.routers.clips.get_clip_podcast_id", return_value="podcast-123")
+    def test_get_clip_publication_status_route_returns_clear_status(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        get_clip_publication_status_mock,
+    ) -> None:
+        get_clip_publication_status_mock.return_value = ClipPublicationStatusResponse(
+            clip_id="clip-1",
+            podcast_id="podcast-123",
+            published=False,
+            status="failed",
+            destination="youtube",
+            metadata={"error": "upload failed"},
+        )
+
+        result = asyncio.run(
+            get_clip_publication_status_route("clip-1", destination="youtube", current_user=self.user)
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.destination, "youtube")
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        get_clip_publication_status_mock.assert_called_once_with("clip-1", destination="youtube")
 
 
 if __name__ == "__main__":

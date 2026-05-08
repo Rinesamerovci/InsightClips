@@ -15,7 +15,11 @@ from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.publishing import (
     ClipPublicationResult,
     ClipPublicationStatus,
+    ClipPublicationStatusResponse,
     ClipRevocationResult,
+    PublicationDestination,
+    PublicationStatus,
+    PublishClipRequest,
     PublishClipsRequest,
 )
 from app.models.search import (
@@ -41,6 +45,7 @@ __all__ = [
     "ClipMetricRow",
     "ClipPublicationResult",
     "ClipPublicationStatus",
+    "ClipPublicationStatusResponse",
     "ClipRecommendationsResponse",
     "ClipResult",
     "ClipRevocationResult",
@@ -55,6 +60,9 @@ __all__ = [
     "OverlayDecision",
     "OverlayMappingResult",
     "PodcastClipMetrics",
+    "PublicationDestination",
+    "PublicationStatus",
+    "PublishClipRequest",
     "PublishClipsRequest",
     "RecommendationItem",
     "RecommendationResult",

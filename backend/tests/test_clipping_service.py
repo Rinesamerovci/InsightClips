@@ -412,9 +412,11 @@ class ClippingServiceTests(unittest.TestCase):
 
         self.assertEqual(captured_crop["crop_window"].offset_x, 1180)
 
-    def test_build_video_filters_keeps_landscape_exports_unchanged(self) -> None:
+    def test_build_video_filters_scales_landscape_exports_to_platform_ready_output(self) -> None:
         filters = _build_video_filters(Path("captions.srt"))
-        self.assertTrue(filters.startswith("subtitles="))
+        self.assertIn("scale=1920:1080:force_original_aspect_ratio=decrease", filters)
+        self.assertIn("pad=1920:1080:(ow-iw)/2:(oh-ih)/2", filters)
+        self.assertIn("subtitles=", filters)
 
     def test_build_audio_filter_maps_normalization_settings(self) -> None:
         audio_filter = _build_audio_filter(

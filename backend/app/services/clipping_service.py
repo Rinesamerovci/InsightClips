@@ -12,8 +12,10 @@ from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
 from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle
+from app.models.media import SubtitleTimingContract
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
+from app.services.media_service import build_render_contract, resolve_export_settings_for_render
 from app.utils.reframing import CropWindow, build_portrait_video_filters, compute_portrait_crop_window
 import app.services.overlay_mapping_service as overlay_mapping_service_module
 
@@ -22,9 +24,6 @@ GENERATED_CLIPS_ROOT = ROOT_DIR / ".generated" / "clips"
 CLIP_STORAGE_BUCKET = "clips"
 SIGNED_URL_TTL_SECONDS = 3600
 MAX_GENERATED_CLIPS = 5
-MAX_SUBTITLE_WORDS_PER_CUE = 8
-MAX_SUBTITLE_DURATION_SECONDS = 3.4
-SUBTITLE_GAP_SECONDS = 0.55
 CLIP_LEAD_IN_SECONDS = 2.0
 CLIP_LEAD_OUT_SECONDS = 1.0
 OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
@@ -141,6 +140,7 @@ def build_ffmpeg_clip_command(
                     overlay,
                     export_settings=export_settings,
                     crop_window=crop_window,
+                    clip_duration_seconds=duration_seconds,
                 ),
                 "-map",
                 "[vout]",
@@ -149,7 +149,17 @@ def build_ffmpeg_clip_command(
             ]
         )
     else:
-        command.extend(["-vf", _build_video_filters(subtitle_path, export_settings=export_settings, crop_window=crop_window)])
+        command.extend(
+            [
+                "-vf",
+                _build_video_filters(
+                    subtitle_path,
+                    export_settings=export_settings,
+                    crop_window=crop_window,
+                    clip_duration_seconds=duration_seconds,
+                ),
+            ]
+        )
     audio_filter = _build_audio_filter(export_settings)
     if audio_filter is not None:
         command.extend(["-af", audio_filter])
@@ -180,6 +190,7 @@ def build_srt_content(
     *,
     clip_start_seconds: float,
     clip_end_seconds: float,
+    export_settings: ExportSettings | None = None,
 ) -> tuple[str, str]:
     clip_words = _collect_clip_words(
         transcription.words,
@@ -189,7 +200,14 @@ def build_srt_content(
     if not clip_words:
         raise ClippingError("No transcript words overlapped the requested clip window.")
 
-    cues = _build_subtitle_cues(clip_words, clip_start_seconds=clip_start_seconds)
+    cues = _build_subtitle_cues(
+        clip_words,
+        clip_start_seconds=clip_start_seconds,
+        subtitle_timing=build_render_contract(
+            export_settings,
+            clip_duration_seconds=round(clip_end_seconds - clip_start_seconds, 3),
+        ).subtitle_timing,
+    )
     if not cues:
         raise ClippingError("Unable to build readable subtitles for the requested clip.")
 
@@ -241,16 +259,22 @@ def generate_clips(
         subtitle_path = output_dir / subtitle_filename
 
         try:
+            clip_export_settings = resolve_export_settings_for_render(
+                resolved_export_settings,
+                clip_duration_seconds=clip_duration,
+            )
             if transcription is not None:
                 srt_content, subtitle_text = build_srt_content(
                     transcription,
                     clip_start_seconds=clip_start,
                     clip_end_seconds=clip_end,
+                    export_settings=clip_export_settings,
                 )
             else:
                 srt_content, subtitle_text = build_segment_fallback_srt_content(
                     segment,
                     clip_duration_seconds=clip_duration,
+                    export_settings=clip_export_settings,
                 )
             draft_clip = ClipResult(
                 id=clip_id,
@@ -262,7 +286,7 @@ def generate_clips(
                 video_url=_build_backend_download_path(clip_id),
                 subtitle_text=subtitle_text,
                 status="ready",
-                export_settings=resolved_export_settings,
+                export_settings=clip_export_settings,
             )
             overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
                 podcast_id,
@@ -276,7 +300,7 @@ def generate_clips(
                 subtitle_path,
                 start_seconds=clip_start,
                 duration_seconds=clip_duration,
-                export_settings=resolved_export_settings,
+                export_settings=clip_export_settings,
                 overlay=overlay_decision,
             )
             # Keep generation responsive by returning locally rendered clips immediately.
@@ -307,8 +331,10 @@ def generate_clips(
                     "subtitle_url": subtitle_url or str(subtitle_path),
                     "subtitle_text": subtitle_text,
                     "status": "ready",
+                    "preset_name": clip_export_settings.preset_name,
                     "export_mode": clip_export_settings.export_mode,
                     "crop_mode": clip_export_settings.crop_mode,
+                    "subtitle_timing_profile": clip_export_settings.subtitle_timing_profile,
                     "mobile_optimized": clip_export_settings.mobile_optimized,
                     "face_tracking_enabled": clip_export_settings.face_tracking_enabled,
                     "subtitle_style": clip_export_settings.subtitle_style.model_dump(mode="json"),
@@ -556,6 +582,7 @@ def _build_subtitle_cues(
     clip_words: list[TranscriptWord],
     *,
     clip_start_seconds: float,
+    subtitle_timing: SubtitleTimingContract,
 ) -> list[_SubtitleCue]:
     cues: list[_SubtitleCue] = []
     current_words: list[TranscriptWord] = []
@@ -567,26 +594,43 @@ def _build_subtitle_cues(
             gap = round(word.start - current_words[-1].end, 3)
             cue_duration = round(cue_end_abs - cue_start_abs, 3)
             if (
-                gap >= SUBTITLE_GAP_SECONDS
-                or cue_duration >= MAX_SUBTITLE_DURATION_SECONDS
-                or len(current_words) >= MAX_SUBTITLE_WORDS_PER_CUE
+                gap >= subtitle_timing.gap_seconds
+                or cue_duration >= subtitle_timing.max_duration_seconds
+                or len(current_words) >= subtitle_timing.max_words_per_cue
             ):
-                cues.append(_finalize_subtitle_cue(current_words, clip_start_seconds))
+                cues.append(
+                    _finalize_subtitle_cue(
+                        current_words,
+                        clip_start_seconds,
+                        max_lines=subtitle_timing.max_lines,
+                    )
+                )
                 current_words = []
         current_words.append(word)
 
     if current_words:
-        cues.append(_finalize_subtitle_cue(current_words, clip_start_seconds))
+        cues.append(
+            _finalize_subtitle_cue(
+                current_words,
+                clip_start_seconds,
+                max_lines=subtitle_timing.max_lines,
+            )
+        )
 
     return cues
 
 
-def _finalize_subtitle_cue(words: list[TranscriptWord], clip_start_seconds: float) -> _SubtitleCue:
+def _finalize_subtitle_cue(
+    words: list[TranscriptWord],
+    clip_start_seconds: float,
+    *,
+    max_lines: int,
+) -> _SubtitleCue:
     start = max(0.0, round(words[0].start - clip_start_seconds, 3))
     end = max(start + 0.08, round(words[-1].end - clip_start_seconds, 3))
     tokens = [word.word for word in words]
     midpoint = len(tokens) // 2
-    if len(tokens) >= 6:
+    if max_lines > 1 and len(tokens) >= 8:
         text = f"{_join_transcript_tokens(tokens[:midpoint])}\n{_join_transcript_tokens(tokens[midpoint:])}"
     else:
         text = _join_transcript_tokens(tokens)
@@ -597,17 +641,22 @@ def build_segment_fallback_srt_content(
     segment: ScoreSegment,
     *,
     clip_duration_seconds: float,
+    export_settings: ExportSettings | None = None,
 ) -> tuple[str, str]:
     subtitle_text = _join_transcript_tokens(segment.transcript_snippet.split())
     if not subtitle_text:
         raise ClippingError("Unable to build fallback subtitles for the requested clip.")
 
+    subtitle_timing = build_render_contract(
+        export_settings,
+        clip_duration_seconds=clip_duration_seconds,
+    ).subtitle_timing
     tokens = subtitle_text.split()
     lines: list[str] = []
     current_tokens: list[str] = []
     for token in tokens:
         current_tokens.append(token)
-        if len(current_tokens) >= MAX_SUBTITLE_WORDS_PER_CUE:
+        if len(current_tokens) >= subtitle_timing.max_words_per_cue:
             lines.append(" ".join(current_tokens))
             current_tokens = []
     if current_tokens:
@@ -617,7 +666,10 @@ def build_segment_fallback_srt_content(
         lines = [subtitle_text]
 
     cue_count = len(lines)
-    duration_per_cue = max(0.8, clip_duration_seconds / cue_count)
+    duration_per_cue = min(
+        subtitle_timing.max_duration_seconds,
+        max(0.8, clip_duration_seconds / cue_count),
+    )
     srt_lines: list[str] = []
     for index, line in enumerate(lines, start=1):
         start_seconds = min(clip_duration_seconds, (index - 1) * duration_per_cue)
@@ -737,9 +789,14 @@ def _build_video_filters(
     *,
     export_settings: ExportSettings | None = None,
     crop_window: CropWindow | None = None,
+    clip_duration_seconds: float | None = None,
 ) -> str:
+    render_contract = build_render_contract(
+        export_settings,
+        clip_duration_seconds=clip_duration_seconds,
+    )
     filters: list[str] = []
-    if export_settings is not None and export_settings.export_mode == "portrait":
+    if render_contract.export_mode == "portrait":
         portrait_crop = crop_window or CropWindow(
             source_width=1920,
             source_height=1080,
@@ -749,11 +806,18 @@ def _build_video_filters(
             offset_y=0,
         )
         filters.append(build_portrait_video_filters(portrait_crop))
+    else:
+        filters.append(
+            (
+                f"scale={render_contract.width}:{render_contract.height}:force_original_aspect_ratio=decrease,"
+                f"pad={render_contract.width}:{render_contract.height}:(ow-iw)/2:(oh-ih)/2"
+            )
+        )
     filters.append(
         _build_subtitle_filter(
             subtitle_path,
             export_settings.subtitle_style if export_settings else None,
-            export_mode=export_settings.export_mode if export_settings else "landscape",
+            export_mode=render_contract.export_mode,
         )
     )
     return ",".join(filters)
@@ -765,11 +829,13 @@ def _build_video_filter_graph(
     *,
     export_settings: ExportSettings | None = None,
     crop_window: CropWindow | None = None,
+    clip_duration_seconds: float | None = None,
 ) -> str:
     subtitle_filter = _build_video_filters(
         subtitle_path,
         export_settings=export_settings,
         crop_window=crop_window,
+        clip_duration_seconds=clip_duration_seconds,
     )
     opacity = max(0.0, min(float(overlay.opacity or 1.0), 1.0))
     scale = max(0.05, min(float(overlay.scale or 0.18), 0.95))
@@ -1092,12 +1158,12 @@ def _resolve_export_settings(
     podcast_row: dict[str, Any] | None = None,
 ) -> ExportSettings:
     if isinstance(export_settings, ExportSettings):
-        return export_settings
+        return resolve_export_settings_for_render(export_settings)
     if isinstance(export_settings, ExportSettingsInput):
-        return export_settings.resolve()
+        return resolve_export_settings_for_render(export_settings)
     if podcast_row is not None:
-        return _build_export_settings_from_row(podcast_row)
-    return ExportSettings()
+        return resolve_export_settings_for_render(_build_export_settings_from_row(podcast_row))
+    return resolve_export_settings_for_render(ExportSettings())
 
 
 def _resolve_crop_window(
@@ -1121,8 +1187,10 @@ def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
     export_mode = str(row.get("export_mode") or "landscape").strip() or "landscape"
     crop_mode = str(row.get("crop_mode") or ("center_crop" if export_mode == "portrait" else "none")).strip()
     return ExportSettings(
+        preset_name=str(row.get("preset_name") or "").strip() or ("youtube_shorts" if export_mode == "portrait" else "youtube_landscape"),  # type: ignore[arg-type]
         export_mode=export_mode,  # type: ignore[arg-type]
         crop_mode=crop_mode,  # type: ignore[arg-type]
+        subtitle_timing_profile=str(row.get("subtitle_timing_profile") or "").strip() or ("balanced" if export_mode == "portrait" else "extended"),  # type: ignore[arg-type]
         mobile_optimized=bool(row.get("mobile_optimized") or False),
         face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
         subtitle_style=row.get("subtitle_style") or SubtitleStyle(),
@@ -1136,8 +1204,10 @@ def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSet
     try:
         service_supabase.table("podcasts").update(
             {
+                "preset_name": export_settings.preset_name,
                 "export_mode": export_settings.export_mode,
                 "crop_mode": export_settings.crop_mode,
+                "subtitle_timing_profile": export_settings.subtitle_timing_profile,
                 "mobile_optimized": export_settings.mobile_optimized,
                 "face_tracking_enabled": export_settings.face_tracking_enabled,
                 "subtitle_style": export_settings.subtitle_style.model_dump(mode="json"),
@@ -1158,7 +1228,7 @@ def _select_clip_rows_for_podcast(podcast_id: str) -> Any:
         return (
             service_supabase.table("clips")
             .select(
-                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement"
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,preset_name,export_mode,crop_mode,subtitle_timing_profile,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement"
             )
             .eq("podcast_id", podcast_id)
             .order("clip_number")
@@ -1182,7 +1252,7 @@ def _select_podcast_row(podcast_id: str) -> Any:
     try:
         return (
             service_supabase.table("podcasts")
-            .select("id,storage_path,export_mode,crop_mode,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement")
+            .select("id,storage_path,preset_name,export_mode,crop_mode,subtitle_timing_profile,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement")
             .eq("id", podcast_id)
             .limit(1)
             .execute()
@@ -1207,8 +1277,10 @@ def _clip_optional_columns_missing(exc: Exception) -> bool:
             "published",
             "download_url",
             "published_at",
+            "preset_name",
             "export_mode",
             "crop_mode",
+            "subtitle_timing_profile",
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",
@@ -1223,8 +1295,10 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
     return any(
         token in message
         for token in (
+            "preset_name",
             "export_mode",
             "crop_mode",
+            "subtitle_timing_profile",
             "mobile_optimized",
             "face_tracking_enabled",
             "subtitle_style",

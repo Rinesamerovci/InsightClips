@@ -7,11 +7,59 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 ExportMode = Literal["landscape", "portrait"]
 CropMode = Literal["none", "center_crop", "smart_crop"]
+ExportPresetName = Literal[
+    "youtube_landscape",
+    "youtube_shorts",
+    "instagram_reels",
+    "tiktok_vertical",
+]
 SubtitleStylePreset = Literal["classic", "bold", "minimal", "boxed"]
 SubtitlePosition = Literal["top", "center", "bottom"]
 AudioEnhancementStatus = Literal["enabled", "disabled", "failed"]
+SubtitleTimingProfile = Literal["compact", "balanced", "extended"]
 
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
+VERTICAL_EXPORT_PRESETS = {"youtube_shorts", "instagram_reels", "tiktok_vertical"}
+EXPORT_PRESET_EXPORT_MODE: dict[ExportPresetName, ExportMode] = {
+    "youtube_landscape": "landscape",
+    "youtube_shorts": "portrait",
+    "instagram_reels": "portrait",
+    "tiktok_vertical": "portrait",
+}
+EXPORT_PRESET_DEFAULT_CROP_MODE: dict[ExportPresetName, CropMode] = {
+    "youtube_landscape": "none",
+    "youtube_shorts": "center_crop",
+    "instagram_reels": "smart_crop",
+    "tiktok_vertical": "smart_crop",
+}
+EXPORT_PRESET_DEFAULT_TIMING: dict[ExportPresetName, SubtitleTimingProfile] = {
+    "youtube_landscape": "extended",
+    "youtube_shorts": "balanced",
+    "instagram_reels": "compact",
+    "tiktok_vertical": "compact",
+}
+
+
+def default_preset_name_for_mode(export_mode: ExportMode) -> ExportPresetName:
+    return "youtube_shorts" if export_mode == "portrait" else "youtube_landscape"
+
+
+def default_crop_mode_for_preset(
+    export_mode: ExportMode,
+    preset_name: ExportPresetName | None = None,
+) -> CropMode:
+    resolved_preset = preset_name or default_preset_name_for_mode(export_mode)
+    if export_mode == "landscape":
+        return "none"
+    return EXPORT_PRESET_DEFAULT_CROP_MODE.get(resolved_preset, "center_crop")
+
+
+def default_timing_profile_for_preset(
+    preset_name: ExportPresetName | None,
+    export_mode: ExportMode,
+) -> SubtitleTimingProfile:
+    resolved_preset = preset_name or default_preset_name_for_mode(export_mode)
+    return EXPORT_PRESET_DEFAULT_TIMING.get(resolved_preset, "balanced")
 
 
 class SubtitleStyle(BaseModel):
@@ -109,8 +157,10 @@ class AudioEnhancementSettings(BaseModel):
 class ExportSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    preset_name: ExportPresetName = "youtube_landscape"
     export_mode: ExportMode = "landscape"
     crop_mode: CropMode = "none"
+    subtitle_timing_profile: SubtitleTimingProfile = "extended"
     mobile_optimized: bool = False
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
@@ -118,8 +168,22 @@ class ExportSettings(BaseModel):
 
     @model_validator(mode="after")
     def validate_export_preferences(self) -> "ExportSettings":
+        if "preset_name" not in self.model_fields_set:
+            self.preset_name = default_preset_name_for_mode(self.export_mode)
+        if "subtitle_timing_profile" not in self.model_fields_set:
+            self.subtitle_timing_profile = default_timing_profile_for_preset(
+                self.preset_name,
+                self.export_mode,
+            )
+        expected_export_mode = EXPORT_PRESET_EXPORT_MODE[self.preset_name]
+        if self.export_mode != expected_export_mode:
+            raise ValueError(
+                f"{self.preset_name} requires export_mode='{expected_export_mode}'."
+            )
         if self.export_mode == "landscape" and self.crop_mode != "none":
             raise ValueError("Landscape exports only support crop_mode='none'.")
+        if self.export_mode == "portrait" and self.crop_mode == "none":
+            raise ValueError("Portrait exports require crop_mode='center_crop' or 'smart_crop'.")
         if self.face_tracking_enabled and self.crop_mode != "smart_crop":
             raise ValueError("Face tracking requires crop_mode='smart_crop'.")
         return self
@@ -128,8 +192,10 @@ class ExportSettings(BaseModel):
 class ExportSettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    preset_name: ExportPresetName | None = None
     export_mode: ExportMode = "landscape"
     crop_mode: CropMode | None = None
+    subtitle_timing_profile: SubtitleTimingProfile | None = None
     mobile_optimized: bool = False
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle | None = None
@@ -137,17 +203,34 @@ class ExportSettingsInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_request_preferences(self) -> "ExportSettingsInput":
-        resolved_crop_mode = self.crop_mode or ("center_crop" if self.export_mode == "portrait" else "none")
+        resolved_preset_name = self.preset_name or default_preset_name_for_mode(self.export_mode)
+        expected_export_mode = EXPORT_PRESET_EXPORT_MODE[resolved_preset_name]
+        if self.export_mode != expected_export_mode:
+            raise ValueError(
+                f"{resolved_preset_name} requires export_mode='{expected_export_mode}'."
+            )
+        resolved_crop_mode = self.crop_mode or default_crop_mode_for_preset(
+            self.export_mode,
+            resolved_preset_name,
+        )
         if self.export_mode == "landscape" and resolved_crop_mode != "none":
             raise ValueError("Landscape exports only support crop_mode='none'.")
+        if self.export_mode == "portrait" and resolved_crop_mode == "none":
+            raise ValueError("Portrait exports require crop_mode='center_crop' or 'smart_crop'.")
         if self.face_tracking_enabled and resolved_crop_mode != "smart_crop":
             raise ValueError("Face tracking requires crop_mode='smart_crop'.")
         return self
 
     def resolve(self) -> ExportSettings:
+        resolved_preset_name = self.preset_name or default_preset_name_for_mode(self.export_mode)
         return ExportSettings(
+            preset_name=resolved_preset_name,
             export_mode=self.export_mode,
-            crop_mode=self.crop_mode or ("center_crop" if self.export_mode == "portrait" else "none"),
+            crop_mode=self.crop_mode or default_crop_mode_for_preset(self.export_mode, resolved_preset_name),
+            subtitle_timing_profile=self.subtitle_timing_profile or default_timing_profile_for_preset(
+                resolved_preset_name,
+                self.export_mode,
+            ),
             mobile_optimized=self.mobile_optimized,
             face_tracking_enabled=self.face_tracking_enabled,
             subtitle_style=self.subtitle_style or SubtitleStyle(),

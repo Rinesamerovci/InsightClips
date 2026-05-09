@@ -64,6 +64,27 @@ export type ExportSettings = {
   audio_enhancement?: AudioEnhancementSettings;
 };
 
+export type ProfileResponse = {
+  id: string;
+  email: string;
+  free_trial_used: boolean;
+  full_name: string | null;
+  profile_picture_url: string | null;
+  export_settings: ExportSettings;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type UpdateProfilePayload = {
+  full_name?: string | null;
+  profile_picture_url?: string | null;
+};
+
+export type UserExportSettingsResponse = {
+  user_id: string;
+  export_settings: ExportSettings;
+};
+
 export type UploadPriceRequest = {
   filename: string;
   filesize_bytes: number;
@@ -506,6 +527,34 @@ export async function getJson<T>(path: string, token?: string | null): Promise<T
 
 export async function patchJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
   return requestJson<T>(path, { method: "PATCH", body, token });
+}
+
+export async function getUserProfile(token?: string | null): Promise<ProfileResponse> {
+  return getJson<ProfileResponse>("/users/profile", token);
+}
+
+export async function updateUserProfile(
+  payload: UpdateProfilePayload,
+  token?: string | null,
+): Promise<ProfileResponse> {
+  return patchJson<ProfileResponse>("/users/profile", payload, token);
+}
+
+export async function getUserExportSettings(
+  token?: string | null,
+): Promise<UserExportSettingsResponse> {
+  return getJson<UserExportSettingsResponse>("/users/export-settings", token);
+}
+
+export async function updateUserExportSettings(
+  exportSettings: ExportSettings,
+  token?: string | null,
+): Promise<UserExportSettingsResponse> {
+  return patchJson<UserExportSettingsResponse>(
+    "/users/export-settings",
+    { export_settings: exportSettings },
+    token,
+  );
 }
 
 export async function calculateUploadPrice(

@@ -1,12 +1,9 @@
-import Image from "next/image";
+"use client";
 
-type Profile = {
-  email: string;
-  full_name: string | null;
-  profile_picture_url: string | null;
-  free_trial_used: boolean;
-  created_at: string | null;
-};
+import { useMemo, useState } from "react";
+
+import type { ProfileResponse } from "@/lib/api";
+import { formatExportMode } from "@/lib/subtitle-style";
 
 function formatMemberDate(value: string | null): string {
   if (!value) {
@@ -19,24 +16,51 @@ function formatMemberDate(value: string | null): string {
   }).format(new Date(value));
 }
 
-export function UserProfileCard({ profile }: { profile: Profile }) {
+function formatSubtitlePreset(preset?: string | null): string {
+  if (!preset) {
+    return "Classic";
+  }
+
+  return preset.charAt(0).toUpperCase() + preset.slice(1);
+}
+
+function isRenderableProfileImage(url: string | null): boolean {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+export function UserProfileCard({ profile }: { profile: ProfileResponse }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const initials = (profile.full_name || profile.email || "I")
     .split(" ")
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
+  const imageUrl = useMemo(
+    () => (isRenderableProfileImage(profile.profile_picture_url) ? profile.profile_picture_url : null),
+    [profile.profile_picture_url],
+  );
+  const showImage = Boolean(imageUrl) && !imageFailed;
 
   return (
     <section className="rounded-[2rem] border border-[#d9e5d3] bg-white p-6 shadow-[0_20px_50px_rgba(124,150,118,0.12)]">
       <div className="flex items-center gap-4">
-        {profile.profile_picture_url ? (
-          <Image
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             alt="Profile"
             className="h-16 w-16 rounded-[1.5rem] object-cover"
-            src={profile.profile_picture_url}
-            width={64}
-            height={64}
+            src={imageUrl ?? undefined}
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <div className="flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-[#d7e8d2] text-xl font-semibold text-[#2e4b35]">
@@ -63,6 +87,18 @@ export function UserProfileCard({ profile }: { profile: Profile }) {
           <span>Member since</span>
           <span className="font-medium text-[#203328]">
             {formatMemberDate(profile.created_at)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>Default export</span>
+          <span className="font-medium text-[#203328]">
+            {formatExportMode(profile.export_settings?.export_mode ?? "landscape")}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span>Subtitle preset</span>
+          <span className="font-medium text-[#203328]">
+            {formatSubtitlePreset(profile.export_settings?.subtitle_style?.preset)}
           </span>
         </div>
       </div>

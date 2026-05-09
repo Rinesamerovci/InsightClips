@@ -19,6 +19,8 @@ class ExportSettingsModelTests(unittest.TestCase):
 
         self.assertEqual(resolved.export_mode, "portrait")
         self.assertEqual(resolved.crop_mode, "center_crop")
+        self.assertEqual(resolved.preset_name, "youtube_shorts")
+        self.assertEqual(resolved.subtitle_timing_profile, "balanced")
 
     def test_landscape_rejects_crop_modes(self) -> None:
         with self.assertRaises(ValidationError) as exc_info:
@@ -28,9 +30,20 @@ class ExportSettingsModelTests(unittest.TestCase):
 
     def test_face_tracking_requires_smart_crop(self) -> None:
         with self.assertRaises(ValidationError) as exc_info:
-            ExportSettings(export_mode="portrait", crop_mode="center_crop", face_tracking_enabled=True)
+            ExportSettings(
+                preset_name="youtube_shorts",
+                export_mode="portrait",
+                crop_mode="center_crop",
+                face_tracking_enabled=True,
+            )
 
         self.assertIn("Face tracking requires", str(exc_info.exception))
+
+    def test_vertical_preset_rejects_landscape_mode(self) -> None:
+        with self.assertRaises(ValidationError) as exc_info:
+            ExportSettingsInput(preset_name="instagram_reels", export_mode="landscape")
+
+        self.assertIn("instagram_reels requires export_mode='portrait'", str(exc_info.exception))
 
     def test_subtitle_style_accepts_valid_manual_settings(self) -> None:
         settings = ExportSettingsInput(

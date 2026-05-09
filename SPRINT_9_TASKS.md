@@ -2,9 +2,9 @@
 ## Role-Based Task Assignment
 
 Based on the formal roles defined in the project:
-- Rinesa Merovci - Lead AI Developer (Core Engine)
 - Rinesa Bislimi - Backend Developer (Data Pipeline)
 - Penar Kera - Full-stack Developer (UX and Client Logic)
+- Rinesa Merovci - Lead AI Developer (Core Engine)
 
 ---
 
@@ -14,57 +14,7 @@ Sprint 9 focuses on turning generated clips into a creator-ready workflow. The g
 
 ---
 
-## JOB 1 - SPRINT 9 Export Presets, Subtitle Styling, and Overlay Intelligence
-
-**ASSIGNED TO: Rinesa Merovci**
-
-Suggested GitHub Issue Title: `Sprint 9 - Export presets and overlay-aware clip personalization`
-Role: Lead AI Developer (Core Engine)
-Formal Responsibility: Mathematical extraction logic, processing optimization, FFmpeg execution, and clip-quality intelligence
-
-### Responsibilities
-
-- Extend export logic for platform-ready video outputs
-- Improve subtitle styling and timing consistency for generated clips
-- Refine overlay mapping so visual assets match clip category and tone
-- Support reusable presets for social publishing formats
-- Validate that rendering logic stays stable across multiple clip durations
-
-### Scope
-
-This job strengthens the AI and media-processing side of the product after clip generation. Deliverables include:
-1. Reusable export settings for common publishing destinations
-2. Subtitle rendering rules that improve readability without harming sync accuracy
-3. Smarter overlay selection tied to content tags or podcast categories
-4. Stable media output contracts that frontend and backend can consume safely
-
-### Deliverables
-
-- **Service updates:** `backend/app/services/media_service.py`
-- **Service updates:** `backend/app/services/overlay_mapping_service.py`
-- **Model support:** `backend/app/models/export_settings.py`
-- **Schema support:** `backend/sql/export_settings_schema.sql`
-- **Overlay assets validation:** `backend/assets/overlays/`
-- **Unit Tests:** `backend/tests/test_overlay_mapping_service.py`
-- **Unit Tests:** `backend/tests/test_media_utils.py`
-
-### Acceptance Criteria
-
-- Export presets support at least vertical and landscape output options
-- Subtitle styles remain readable on short and long clips
-- Overlay selection is deterministic and category-aware
-- Output rendering does not break existing clipping flow
-- Tests cover preset validation and overlay mapping behavior
-
-### Non-Goals
-
-- Direct publishing to third-party social media APIs
-- Full AI-generated captions rewriting
-- Real-time editing preview inside the browser
-
----
-
-## JOB 2 - SPRINT 9 Secure Publishing and User Settings API
+## JOB 1 - SPRINT 9 Secure Publishing and User Settings API
 
 **ASSIGNED TO: Rinesa Bislimi**
 
@@ -120,7 +70,7 @@ This job formalizes the backend contract for user-facing creator tools. Delivera
 
 ---
 
-## JOB 3 - SPRINT 9 Creator Dashboard Integration and Settings UX
+## JOB 2 - SPRINT 9 Creator Dashboard Integration and Settings UX
 
 **ASSIGNED TO: Penar Kera**
 
@@ -169,6 +119,56 @@ This job turns the backend publishing workflow into a usable experience. Deliver
 - Full drag-and-drop timeline editor
 - Social-media account linking UI
 - Mobile-native application support
+
+---
+
+## JOB 3 - SPRINT 9 Export Presets, Subtitle Styling, and Overlay Intelligence
+
+**ASSIGNED TO: Rinesa Merovci**
+
+Suggested GitHub Issue Title: `Sprint 9 - Export presets and overlay-aware clip personalization`
+Role: Lead AI Developer (Core Engine)
+Formal Responsibility: Mathematical extraction logic, processing optimization, FFmpeg execution, and clip-quality intelligence
+
+### Responsibilities
+
+- Extend export logic for platform-ready video outputs
+- Improve subtitle styling and timing consistency for generated clips
+- Refine overlay mapping so visual assets match clip category and tone
+- Support reusable presets for social publishing formats
+- Validate that rendering logic stays stable across multiple clip durations
+
+### Scope
+
+This job strengthens the AI and media-processing side of the product after clip generation. Deliverables include:
+1. Reusable export settings for common publishing destinations
+2. Subtitle rendering rules that improve readability without harming sync accuracy
+3. Smarter overlay selection tied to content tags or podcast categories
+4. Stable media output contracts that frontend and backend can consume safely
+
+### Deliverables
+
+- **Service updates:** `backend/app/services/media_service.py`
+- **Service updates:** `backend/app/services/overlay_mapping_service.py`
+- **Model support:** `backend/app/models/export_settings.py`
+- **Schema support:** `backend/sql/export_settings_schema.sql`
+- **Overlay assets validation:** `backend/assets/overlays/`
+- **Unit Tests:** `backend/tests/test_overlay_mapping_service.py`
+- **Unit Tests:** `backend/tests/test_media_utils.py`
+
+### Acceptance Criteria
+
+- Export presets support at least vertical and landscape output options
+- Subtitle styles remain readable on short and long clips
+- Overlay selection is deterministic and category-aware
+- Output rendering does not break existing clipping flow
+- Tests cover preset validation and overlay mapping behavior
+
+### Non-Goals
+
+- Direct publishing to third-party social media APIs
+- Full AI-generated captions rewriting
+- Real-time editing preview inside the browser
 
 ---
 

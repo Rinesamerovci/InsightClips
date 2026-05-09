@@ -4,11 +4,14 @@ import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
+from app.config import BACKEND_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipResult
 from app.models.overlay import OverlayDecision, OverlayMappingResult
+from app.services.media_service import build_render_contract
 
 
 @dataclass(frozen=True)
@@ -16,19 +19,73 @@ class _OverlayRule:
     keywords: tuple[str, ...]
     category: str
     asset: str
-    position: str
-    scale: float
+    portrait_position: str
+    landscape_position: str
+    portrait_scale: float
+    landscape_scale: float
     opacity: float
     confidence: float
 
 
 OVERLAY_RULES: tuple[_OverlayRule, ...] = (
-    _OverlayRule(("bitcoin", "crypto", "blockchain"), "finance", "bitcoin_icon", "top_right", 0.18, 0.94, 0.94),
-    _OverlayRule(("ai", "artificial intelligence", "gpt", "machine learning"), "technology", "ai_chip", "bottom_right", 0.2, 0.95, 0.93),
-    _OverlayRule(("marketing", "brand", "audience", "growth"), "business", "marketing_graph", "top_left", 0.2, 0.92, 0.9),
-    _OverlayRule(("money", "cash", "revenue", "income"), "finance", "money_stack", "bottom_left", 0.2, 0.94, 0.91),
-    _OverlayRule(("startup", "founder", "pitch", "venture"), "business", "startup_rocket", "top_center", 0.18, 0.96, 0.89),
+    _OverlayRule(
+        ("bitcoin", "crypto", "blockchain"),
+        "finance",
+        "bitcoin_icon",
+        "top_center",
+        "top_right",
+        0.15,
+        0.18,
+        0.94,
+        0.97,
+    ),
+    _OverlayRule(
+        ("ai", "artificial intelligence", "gpt", "machine learning"),
+        "technology",
+        "ai_chip",
+        "top_right",
+        "bottom_right",
+        0.16,
+        0.2,
+        0.95,
+        0.95,
+    ),
+    _OverlayRule(
+        ("marketing", "brand", "audience", "growth"),
+        "business",
+        "marketing_graph",
+        "top_left",
+        "top_left",
+        0.16,
+        0.2,
+        0.92,
+        0.92,
+    ),
+    _OverlayRule(
+        ("money", "cash", "revenue", "income"),
+        "finance",
+        "money_stack",
+        "top_left",
+        "bottom_left",
+        0.16,
+        0.2,
+        0.94,
+        0.93,
+    ),
+    _OverlayRule(
+        ("startup", "founder", "pitch", "venture"),
+        "business",
+        "startup_rocket",
+        "center",
+        "top_center",
+        0.14,
+        0.18,
+        0.96,
+        0.9,
+    ),
 )
+OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
+ASSET_EXTENSION = ".png"
 
 
 class OverlayMappingError(Exception):
@@ -155,31 +212,48 @@ def detect_overlay_decision(
 
 def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: ScoreSegment) -> OverlayDecision:
     searchable_values = _build_search_candidates(segment)
+    asset_inventory = validate_overlay_assets()
+    candidates: list[tuple[float, _OverlayRule, str]] = []
 
-    for rule in OVERLAY_RULES:
-        matched_keyword = _find_matching_keyword(searchable_values, rule.keywords)
+    for index, rule in enumerate(OVERLAY_RULES):
+        matched_keyword = _find_matching_keyword(searchable_values, segment, rule.keywords)
         if matched_keyword is None:
             continue
+        score = _score_rule_match(rule, matched_keyword, segment, rule_order=index)
+        candidates.append((score, rule, matched_keyword))
+
+    if candidates:
+        _, rule, matched_keyword = max(
+            candidates,
+            key=lambda item: (item[0], item[1].category, item[1].asset, item[2]),
+        )
+        render_contract = build_render_contract(
+            clip.export_settings,
+            clip_duration_seconds=clip.duration_seconds,
+        )
         render_start_seconds, render_end_seconds = _estimate_render_window(clip, segment, matched_keyword)
+        asset_path = _build_asset_path(rule)
+        asset_exists = asset_path in asset_inventory
+        is_portrait = render_contract.export_mode == "portrait"
         return OverlayDecision(
             clip_id=clip.id,
             podcast_id=podcast_id,
             keyword=matched_keyword,
             overlay_category=rule.category,
             overlay_asset=rule.asset,
-            asset_path=_build_asset_path(rule),
+            asset_path=asset_path,
             matched_text=segment.transcript_snippet,
-            position=rule.position,
-            scale=rule.scale,
+            position=rule.portrait_position if is_portrait else rule.landscape_position,
+            scale=rule.portrait_scale if is_portrait else rule.landscape_scale,
             opacity=rule.opacity,
-            margin_x=32,
-            margin_y=32,
+            margin_x=render_contract.overlay_safe_margin_x,
+            margin_y=render_contract.overlay_safe_margin_y,
             render_start_seconds=render_start_seconds,
             render_end_seconds=render_end_seconds,
-            applied=True,
+            applied=asset_exists,
             rendered=False,
-            render_status="mapped",
-            confidence=rule.confidence,
+            render_status="mapped" if asset_exists else "missing_asset",
+            confidence=round(rule.confidence if asset_exists else max(rule.confidence - 0.08, 0.0), 3),
         )
 
     return OverlayDecision(
@@ -199,17 +273,49 @@ def _build_search_candidates(segment: ScoreSegment) -> set[str]:
     return values
 
 
-def _find_matching_keyword(searchable_values: set[str], rule_keywords: tuple[str, ...]) -> str | None:
+def _find_matching_keyword(
+    searchable_values: set[str],
+    segment: ScoreSegment,
+    rule_keywords: tuple[str, ...],
+) -> str | None:
+    segment_keywords = set(segment.keywords)
     for candidate in rule_keywords:
         lowered = candidate.lower()
+        if lowered in segment_keywords:
+            return lowered
         for value in searchable_values:
             if lowered in value:
                 return lowered
     return None
 
 
+def _score_rule_match(
+    rule: _OverlayRule,
+    matched_keyword: str,
+    segment: ScoreSegment,
+    *,
+    rule_order: int,
+) -> float:
+    transcript = segment.transcript_snippet.lower()
+    segment_keywords = set(segment.keywords)
+    exact_keyword_bonus = 0.04 if matched_keyword in segment_keywords else 0.0
+    transcript_bonus = 0.02 if matched_keyword in transcript else 0.0
+    position_penalty = rule_order * 0.0001
+    return round(rule.confidence + exact_keyword_bonus + transcript_bonus - position_penalty, 4)
+
+
 def _build_asset_path(rule: _OverlayRule) -> str:
-    return f"{rule.category}/{rule.asset}.png"
+    return f"{rule.category}/{rule.asset}{ASSET_EXTENSION}"
+
+
+def validate_overlay_assets() -> dict[str, Path]:
+    inventory: dict[str, Path] = {}
+    for rule in OVERLAY_RULES:
+        asset_path = _build_asset_path(rule)
+        resolved = (OVERLAY_ASSETS_ROOT / asset_path).resolve()
+        if resolved.exists() and resolved.is_file():
+            inventory[asset_path] = resolved
+    return inventory
 
 
 def _estimate_render_window(

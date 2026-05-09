@@ -18,6 +18,8 @@ from app.utils.media import (  # noqa: E402
     inspect_media,
     validate_media_type,
 )
+from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
+from app.services.media_service import build_render_contract, resolve_export_settings_for_render  # noqa: E402
 from app.utils.reframing import CropWindow, FaceDetection, build_portrait_video_filters, compute_portrait_crop_window  # noqa: E402
 
 
@@ -63,6 +65,57 @@ class MediaUtilsTests(unittest.TestCase):
         self.assertEqual(result.detected_format, "mov")
         self.assertEqual(result.mime_type, "video/mp4")
         self.assertTrue(result.validation_flags["duration_detected"])
+
+    def test_build_render_contract_returns_vertical_preset_contract(self) -> None:
+        contract = build_render_contract(
+            ExportSettingsInput(export_mode="portrait", preset_name="instagram_reels"),
+            clip_duration_seconds=12.0,
+        )
+
+        self.assertEqual(contract.preset_name, "instagram_reels")
+        self.assertEqual(contract.export_mode, "portrait")
+        self.assertEqual(contract.width, 1080)
+        self.assertEqual(contract.height, 1920)
+        self.assertEqual(contract.subtitle_timing_profile, "compact")
+        self.assertLessEqual(contract.subtitle_timing.max_words_per_cue, 5)
+
+    def test_build_render_contract_returns_landscape_contract(self) -> None:
+        contract = build_render_contract(
+            ExportSettings(),
+            clip_duration_seconds=75.0,
+        )
+
+        self.assertEqual(contract.preset_name, "youtube_landscape")
+        self.assertEqual(contract.aspect_ratio, "16:9")
+        self.assertEqual(contract.width, 1920)
+        self.assertEqual(contract.height, 1080)
+        self.assertEqual(contract.subtitle_timing_profile, "extended")
+        self.assertGreaterEqual(contract.subtitle_timing.max_duration_seconds, 3.4)
+
+    def test_resolve_export_settings_for_render_tunes_short_portrait_subtitles(self) -> None:
+        resolved = resolve_export_settings_for_render(
+            ExportSettingsInput(
+                export_mode="portrait",
+                subtitle_style=SubtitleStyle(preset="classic", font_size=14),
+            ),
+            clip_duration_seconds=14.0,
+        )
+
+        self.assertEqual(resolved.preset_name, "youtube_shorts")
+        self.assertGreaterEqual(resolved.subtitle_style.font_size, 22)
+        self.assertTrue(resolved.mobile_optimized)
+
+    def test_resolve_export_settings_for_render_preserves_minimal_subtitle_background_rules(self) -> None:
+        resolved = resolve_export_settings_for_render(
+            ExportSettingsInput(
+                export_mode="portrait",
+                subtitle_style=SubtitleStyle(preset="minimal"),
+            ),
+            clip_duration_seconds=36.0,
+        )
+
+        self.assertEqual(resolved.subtitle_style.background_opacity, 0)
+        self.assertEqual(resolved.subtitle_style.preset, "minimal")
 
     def test_compute_portrait_crop_window_uses_face_center_when_available(self) -> None:
         with patch("app.utils.reframing.read_video_dimensions", return_value=(1920, 1080)):

@@ -9,3 +9,6 @@ Current bundled assets:
 - `finance/bitcoin_icon.png`
 - `finance/money_stack.png`
 - `technology/ai_chip.png`
+
+Sprint 9 validation rules expect the asset paths above to exist exactly as listed.
+Overlay selection now resolves against this inventory deterministically before render time.

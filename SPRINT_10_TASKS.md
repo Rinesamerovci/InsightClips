@@ -2,9 +2,9 @@
 ## Role-Based Task Assignment
 
 Based on the formal roles defined in the project:
-- Rinesa Merovci - Lead AI Developer (Core Engine)
 - Rinesa Bislimi - Backend Developer (Data Pipeline)
 - Penar Kera - Full-stack Developer (UX and Client Logic)
+- Rinesa Merovci - Lead AI Developer (Core Engine)
 
 ---
 
@@ -14,58 +14,7 @@ Sprint 10 focuses on making the platform intelligent and presentation-ready. The
 
 ---
 
-## JOB 1 - SPRINT 10 Clip Insights and Recommendation Intelligence
-
-**ASSIGNED TO: Rinesa Merovci**
-
-Suggested GitHub Issue Title: `Sprint 10 - Recommendation scoring and clip insight intelligence`
-Role: Lead AI Developer (Core Engine)
-Formal Responsibility: AI logic, ranking heuristics, content-scoring optimization, and semantic intelligence
-
-### Responsibilities
-
-- Improve recommendation logic for surfaced clips
-- Refine insight scoring for engagement-oriented metrics
-- Support meaningful ranking signals using transcript and clip metadata
-- Tune logic so recommendations remain explainable and deterministic
-- Validate output quality using manual review and automated tests
-
-### Scope
-
-This job expands the intelligence layer beyond generation. Deliverables include:
-1. Recommendation logic that promotes high-value clips
-2. Insight scoring that summarizes why a clip is likely to perform well
-3. Search and ranking support that helps users discover strong output quickly
-4. Clear result structures for frontend analytics and recommendation panels
-
-### Deliverables
-
-- **Service updates:** `backend/app/services/recommendation_service.py`
-- **Service updates:** `backend/app/services/clip_insights_service.py`
-- **Service updates:** `backend/app/services/search_service.py`
-- **Model updates:** `backend/app/models/clip_insights.py`
-- **Model updates:** `backend/app/models/search.py`
-- **Unit Tests:** `backend/tests/test_recommendation_service.py`
-- **Unit Tests:** `backend/tests/test_clip_insights_service.py`
-- **Unit Tests:** `backend/tests/test_search_service.py`
-
-### Acceptance Criteria
-
-- Recommendation output stays stable for the same input dataset
-- Insight scores include interpretable ranking factors
-- Search results prioritize relevant podcasts or clips consistently
-- Tests cover edge cases for ranking and scoring logic
-- Manual review confirms top-ranked clips are reasonable
-
-### Non-Goals
-
-- Deep-learning retraining pipelines
-- User-personalized recommendations based on long-term history
-- External analytics provider integrations
-
----
-
-## JOB 2 - SPRINT 10 Analytics API, Aggregation, and Final Backend Hardening
+## JOB 1 - SPRINT 10 Analytics API, Aggregation, and Final Backend Hardening
 
 **ASSIGNED TO: Rinesa Bislimi**
 
@@ -118,7 +67,7 @@ This job makes analytics measurable and reliable. Deliverables include:
 
 ---
 
-## JOB 3 - SPRINT 10 Analytics Dashboard, Discovery UX, and Final Demo Polish
+## JOB 2 - SPRINT 10 Analytics Dashboard, Discovery UX, and Final Demo Polish
 
 **ASSIGNED TO: Penar Kera**
 
@@ -165,6 +114,57 @@ This job presents the platform’s intelligence clearly to end users and evaluat
 - Advanced chart customization editors
 - Cross-platform mobile app UI
 - Marketing website redesign
+
+---
+
+## JOB 3 - SPRINT 10 Clip Insights and Recommendation Intelligence
+
+**ASSIGNED TO: Rinesa Merovci**
+
+Suggested GitHub Issue Title: `Sprint 10 - Recommendation scoring and clip insight intelligence`
+Role: Lead AI Developer (Core Engine)
+Formal Responsibility: AI logic, ranking heuristics, content-scoring optimization, and semantic intelligence
+
+### Responsibilities
+
+- Improve recommendation logic for surfaced clips
+- Refine insight scoring for engagement-oriented metrics
+- Support meaningful ranking signals using transcript and clip metadata
+- Tune logic so recommendations remain explainable and deterministic
+- Validate output quality using manual review and automated tests
+
+### Scope
+
+This job expands the intelligence layer beyond generation. Deliverables include:
+1. Recommendation logic that promotes high-value clips
+2. Insight scoring that summarizes why a clip is likely to perform well
+3. Search and ranking support that helps users discover strong output quickly
+4. Clear result structures for frontend analytics and recommendation panels
+
+### Deliverables
+
+- **Service updates:** `backend/app/services/recommendation_service.py`
+- **Service updates:** `backend/app/services/clip_insights_service.py`
+- **Service updates:** `backend/app/services/search_service.py`
+- **Model updates:** `backend/app/models/clip_insights.py`
+- **Model updates:** `backend/app/models/search.py`
+- **Unit Tests:** `backend/tests/test_recommendation_service.py`
+- **Unit Tests:** `backend/tests/test_clip_insights_service.py`
+- **Unit Tests:** `backend/tests/test_search_service.py`
+
+### Acceptance Criteria
+
+- Recommendation output stays stable for the same input dataset
+- Insight scores include interpretable ranking factors
+- Search results prioritize relevant podcasts or clips consistently
+- Tests cover edge cases for ranking and scoring logic
+- Manual review confirms top-ranked clips are reasonable
+
+### Non-Goals
+
+- Deep-learning retraining pipelines
+- User-personalized recommendations based on long-term history
+- External analytics provider integrations
 
 ---
 

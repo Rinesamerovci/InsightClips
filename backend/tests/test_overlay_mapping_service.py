@@ -12,10 +12,12 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.models.analysis import ScoreSegment  # noqa: E402
 from app.models.clipping import ClipResult  # noqa: E402
+from app.models.export_settings import ExportSettingsInput  # noqa: E402
 from app.services.overlay_mapping_service import (  # noqa: E402
     build_overlay_mappings,
     get_overlay_decisions_for_podcast,
     persist_overlay_mappings,
+    validate_overlay_assets,
 )
 
 
@@ -70,6 +72,7 @@ class OverlayMappingServiceTests(unittest.TestCase):
             video_url="https://example.com/clip.mp4",
             subtitle_text="AI can completely change startup growth.",
             status="ready",
+            export_settings=ExportSettingsInput(export_mode="portrait").resolve(),
         )
 
     def test_build_overlay_mappings_detects_known_keyword(self) -> None:
@@ -92,6 +95,7 @@ class OverlayMappingServiceTests(unittest.TestCase):
         self.assertEqual(result.overlay_decisions[0].overlay_category, "technology")
         self.assertEqual(result.overlay_decisions[0].asset_path, "technology/ai_chip.png")
         self.assertEqual(result.overlay_decisions[0].render_status, "mapped")
+        self.assertEqual(result.overlay_decisions[0].position, "top_right")
 
     def test_build_overlay_mappings_falls_back_safely_when_no_keyword_matches(self) -> None:
         clip = self._build_clip()
@@ -110,6 +114,27 @@ class OverlayMappingServiceTests(unittest.TestCase):
         self.assertFalse(result.overlay_decisions[0].applied)
         self.assertIsNone(result.overlay_decisions[0].keyword)
         self.assertEqual(result.overlay_decisions[0].confidence, 0.0)
+
+    def test_overlay_selection_is_deterministic_for_category_keywords(self) -> None:
+        clip = self._build_clip()
+        segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=15.0,
+            duration_seconds=15.0,
+            virality_score=88.0,
+            transcript_snippet="Bitcoin revenue and crypto growth all spike together.",
+            sentiment="positive",
+            keywords=["revenue", "crypto", "bitcoin"],
+        )
+
+        first = build_overlay_mappings("podcast-1", [(clip, segment)]).overlay_decisions[0]
+        second = build_overlay_mappings("podcast-1", [(clip, segment)]).overlay_decisions[0]
+
+        self.assertEqual(first.overlay_category, "finance")
+        self.assertEqual(first.overlay_asset, "bitcoin_icon")
+        self.assertEqual(first.keyword, "bitcoin")
+        self.assertEqual(first.asset_path, second.asset_path)
+        self.assertEqual(first.position, second.position)
 
     def test_persist_overlay_mappings_writes_overlay_rows(self) -> None:
         clip = self._build_clip()
@@ -153,6 +178,13 @@ class OverlayMappingServiceTests(unittest.TestCase):
 
         self.assertIn("clip-1", decisions)
         self.assertEqual(decisions["clip-1"].overlay_asset, "marketing_graph")
+
+    def test_validate_overlay_assets_confirms_required_inventory(self) -> None:
+        inventory = validate_overlay_assets()
+
+        self.assertIn("technology/ai_chip.png", inventory)
+        self.assertIn("finance/bitcoin_icon.png", inventory)
+        self.assertIn("business/startup_rocket.png", inventory)
 
 
 if __name__ == "__main__":

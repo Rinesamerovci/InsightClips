@@ -1,13 +1,21 @@
 alter table public.podcasts
+  add column if not exists preset_name text not null default 'youtube_landscape',
   add column if not exists export_mode text not null default 'landscape',
   add column if not exists crop_mode text not null default 'none',
+  add column if not exists subtitle_timing_profile text not null default 'extended',
   add column if not exists mobile_optimized boolean not null default false,
   add column if not exists face_tracking_enabled boolean not null default false,
   add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb,
   add column if not exists audio_enhancement jsonb not null default '{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}'::jsonb;
 
 alter table public.profiles
-  add column if not exists export_settings jsonb not null default '{"export_mode":"landscape","crop_mode":"none","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}}'::jsonb;
+  add column if not exists export_settings jsonb not null default '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}}'::jsonb;
+
+alter table public.podcasts
+  drop constraint if exists podcasts_preset_name_check;
+
+alter table public.podcasts
+  add constraint podcasts_preset_name_check check (preset_name in ('youtube_landscape', 'youtube_shorts', 'instagram_reels', 'tiktok_vertical'));
 
 alter table public.podcasts
   drop constraint if exists podcasts_export_mode_check;
@@ -20,6 +28,12 @@ alter table public.podcasts
 
 alter table public.podcasts
   add constraint podcasts_crop_mode_check check (crop_mode in ('none', 'center_crop', 'smart_crop'));
+
+alter table public.podcasts
+  drop constraint if exists podcasts_subtitle_timing_profile_check;
+
+alter table public.podcasts
+  add constraint podcasts_subtitle_timing_profile_check check (subtitle_timing_profile in ('compact', 'balanced', 'extended'));
 
 alter table public.podcasts
   drop constraint if exists podcasts_subtitle_style_check;
@@ -97,12 +111,20 @@ alter table public.podcasts
   );
 
 alter table public.clips
+  add column if not exists preset_name text not null default 'youtube_landscape',
   add column if not exists export_mode text not null default 'landscape',
   add column if not exists crop_mode text not null default 'none',
+  add column if not exists subtitle_timing_profile text not null default 'extended',
   add column if not exists mobile_optimized boolean not null default false,
   add column if not exists face_tracking_enabled boolean not null default false,
   add column if not exists subtitle_style jsonb not null default '{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false}'::jsonb,
   add column if not exists audio_enhancement jsonb not null default '{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}'::jsonb;
+
+alter table public.clips
+  drop constraint if exists clips_preset_name_check;
+
+alter table public.clips
+  add constraint clips_preset_name_check check (preset_name in ('youtube_landscape', 'youtube_shorts', 'instagram_reels', 'tiktok_vertical'));
 
 alter table public.clips
   drop constraint if exists clips_export_mode_check;
@@ -115,6 +137,12 @@ alter table public.clips
 
 alter table public.clips
   add constraint clips_crop_mode_check check (crop_mode in ('none', 'center_crop', 'smart_crop'));
+
+alter table public.clips
+  drop constraint if exists clips_subtitle_timing_profile_check;
+
+alter table public.clips
+  add constraint clips_subtitle_timing_profile_check check (subtitle_timing_profile in ('compact', 'balanced', 'extended'));
 
 alter table public.clips
   drop constraint if exists clips_subtitle_style_check;

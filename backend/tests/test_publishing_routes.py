@@ -17,6 +17,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.dependencies.auth import AuthenticatedUser  # noqa: E402
 from app.models.publishing import (  # noqa: E402
+    ClipMetricResponse,
     ClipPublicationResult,
     ClipPublicationStatus,
     ClipPublicationStatusResponse,
@@ -25,6 +26,7 @@ from app.models.publishing import (  # noqa: E402
     PublishClipsRequest,
 )
 from app.routers.clips import (
+    get_clip_metrics_route,
     get_clip_publication_status_route,
     publish_clip_route,
     revoke_clip_download_route,
@@ -298,6 +300,52 @@ class PublishingRouterTests(unittest.TestCase):
         get_clip_podcast_id_mock.assert_called_once_with("clip-1")
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         get_clip_publication_status_mock.assert_called_once_with("clip-1", destination="youtube")
+
+    @patch("app.routers.clips.get_clip_metrics")
+    @patch("app.routers.clips.podcast_belongs_to_user", return_value=True)
+    @patch("app.routers.clips.get_clip_podcast_id", return_value="podcast-123")
+    def test_get_clip_metrics_route_returns_owned_clip_metrics(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        get_clip_metrics_mock,
+    ) -> None:
+        get_clip_metrics_mock.return_value = ClipMetricResponse(
+            clip_id="clip-1",
+            podcast_id="podcast-123",
+            clip_number=1,
+            views=20,
+            downloads=5,
+            click_through_rate=25.0,
+            virality_score=88.0,
+            published=True,
+            status="ready",
+        )
+
+        result = asyncio.run(get_clip_metrics_route("clip-1", self.user))
+
+        self.assertEqual(result.clip_id, "clip-1")
+        self.assertEqual(result.click_through_rate, 25.0)
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        get_clip_metrics_mock.assert_called_once_with("clip-1")
+
+    @patch("app.routers.clips.get_clip_metrics")
+    @patch("app.routers.clips.podcast_belongs_to_user", return_value=False)
+    @patch("app.routers.clips.get_clip_podcast_id", return_value="podcast-123")
+    def test_get_clip_metrics_route_rejects_unowned_clip(
+        self,
+        get_clip_podcast_id_mock,
+        podcast_belongs_mock,
+        get_clip_metrics_mock,
+    ) -> None:
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(get_clip_metrics_route("clip-1", self.user))
+
+        self.assertEqual(exc_info.exception.status_code, 404)
+        get_clip_podcast_id_mock.assert_called_once_with("clip-1")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        get_clip_metrics_mock.assert_not_called()
 
 
 if __name__ == "__main__":

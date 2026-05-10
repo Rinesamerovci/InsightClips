@@ -16,6 +16,7 @@ import app.services.publishing_service as publishing_service_module  # noqa: E40
 from app.services.clipping_service import get_clips_for_podcast  # noqa: E402
 from app.services.publishing_service import (  # noqa: E402
     PublishingError,
+    get_clip_metrics,
     get_clip_publication_status,
     get_published_clip_download_content,
     publish_clips,
@@ -272,6 +273,24 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.destination, "instagram")
         self.assertEqual(result.metadata, {"error": "upload failed"})
+
+    def test_get_clip_metrics_returns_view_download_summary(self) -> None:
+        case_dir = self._workspace_case_dir("clip-metrics")
+        rows = self._build_clip_rows(case_dir)
+        rows[0]["view_count"] = 12
+        rows[0]["download_count"] = 3
+        rows[0]["published"] = True
+        storage = FakeStorage()
+        fake_supabase = FakeSupabase(rows, storage)
+
+        with patch.object(publishing_service_module, "service_supabase", fake_supabase):
+            result = get_clip_metrics("clip-1")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.views, 12)
+        self.assertEqual(result.downloads, 3)
+        self.assertEqual(result.click_through_rate, 25.0)
+        self.assertTrue(result.published)
 
     def test_publish_clips_rejects_clips_that_are_not_ready(self) -> None:
         case_dir = self._workspace_case_dir("publishing-not-ready")

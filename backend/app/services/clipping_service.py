@@ -111,6 +111,10 @@ def build_ffmpeg_clip_command(
         "error",
         "-nostdin",
         "-y",
+        "-ss",
+        f"{start_seconds:.3f}",
+        "-t",
+        f"{duration_seconds:.3f}",
         "-i",
         str(source_path),
     ]
@@ -123,14 +127,6 @@ def build_ffmpeg_clip_command(
                 str(overlay_asset_path),
             ]
         )
-    command.extend(
-        [
-            "-ss",
-            f"{start_seconds:.3f}",
-            "-t",
-            f"{duration_seconds:.3f}",
-        ]
-    )
     if overlay is not None and overlay_asset_path is not None:
         command.extend(
             [
@@ -813,6 +809,7 @@ def _build_video_filters(
                 f"pad={render_contract.width}:{render_contract.height}:(ow-iw)/2:(oh-ih)/2"
             )
         )
+    filters.append("setpts=PTS-STARTPTS")
     filters.append(
         _build_subtitle_filter(
             subtitle_path,

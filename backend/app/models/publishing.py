@@ -77,6 +77,29 @@ class ClipRevocationResult(BaseModel):
         return cleaned
 
 
+class ClipMetricResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_id: str
+    podcast_id: str
+    clip_number: int = Field(ge=1)
+    views: int = Field(ge=0)
+    downloads: int = Field(ge=0)
+    click_through_rate: float = Field(ge=0)
+    virality_score: float = Field(ge=0, le=100)
+    published: bool = False
+    published_at: datetime | None = None
+    status: str
+
+    @field_validator("clip_id", "podcast_id", "status")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        cleaned = " ".join(value.split()) if value.strip() else value.strip()
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+
 class PublishClipsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

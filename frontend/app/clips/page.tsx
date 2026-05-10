@@ -917,7 +917,7 @@ function ClipsPageContent() {
                 Search, publish, and ship your strongest moments.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
-                This board brings clip discovery, publish controls, and recommendation signals into one workflow for Sprint 4.
+                This board brings clip discovery, recommendation signals, and publish controls into one final demo workflow.
               </p>
             </div>
 
@@ -1091,8 +1091,27 @@ function ClipsPageContent() {
                   Loading recommendations...
                 </div>
               ) : recommendations.length === 0 ? (
-                <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                  Recommendations will appear here after clips are generated for the selected podcast.
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                    Recommendations will appear here after clips are generated for the selected podcast.
+                  </div>
+                  {selectedPodcast ? (
+                    <Link
+                      href={`/analytics?podcastId=${selectedPodcast.id}`}
+                      style={{
+                        width: "fit-content",
+                        borderRadius: 999,
+                        padding: "10px 14px",
+                        background: t.cardAlt,
+                        border: `1px solid ${t.borderSub}`,
+                        color: t.textSub,
+                        textDecoration: "none",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Open analytics context
+                    </Link>
+                  ) : null}
                 </div>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
@@ -1291,6 +1310,26 @@ function ClipsPageContent() {
                       {option.label}
                     </button>
                   ))}
+                  {activeSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setFilter("all");
+                      }}
+                      style={{
+                        border: `1px solid ${t.borderSub}`,
+                        borderRadius: 999,
+                        padding: "10px 14px",
+                        background: "transparent",
+                        color: t.textSub,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Clear search
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1304,7 +1343,7 @@ function ClipsPageContent() {
                   {searchEstimated
                     ? "Search is using fallback matching from current clip data."
                     : activeSearch
-                      ? "Search is powered by the clip discovery API."
+                      ? `Search is powered by the clip discovery API${selectedPodcast ? ` for ${selectedPodcast.title}` : ""}.`
                       : "Browsing the full generated clip list."}
                 </span>
               </div>
@@ -1346,6 +1385,30 @@ function ClipsPageContent() {
                       ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions."
                       : "Try another search or filter to surface different clip candidates."}
                   </p>
+                  {clips.length > 0 && activeSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setFilter("all");
+                      }}
+                      style={{
+                        marginTop: 18,
+                        border: `1px solid ${t.borderSub}`,
+                        borderRadius: 999,
+                        background: t.cardAlt,
+                        color: t.textSub,
+                        padding: "12px 18px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Reset search
+                    </button>
+                  ) : null}
                   {clips.length === 0 ? (
                     <button
                       type="button"

@@ -96,6 +96,13 @@ def get_user_export_settings(profile_id: str) -> UserExportSettingsResponse | No
     )
 
 
+def get_profile_for_analytics(profile_id: str) -> ProfileRecord | None:
+    cleaned_profile_id = profile_id.strip()
+    if not cleaned_profile_id:
+        return None
+    return get_profile_by_id(cleaned_profile_id)
+
+
 def update_user_export_settings(
     profile_id: str,
     export_settings: ExportSettingsInput | ExportSettings,

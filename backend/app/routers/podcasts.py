@@ -9,7 +9,7 @@ from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastR
 from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
-from app.models.podcast import PodcastsResponse
+from app.models.podcast import PodcastsResponse, UserPodcastAnalytics
 from app.models.search import RecommendationResult
 from app.services.analysis_service import (
     AnalysisError,
@@ -41,7 +41,12 @@ from app.services.publishing_service import (
     publish_clips,
 )
 from app.services.recommendation_service import RecommendationServiceError, recommend_clips
-from app.services.podcast_service import get_podcasts_for_user, update_podcast_status_for_user
+from app.services.profile_service import get_profile_for_analytics
+from app.services.podcast_service import (
+    get_podcasts_for_user,
+    get_user_podcast_analytics,
+    update_podcast_status_for_user,
+)
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
 
@@ -52,6 +57,18 @@ async def list_podcasts(
 ) -> PodcastsResponse:
     podcasts, is_mock = get_podcasts_for_user(current_user.id)
     return PodcastsResponse(podcasts=podcasts, is_mock=is_mock)
+
+
+@router.get("/analytics", response_model=UserPodcastAnalytics)
+async def get_podcast_analytics(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> UserPodcastAnalytics:
+    if get_profile_for_analytics(current_user.id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found for the current user.",
+        )
+    return get_user_podcast_analytics(current_user.id)
 
 
 @router.post("/{podcast_id}/analyze", response_model=AnalysisResult)

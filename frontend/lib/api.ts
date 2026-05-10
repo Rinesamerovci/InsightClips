@@ -1,5 +1,6 @@
 import {
   buildDiscoveryItem,
+  buildEstimatedMetricRow,
   buildEstimatedPodcastMetrics,
   filterDiscoveryItems,
   rankRecommendedItems,
@@ -296,6 +297,48 @@ export type ClipRecommendationsResponse = {
 
 export type PodcastClipMetrics = PodcastMetricSummary & {
   top_clips: ClipMetricRow[];
+};
+
+export type TopPerformingClip = {
+  clip_id: string;
+  podcast_id: string;
+  podcast_title: string;
+  clip_number: number;
+  virality_score: number;
+  views: number;
+  downloads: number;
+  published: boolean;
+  published_at?: string | null;
+  estimated?: boolean;
+};
+
+export type PodcastAnalyticsSummary = {
+  podcast_id: string;
+  title: string;
+  status: string;
+  duration: number;
+  total_clips: number;
+  published_clips: number;
+  total_views: number;
+  total_downloads: number;
+  average_virality_score: number;
+  latest_published_at?: string | null;
+  estimated?: boolean;
+};
+
+export type UserPodcastAnalytics = {
+  user_id: string;
+  total_podcasts: number;
+  total_clips: number;
+  published_clips: number;
+  private_clips: number;
+  total_views: number;
+  total_downloads: number;
+  average_virality_score: number;
+  publish_rate: number;
+  top_clips: TopPerformingClip[];
+  podcasts: PodcastAnalyticsSummary[];
+  estimated?: boolean;
 };
 
 type RequestOptions = {
@@ -721,6 +764,135 @@ export async function getRecommendations(
       recommendations: rankRecommendedItems(discoveryItems, 4),
       estimated: true,
     };
+  }
+}
+
+export function buildEstimatedUserAnalytics(
+  userId: string,
+  podcasts: Podcast[],
+  clipsByPodcastId: Record<string, ClipResult[]>,
+): UserPodcastAnalytics {
+  const summaries = podcasts.map((podcast) => {
+    const clips = clipsByPodcastId[podcast.id] ?? [];
+    const metrics = buildEstimatedPodcastMetrics(podcast, clips);
+    const averageViralityScore =
+      clips.length > 0
+        ? Number(
+            (
+              clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length
+            ).toFixed(2),
+          )
+        : 0;
+    const latestPublishedAt = clips
+      .filter((clip) => clip.published && clip.published_at)
+      .map((clip) => clip.published_at ?? null)
+      .sort()
+      .at(-1) ?? null;
+
+    return {
+      podcast_id: podcast.id,
+      title: podcast.title,
+      status: podcast.status,
+      duration: podcast.duration,
+      total_clips: metrics.total_clips,
+      published_clips: metrics.published_clips,
+      total_views: metrics.total_views,
+      total_downloads: metrics.total_downloads,
+      average_virality_score: averageViralityScore,
+      latest_published_at: latestPublishedAt,
+      estimated: true,
+    };
+  });
+
+  const allTopClips = podcasts
+    .flatMap((podcast) =>
+      (clipsByPodcastId[podcast.id] ?? []).map((clip) => {
+        const metrics = buildEstimatedMetricRow(clip);
+        return {
+          clip_id: clip.id,
+          podcast_id: podcast.id,
+          podcast_title: podcast.title,
+          clip_number: clip.clip_number,
+          virality_score: clip.virality_score,
+          views: metrics.views,
+          downloads: metrics.downloads,
+          published: Boolean(clip.published),
+          published_at: clip.published_at ?? null,
+          estimated: true,
+        };
+      }),
+    )
+    .sort((left, right) => {
+      if (right.views !== left.views) {
+        return right.views - left.views;
+      }
+      if (right.downloads !== left.downloads) {
+        return right.downloads - left.downloads;
+      }
+      if (right.virality_score !== left.virality_score) {
+        return right.virality_score - left.virality_score;
+      }
+      return left.clip_number - right.clip_number;
+    })
+    .slice(0, 5);
+
+  const totalClips = summaries.reduce((sum, item) => sum + item.total_clips, 0);
+  const publishedClips = summaries.reduce((sum, item) => sum + item.published_clips, 0);
+  const totalViews = summaries.reduce((sum, item) => sum + item.total_views, 0);
+  const totalDownloads = summaries.reduce((sum, item) => sum + item.total_downloads, 0);
+  const viralityScores = Object.values(clipsByPodcastId).flatMap((clips) =>
+    clips.map((clip) => clip.virality_score),
+  );
+
+  return {
+    user_id: userId.trim() || podcasts[0]?.user_id || "current-user",
+    total_podcasts: podcasts.length,
+    total_clips: totalClips,
+    published_clips: publishedClips,
+    private_clips: Math.max(0, totalClips - publishedClips),
+    total_views: totalViews,
+    total_downloads: totalDownloads,
+    average_virality_score:
+      viralityScores.length > 0
+        ? Number(
+            (
+              viralityScores.reduce((sum, score) => sum + score, 0) /
+              viralityScores.length
+            ).toFixed(2),
+          )
+        : 0,
+    publish_rate: totalClips
+      ? Number(((publishedClips / totalClips) * 100).toFixed(2))
+      : 0,
+    top_clips: allTopClips,
+    podcasts: summaries,
+    estimated: true,
+  };
+}
+
+export async function getPodcastAnalytics(
+  token?: string | null,
+): Promise<UserPodcastAnalytics> {
+  try {
+    return await getJson<UserPodcastAnalytics>("/podcasts/analytics", token);
+  } catch {
+    const podcastsResponse = await getJson<PodcastsResponse>("/podcasts", token);
+    const clipEntries = await Promise.all(
+      podcastsResponse.podcasts.map(async (podcast) => {
+        try {
+          const result = await getClips(podcast.id, token);
+          return [podcast.id, result.clips] as const;
+        } catch {
+          return [podcast.id, []] as const;
+        }
+      }),
+    );
+
+    return buildEstimatedUserAnalytics(
+      podcastsResponse.podcasts[0]?.user_id ?? "current-user",
+      podcastsResponse.podcasts,
+      Object.fromEntries(clipEntries),
+    );
   }
 }
 

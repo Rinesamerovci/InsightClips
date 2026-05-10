@@ -1,7 +1,8 @@
 import asyncio
 import time
+from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user, get_current_user_for_download
@@ -49,6 +50,62 @@ from app.services.podcast_service import (
 )
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
+
+
+def _is_unsatisfiable_byte_range(range_header: str | None, *, file_size: int) -> bool:
+    if not range_header:
+        return False
+
+    normalized = range_header.strip().lower()
+    if not normalized.startswith("bytes="):
+        return False
+
+    first_range = normalized[6:].split(",", 1)[0].strip()
+    if "-" not in first_range:
+        return False
+
+    start_raw, end_raw = first_range.split("-", 1)
+    try:
+        if start_raw:
+            return int(start_raw) >= file_size
+        if end_raw:
+            return file_size <= 0 or int(end_raw) <= 0
+    except ValueError:
+        return False
+
+    return False
+
+
+def _build_local_file_response(
+    request: Request,
+    file_path: Path,
+    *,
+    filename: str | None = None,
+) -> Response:
+    headers = {"Cache-Control": "no-store"}
+    file_size = file_path.stat().st_size
+
+    # Browsers can reuse a stale byte range after clips are regenerated locally.
+    # Returning the full file avoids a noisy 416 and lets preview/download recover.
+    if _is_unsatisfiable_byte_range(request.headers.get("range"), file_size=file_size):
+        safe_filename = (filename or file_path.name).replace('"', "")
+        return Response(
+            content=file_path.read_bytes(),
+            media_type="video/mp4",
+            headers={
+                **headers,
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(file_size),
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            },
+        )
+
+    return FileResponse(
+        path=file_path,
+        media_type="video/mp4",
+        filename=(filename or file_path.name),
+        headers=headers,
+    )
 
 
 @router.get("", response_model=PodcastsResponse)
@@ -271,6 +328,7 @@ async def publish_podcast_clips(
 @router.get("/clips/{clip_id}/download")
 async def download_generated_clip(
     clip_id: str,
+    request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user_for_download),
 ):
     podcast_id = get_clip_podcast_id(clip_id)
@@ -291,17 +349,17 @@ async def download_generated_clip(
         )
     if file_path and file_path.exists():
         record_clip_download(clip_id)
-        return FileResponse(
-            path=file_path,
-            media_type="video/mp4",
+        return _build_local_file_response(
+            request,
+            file_path,
             filename=(filename or file_path.name),
         )
 
     _, preview_file_path = get_clip_download_target(clip_id)
     if preview_file_path and preview_file_path.exists():
-        return FileResponse(
-            path=preview_file_path,
-            media_type="video/mp4",
+        return _build_local_file_response(
+            request,
+            preview_file_path,
             filename=preview_file_path.name,
         )
 

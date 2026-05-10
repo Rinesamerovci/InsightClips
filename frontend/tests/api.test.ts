@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildAuthenticatedBackendUrl,
   getClipMetrics,
+  getPodcastAnalytics,
   getUserExportSettings,
   getUserProfile,
   getRecommendations,
@@ -54,11 +55,14 @@ export async function runApiTests(): Promise<void> {
   await testGetUserExportSettingsUsesProtectedEndpoint();
   await testUpdateUserExportSettingsPersistsPreferences();
   await testPrepareUploadPostsExportSettings();
+  await testGetPodcastAnalyticsUsesBackendRoute();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
   await testPublishClipsPostsPublicationPayload();
   await testRevokeClipDownloadPostsRevocationRequest();
   await testRecommendationsFallbackProducesEstimatedResults();
+  await testPodcastAnalyticsFallbackProducesEstimatedSummary();
+  await testGetClipMetricsUsesBackendMetricsRoute();
   await testMetricsFallbackProducesEstimatedSummary();
 }
 
@@ -478,6 +482,83 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
   }
 }
 
+async function testGetPodcastAnalyticsUsesBackendRoute(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/analytics")) {
+      return jsonResponse({
+        user_id: "user-1",
+        total_podcasts: 2,
+        total_clips: 6,
+        published_clips: 4,
+        private_clips: 2,
+        total_views: 940,
+        total_downloads: 180,
+        average_virality_score: 84.5,
+        publish_rate: 66.67,
+        top_clips: [
+          {
+            clip_id: "clip-9",
+            podcast_id: "pod-1",
+            podcast_title: "Growth Lab",
+            clip_number: 3,
+            virality_score: 94,
+            views: 340,
+            downloads: 68,
+            published: true,
+            published_at: "2026-04-24T08:30:00Z",
+          },
+        ],
+        podcasts: [
+          {
+            podcast_id: "pod-1",
+            title: "Growth Lab",
+            status: "done",
+            duration: 1800,
+            total_clips: 4,
+            published_clips: 3,
+            total_views: 640,
+            total_downloads: 132,
+            average_virality_score: 88.2,
+            latest_published_at: "2026-04-24T08:30:00Z",
+          },
+          {
+            podcast_id: "pod-2",
+            title: "Creator Office Hours",
+            status: "processing",
+            duration: 1200,
+            total_clips: 2,
+            published_clips: 1,
+            total_views: 300,
+            total_downloads: 48,
+            average_virality_score: 76.8,
+            latest_published_at: "2026-04-23T11:15:00Z",
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getPodcastAnalytics("token-123");
+
+    assert.equal(result.user_id, "user-1");
+    assert.equal(result.total_podcasts, 2);
+    assert.equal(result.total_views, 940);
+    assert.equal(result.top_clips[0]?.clip_id, "clip-9");
+    assert.equal(result.podcasts[1]?.podcast_id, "pod-2");
+    assert.equal(result.estimated, undefined);
+    assert.equal(calls[0]?.init?.method, "GET");
+    assert.equal(
+      (calls[0]?.init?.headers as Record<string, string>)?.Authorization,
+      "Bearer token-123",
+    );
+  } finally {
+    restore();
+  }
+}
+
 async function testSearchClipsUsesBackendDiscoveryRoute(): Promise<void> {
   const { calls, restore } = withMockFetch(async (url) => {
     if (url.includes("/clips/search?")) {
@@ -761,6 +842,146 @@ async function testRecommendationsFallbackProducesEstimatedResults(): Promise<vo
     assert.equal(result.recommendations.length, 3);
     assert.equal(result.recommendations[0]?.id, "clip-1");
     assert.equal(result.recommendations[0]?.recommendation_reason, "Highest upside right now");
+  } finally {
+    restore();
+  }
+}
+
+async function testPodcastAnalyticsFallbackProducesEstimatedSummary(): Promise<void> {
+  const { restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/analytics")) {
+      return jsonResponse({ detail: "analytics unavailable" }, 503);
+    }
+    if (url.endsWith("/podcasts")) {
+      return jsonResponse({
+        podcasts: [
+          { id: "pod-1", title: "Growth Lab", user_id: "user-1", duration: 1200, status: "done", created_at: null, updated_at: null },
+          { id: "pod-2", title: "Creator Office Hours", user_id: "user-1", duration: 1800, status: "processing", created_at: null, updated_at: null },
+        ],
+        is_mock: false,
+      });
+    }
+    if (url.endsWith("/podcasts/pod-1/clips")) {
+      return jsonResponse({
+        podcast_id: "pod-1",
+        total_clips_generated: 2,
+        processing_time_seconds: 0,
+        download_folder_url: "/podcasts/pod-1/clips",
+        clips: [
+          {
+            id: "clip-1",
+            clip_number: 1,
+            clip_start_seconds: 0,
+            clip_end_seconds: 20,
+            duration_seconds: 20,
+            virality_score: 91,
+            video_url: "https://example.com/clip-1.mp4",
+            subtitle_text: "High-upside private clip",
+            status: "ready",
+            published: false,
+          },
+          {
+            id: "clip-2",
+            clip_number: 2,
+            clip_start_seconds: 24,
+            clip_end_seconds: 50,
+            duration_seconds: 26,
+            virality_score: 93,
+            video_url: "https://example.com/clip-2.mp4",
+            subtitle_text: "Published winner",
+            status: "ready",
+            published: true,
+            published_at: "2026-04-22T08:00:00Z",
+          },
+        ],
+      });
+    }
+    if (url.endsWith("/podcasts/pod-2/clips")) {
+      return jsonResponse({
+        podcast_id: "pod-2",
+        total_clips_generated: 1,
+        processing_time_seconds: 0,
+        download_folder_url: "/podcasts/pod-2/clips",
+        clips: [
+          {
+            id: "clip-3",
+            clip_number: 1,
+            clip_start_seconds: 0,
+            clip_end_seconds: 18,
+            duration_seconds: 18,
+            virality_score: 74,
+            video_url: "https://example.com/clip-3.mp4",
+            subtitle_text: "Processing episode teaser",
+            status: "processing",
+            published: false,
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getPodcastAnalytics("token-123");
+
+    assert.equal(result.estimated, true);
+    assert.equal(result.total_podcasts, 2);
+    assert.equal(result.total_clips, 3);
+    assert.equal(result.published_clips, 1);
+    assert.equal(result.private_clips, 2);
+    assert.equal(result.top_clips[0]?.podcast_id, "pod-1");
+    assert.equal(result.podcasts[0]?.estimated, true);
+  } finally {
+    restore();
+  }
+}
+
+async function testGetClipMetricsUsesBackendMetricsRoute(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/pod-9/metrics")) {
+      return jsonResponse({
+        podcast_id: "pod-9",
+        podcast_title: "Insight Weekly",
+        total_clips: 3,
+        published_clips: 2,
+        unpublished_clips: 1,
+        total_views: 1180,
+        total_downloads: 204,
+        average_click_trend: 9.4,
+        top_clips: [
+          {
+            clip_id: "clip-a",
+            clip_number: 1,
+            title: "Published clip with strong reach",
+            views: 470,
+            downloads: 82,
+            click_trend: 11.2,
+            published: true,
+            published_at: "2026-04-22T10:00:00Z",
+            virality_score: 88,
+            estimated: false,
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getClipMetrics("pod-9", "token-123");
+
+    assert.equal(result.total_clips, 3);
+    assert.equal(result.total_downloads, 204);
+    assert.equal(result.top_clips[0]?.clip_id, "clip-a");
+    assert.equal(result.top_clips[0]?.estimated, false);
+    assert.equal(result.estimated, undefined);
+    assert.equal(calls[0]?.init?.method, "GET");
+    assert.equal(
+      (calls[0]?.init?.headers as Record<string, string>)?.Authorization,
+      "Bearer token-123",
+    );
   } finally {
     restore();
   }

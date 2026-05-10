@@ -17,7 +17,12 @@ from app.models.analysis import AnalysisResult, AnalyzePodcastRequest, ScoreSegm
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest  # noqa: E402
 from app.models.export_settings import ExportSettings  # noqa: E402
 from app.models.transcription import TranscriptionResult, TranscriptWord  # noqa: E402
-from app.routers.podcasts import analyze_podcast, generate_podcast_clips, get_podcast_clips  # noqa: E402
+from app.routers.podcasts import (  # noqa: E402
+    analyze_podcast,
+    generate_podcast_clips,
+    get_podcast_analytics,
+    get_podcast_clips,
+)
 
 
 class PodcastAnalysisRouterTests(unittest.TestCase):
@@ -415,6 +420,49 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertEqual(result.clips, [])
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         get_clips_mock.assert_called_once_with("podcast-123")
+
+    @patch("app.routers.podcasts.get_profile_for_analytics", return_value=object())
+    @patch("app.routers.podcasts.get_user_podcast_analytics")
+    def test_get_podcast_analytics_returns_user_scoped_metrics(
+        self,
+        get_analytics_mock,
+        get_profile_mock,
+    ) -> None:
+        get_analytics_mock.return_value = {
+            "user_id": "user-123",
+            "total_podcasts": 1,
+            "total_clips": 2,
+            "published_clips": 1,
+            "private_clips": 1,
+            "total_views": 12,
+            "total_downloads": 3,
+            "average_virality_score": 81.5,
+            "publish_rate": 50.0,
+            "top_clips": [],
+            "podcasts": [],
+        }
+
+        result = asyncio.run(get_podcast_analytics(self.user))
+
+        self.assertEqual(result["user_id"], "user-123")
+        self.assertEqual(result["total_views"], 12)
+        get_profile_mock.assert_called_once_with("user-123")
+        get_analytics_mock.assert_called_once_with("user-123")
+
+    @patch("app.routers.podcasts.get_profile_for_analytics", return_value=None)
+    @patch("app.routers.podcasts.get_user_podcast_analytics")
+    def test_get_podcast_analytics_returns_404_when_profile_is_missing(
+        self,
+        get_analytics_mock,
+        get_profile_mock,
+    ) -> None:
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(get_podcast_analytics(self.user))
+
+        self.assertEqual(exc_info.exception.status_code, 404)
+        self.assertIn("Profile not found", exc_info.exception.detail)
+        get_profile_mock.assert_called_once_with("user-123")
+        get_analytics_mock.assert_not_called()
 
 
 if __name__ == "__main__":

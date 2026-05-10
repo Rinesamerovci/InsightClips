@@ -7,6 +7,7 @@ from typing import Any
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.publishing import (
+    ClipMetricResponse,
     ClipPublicationResult,
     ClipPublicationStatus,
     ClipPublicationStatusResponse,
@@ -258,6 +259,58 @@ def get_clip_publication_status(
     )
 
 
+def get_clip_metrics(clip_id: str) -> ClipMetricResponse | None:
+    cleaned_clip_id = clip_id.strip()
+    if not cleaned_clip_id:
+        raise PublishingError("clip_id is required.", status_code=400)
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        raise PublishingError("Supabase must be configured before clip metrics can be loaded.", status_code=503)
+
+    try:
+        rows = (
+            service_supabase.table("clips")
+            .select("id,podcast_id,clip_number,virality_score,status,published,published_at,view_count,download_count")
+            .eq("id", cleaned_clip_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except Exception as exc:
+        if not _metrics_columns_missing(exc):
+            raise
+        rows = (
+            service_supabase.table("clips")
+            .select("id,podcast_id,clip_number,virality_score,status,published,published_at")
+            .eq("id", cleaned_clip_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            row["view_count"] = 0
+            row["download_count"] = 0
+    if not rows:
+        return None
+
+    row = rows[0]
+    views = int(row.get("view_count") or 0)
+    downloads = int(row.get("download_count") or 0)
+    return ClipMetricResponse(
+        clip_id=cleaned_clip_id,
+        podcast_id=str(row.get("podcast_id") or ""),
+        clip_number=int(row.get("clip_number") or 0),
+        views=views,
+        downloads=downloads,
+        click_through_rate=round((downloads / max(views, 1)) * 100.0, 2) if views else 0.0,
+        virality_score=float(row.get("virality_score") or 0.0),
+        published=bool(row.get("published")),
+        published_at=row.get("published_at"),
+        status=str(row.get("status") or "ready"),
+    )
+
+
 def _normalize_clip_ids(clip_ids: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -424,3 +477,17 @@ def _create_storage_signed_url(storage_key: str) -> str:
 
 def _build_backend_download_path(clip_id: str) -> str:
     return f"/podcasts/clips/{clip_id}/download"
+
+
+def _metrics_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "view_count",
+            "download_count",
+            "column clips.view_count does not exist",
+            "column clips.download_count does not exist",
+            "42703",
+        )
+    )

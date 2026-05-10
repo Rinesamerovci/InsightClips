@@ -240,8 +240,10 @@ def prepare_upload(
     }
     insert_payload.update(
         {
+            "preset_name": resolved_export_settings.preset_name,
             "export_mode": resolved_export_settings.export_mode,
             "crop_mode": resolved_export_settings.crop_mode,
+            "subtitle_timing_profile": resolved_export_settings.subtitle_timing_profile,
             "mobile_optimized": resolved_export_settings.mobile_optimized,
             "face_tracking_enabled": resolved_export_settings.face_tracking_enabled,
             "subtitle_style": resolved_export_settings.subtitle_style.model_dump(mode="json"),
@@ -255,8 +257,10 @@ def prepare_upload(
         if not _podcast_export_columns_missing(exc):
             raise
         fallback_payload = dict(insert_payload)
+        fallback_payload.pop("preset_name", None)
         fallback_payload.pop("export_mode", None)
         fallback_payload.pop("crop_mode", None)
+        fallback_payload.pop("subtitle_timing_profile", None)
         fallback_payload.pop("mobile_optimized", None)
         fallback_payload.pop("face_tracking_enabled", None)
         fallback_payload.pop("subtitle_style", None)

@@ -58,12 +58,13 @@ function Ring({ score }: { score: number }) {
 
 /* ════ EXPORT ════ */
 export function PodcastCard({
-  podcast, analysis, analysisLoading = false, onAnalyze,
+  podcast, analysis, analysisLoading = false, onAnalyze, generatedClipsCount = 0,
 }: {
   podcast: Podcast; analysis?: AnalysisSummary | null;
-  analysisLoading?: boolean; onAnalyze?: () => void;
+  analysisLoading?: boolean; onAnalyze?: () => void; generatedClipsCount?: number;
 }) {
   const hasAnalysis  = Boolean(analysis && analysis.total_scored_segments > 0);
+  const hasGeneratedVideos = generatedClipsCount > 0;
   const needsPayment = podcast.status === "awaiting_payment";
   const b            = badge(podcast.status);
   const stages       = STAGES(podcast.duration);
@@ -185,16 +186,22 @@ export function PodcastCard({
             <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <Ring score={analysis!.highest_score}/>
+                  <Ring score={hasGeneratedVideos ? 100 : analysis!.highest_score}/>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#1e3418" }}>
-                      {analysis!.highest_score.toFixed(1)} top score
+                      {hasGeneratedVideos
+                        ? "100 video workflow complete"
+                        : `${analysis!.highest_score.toFixed(1)} top score`}
                     </div>
                     <div style={{ fontSize: 10, color: "#7aaa55", marginTop: 1 }}>
-                      {analysis!.total_scored_segments} segments
+                      {hasGeneratedVideos
+                        ? `${generatedClipsCount} generated clip${generatedClipsCount === 1 ? "" : "s"}`
+                        : `${analysis!.total_scored_segments} segments`}
                     </div>
                     <div style={{ fontSize: 10, color: "#526352", marginTop: 4, lineHeight: 1.45 }}>
-                      Analysis finds moments first. Open clips to render the final videos.
+                      {hasGeneratedVideos
+                        ? "Final videos are ready. Open clips to review, publish, or download them."
+                        : "Analysis finds moments first. Open clips to render the final videos."}
                     </div>
                   </div>
                 </div>
@@ -204,7 +211,7 @@ export function PodcastCard({
                     background: "rgba(90,158,58,.1)", border: "1px solid rgba(90,158,58,.2)",
                     fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
                     textTransform: "uppercase", color: "#2f7020", whiteSpace: "nowrap",
-                  }}>Analyzed</span>
+                  }}>{hasGeneratedVideos ? "Rendered" : "Analyzed"}</span>
                   <Link href={`/clips?podcastId=${podcast.id}`} style={{
                     display: "inline-flex", alignItems: "center", gap: 3,
                     padding: "4px 10px", borderRadius: 100,

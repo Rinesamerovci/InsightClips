@@ -5,27 +5,26 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  LogOut, Moon, Plus, SunMedium, Mic2, Clock,
+  LogOut, Moon, Plus, SunMedium, Mic2, Download,
   Sparkles, Settings, Bell, ChevronRight, Play,
   Activity, Zap, TrendingUp, MoreHorizontal,
   Radio, LayoutDashboard, Library, BarChart2,
-  User, ArrowUpRight, CheckCircle2,
+  User, ArrowUpRight,
 } from "lucide-react";
 
 import { PodcastCard } from "@/components/PodcastCard";
 import { useAuth } from "@/context/AuthContext";
-import { analyzePodcast, getJson, getPodcastAnalysis, type AnalysisSummary } from "@/lib/api";
-
-type ProfileResponse = {
-  id: string; email: string; full_name: string | null;
-  profile_picture_url: string | null; free_trial_used: boolean;
-  created_at: string | null; updated_at: string | null;
-};
-type Podcast = {
-  id: string; user_id: string; title: string; duration: number;
-  status: string; created_at: string | null; updated_at: string | null;
-};
-type PodcastsResponse = { podcasts: Podcast[]; is_mock: boolean };
+import {
+  analyzePodcast,
+  getJson,
+  getPodcastAnalytics,
+  getPodcastAnalysis,
+  type AnalysisSummary,
+  type Podcast,
+  type PodcastsResponse,
+  type ProfileResponse,
+  type UserPodcastAnalytics,
+} from "@/lib/api";
 
 function isDoneStatus(status: string) {
   return ["done", "completed"].includes(status);
@@ -98,9 +97,8 @@ const T = {
 };
 
 /* ─────────────────────── helpers ─────────────────────── */
-function fmtDur(secs: number) {
-  const m = Math.floor(secs / 60);
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+function formatPercent(value: number) {
+  return `${value.toFixed(1)}%`;
 }
 
 /* ─────────────────────── nav item ─────────────────────── */
@@ -183,6 +181,7 @@ export default function DashboardPage() {
 
   const [profile,   setProfile]   = useState<ProfileResponse | null>(null);
   const [podcasts,  setPodcasts]  = useState<Podcast[]>([]);
+  const [analytics, setAnalytics] = useState<UserPodcastAnalytics | null>(null);
   const [isMock,    setIsMock]    = useState(false);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState("");
@@ -228,11 +227,12 @@ export default function DashboardPage() {
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) { router.replace("/login"); return; }
-        const [p, pod] = await Promise.all([
+        const [p, pod, overview] = await Promise.all([
           getJson<ProfileResponse>("/users/profile", token),
           getJson<PodcastsResponse>("/podcasts", token),
+          getPodcastAnalytics(token),
         ]);
-        setProfile(p); setPodcasts(pod.podcasts); setIsMock(pod.is_mock);
+        setProfile(p); setPodcasts(pod.podcasts); setIsMock(pod.is_mock); setAnalytics(overview);
         const analysisEntries = await Promise.all(
           pod.podcasts.map(async (podcast) => {
             try {
@@ -259,7 +259,6 @@ export default function DashboardPage() {
     ),
   }));
 
-  const totalDur   = podcasts.reduce((a, p) => a + (p.duration || 0), 0);
   const processing = podcastsWithEffectiveStatus.filter(p => isProcessingStatus(p.status)).length;
   const payments   = podcastsWithEffectiveStatus.filter(p => isPaymentStatus(p.status)).length;
   const done       = podcastsWithEffectiveStatus.filter(p => isDoneStatus(p.status)).length;
@@ -274,6 +273,51 @@ export default function DashboardPage() {
   );
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
+  const visibilityTotal = (analytics?.total_views ?? 0) + (analytics?.total_downloads ?? 0);
+  const comparisonPodcasts = useMemo(() => {
+    const summaries =
+      analytics?.podcasts.map((podcast) => ({
+        podcastId: podcast.podcast_id,
+        title: podcast.title,
+        totalClips: podcast.total_clips,
+        visibility: podcast.total_views + podcast.total_downloads,
+        publishedClips: podcast.published_clips,
+        averageScore: podcast.average_virality_score,
+      })) ??
+      podcastsWithEffectiveStatus.map((podcast) => ({
+        podcastId: podcast.id,
+        title: podcast.title,
+        totalClips: 0,
+        visibility: 0,
+        publishedClips: 0,
+        averageScore: 0,
+      }));
+
+    return [...summaries]
+      .sort((left, right) => {
+        if (right.visibility !== left.visibility) {
+          return right.visibility - left.visibility;
+        }
+        if (right.totalClips !== left.totalClips) {
+          return right.totalClips - left.totalClips;
+        }
+        return left.title.localeCompare(right.title);
+      })
+      .slice(0, 5);
+  }, [analytics?.podcasts, podcastsWithEffectiveStatus]);
+  const comparisonMax = Math.max(
+    1,
+    ...comparisonPodcasts.map((podcast) => podcast.visibility || podcast.totalClips || 1),
+  );
+  const leadingPodcast = comparisonPodcasts[0] ?? null;
+  const leadingClip = analytics?.top_clips[0] ?? null;
+  const generatedClipsByPodcastId = useMemo(
+    () =>
+      Object.fromEntries(
+        (analytics?.podcasts ?? []).map((podcast) => [podcast.podcast_id, podcast.total_clips]),
+      ) as Record<string, number>,
+    [analytics?.podcasts],
+  );
   const notifications = useMemo(() => {
     const items: Array<{
       id: string;
@@ -880,15 +924,17 @@ export default function DashboardPage() {
               </h1>
               <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.6, fontWeight: 400 }}>
                 {podcasts.length > 0
-                  ? `${podcasts.length} episode${podcasts.length>1?"s":""} in your library${
-                      processing > 0
-                        ? ` · ${processing} processing`
-                        : payments > 0
-                          ? ` · ${payments} awaiting payment`
-                          : done > 0
-                            ? ` · ${done} completed`
-                            : ""
-                    }`
+                  ? analytics && analytics.total_clips > 0
+                    ? `${analytics.total_clips} clip${analytics.total_clips !== 1 ? "s" : ""} across ${analytics.total_podcasts} episode${analytics.total_podcasts !== 1 ? "s" : ""} · ${analytics.published_clips} published · ${visibilityTotal} total reach`
+                    : `${podcasts.length} episode${podcasts.length>1?"s":""} in your library${
+                        processing > 0
+                          ? ` · ${processing} processing`
+                          : payments > 0
+                            ? ` · ${payments} awaiting payment`
+                            : done > 0
+                              ? ` · ${done} completed`
+                              : ""
+                      }`
                   : "Your workspace is ready — upload your first episode to begin."}
               </p>
             </div>
@@ -900,19 +946,19 @@ export default function DashboardPage() {
               gap: 16, marginBottom: 28,
             }}>
               <div className="stat-card">
-                <StatCard icon={Mic2}       label="Podcasts"   value={podcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
+                <StatCard icon={Mic2}       label="Podcasts"   value={analytics?.total_podcasts ?? podcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
               </div>
               <div className="stat-card">
-                <StatCard icon={Clock}      label="Total audio" value={totalDur ? fmtDur(totalDur) : "0m"} sub="processed audio"  accent="#3a9e88"  t={t} delay={.16}/>
+                <StatCard icon={Play}       label="Total clips" value={analytics?.total_clips ?? 0} sub="generated across the workspace"  accent="#3a9e88"  t={t} delay={.16}/>
               </div>
               <div className="stat-card">
-                <StatCard icon={Activity}   label="Processing"  value={processing}      sub="in the queue"           accent="#9e8a3a"  t={t} delay={.22}/>
+                <StatCard icon={TrendingUp} label="Publish rate" value={formatPercent(analytics?.publish_rate ?? 0)} sub="clips live for download" accent="#9e8a3a"  t={t} delay={.22}/>
               </div>
               <div className="stat-card">
-                <StatCard icon={CheckCircle2} label="Completed" value={done}            sub="ready to export"        accent="#8a5a9e"  t={t} delay={.28}/>
+                <StatCard icon={Activity}   label="Views"      value={analytics?.total_views ?? 0} sub="backend performance count" accent="#8a5a9e"  t={t} delay={.28}/>
               </div>
               <div className="stat-card">
-                <StatCard icon={Clock}      label="Payments"  value={payments}        sub="waiting to continue"   accent="#c98a2d"  t={t} delay={.34}/>
+                <StatCard icon={Download}   label="Downloads" value={analytics?.total_downloads ?? 0} sub="clip exports claimed" accent="#c98a2d"  t={t} delay={.34}/>
               </div>
             </div>
 
@@ -935,33 +981,54 @@ export default function DashboardPage() {
                 >
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom: 20 }}>
                     <div>
-                      <div style={{ fontSize: 10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:6 }}>Weekly Uploads</div>
-                      <div style={{ fontFamily:"'DM Serif Display',serif", fontSize: 26, fontStyle:"italic", color:t.accent, lineHeight:1 }}>+18%</div>
+                      <div style={{ fontSize: 10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:6 }}>Podcast reach</div>
+                      <div style={{ fontFamily:"'DM Serif Display',serif", fontSize: 26, fontStyle:"italic", color:t.accent, lineHeight:1 }}>
+                        {visibilityTotal || analytics?.total_clips || 0}
+                      </div>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                       <TrendingUp size={14} color={t.accentLt} strokeWidth={2}/>
-                      <span style={{ fontSize:11, fontWeight:600, color:t.accentLt }}>Growth</span>
+                      <span style={{ fontSize:11, fontWeight:600, color:t.accentLt }}>
+                        {leadingPodcast ? leadingPodcast.title : "Workspace"}
+                      </span>
                     </div>
                   </div>
-                  {/* Bar chart */}
                   <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:60, marginBottom:10 }}>
-                    {[20,38,28,52,32,68,45,80,42,66,55,88].map((h, i) => (
-                      <div key={i} className="bar" style={{
-                        flex:1, borderRadius: "3px 3px 0 0", height:`${h}%`,
-                        background: i===11
-                          ? `linear-gradient(180deg,${t.accent},${t.accentLt})`
-                          : dark?"rgba(90,158,58,.2)":"rgba(90,158,58,.16)",
-                        "--i":i,
-                      } as React.CSSProperties}/>
-                    ))}
+                    {comparisonPodcasts.length > 0 ? comparisonPodcasts.map((podcast, i) => {
+                      const metricValue = podcast.visibility || podcast.totalClips || 1;
+                      return (
+                        <div key={podcast.podcastId} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+                          <div className="bar" style={{
+                            width:"100%",
+                            borderRadius: "3px 3px 0 0",
+                            height:`${Math.max(16, Math.round((metricValue / comparisonMax) * 100))}%`,
+                            background: i===0
+                              ? `linear-gradient(180deg,${t.accent},${t.accentLt})`
+                              : dark?"rgba(90,158,58,.2)":"rgba(90,158,58,.16)",
+                            "--i":i,
+                          } as React.CSSProperties}/>
+                          <span style={{ fontSize:10, color:i===0 ? t.accent : t.textFaint }}>
+                            {podcast.title.slice(0, 6)}
+                          </span>
+                        </div>
+                      );
+                    }) : (
+                      <div style={{ color:t.textSub, fontSize:12, lineHeight:1.6 }}>
+                        Upload an episode to see podcast comparisons here.
+                      </div>
+                    )}
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <span style={{ fontSize:10, color:t.textFaint }}>12 wks ago</span>
-                    <span style={{ fontSize:11, fontWeight:600, color:t.accent }}>This week</span>
+                    <span style={{ fontSize:10, color:t.textFaint }}>
+                      {visibilityTotal > 0 ? "Views + downloads by podcast" : "Clip totals by podcast"}
+                    </span>
+                    <span style={{ fontSize:11, fontWeight:600, color:t.accent }}>
+                      {analytics?.estimated ? "Estimated fallback" : "Live backend metrics"}
+                    </span>
                   </div>
                 </div>
 
-                {/* Free trial card */}
+                {/* Performance summary */}
                 <div style={{
                   padding: "20px", borderRadius: 18,
                   border: `1px solid ${t.border}`,
@@ -979,34 +1046,53 @@ export default function DashboardPage() {
                       <Sparkles size={16} color="#8a5a9e" strokeWidth={1.8}/>
                     </div>
                     <div>
-                      <div style={{ fontSize:12, fontWeight:600, color:t.text }}>Free trial</div>
+                      <div style={{ fontSize:12, fontWeight:600, color:t.text }}>Performance summary</div>
                       <div style={{ fontSize:11, color:t.textSub }}>
-                        {profile?.free_trial_used ? "Already used" : "Available"}
+                        {leadingClip ? `Top clip ${leadingClip.clip_number} from ${leadingClip.podcast_title}` : "No clip ranking yet"}
                       </div>
                     </div>
                     <div style={{ marginLeft:"auto" }}>
                       <div style={{
                         padding:"3px 10px", borderRadius:100,
-                        background: profile?.free_trial_used ? "rgba(180,60,60,.12)" : "rgba(90,158,58,.12)",
-                        border: `1px solid ${profile?.free_trial_used ? "rgba(180,60,60,.25)" : "rgba(90,158,58,.25)"}`,
+                        background: leadingClip ? "rgba(90,158,58,.12)" : "rgba(180,60,60,.12)",
+                        border: `1px solid ${leadingClip ? "rgba(90,158,58,.25)" : "rgba(180,60,60,.25)"}`,
                         fontSize:10, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase",
-                        color: profile?.free_trial_used ? t.red : t.accent,
+                        color: leadingClip ? t.accent : t.red,
                       }}>
-                        {profile?.free_trial_used ? "Used" : "Active"}
+                        {leadingClip ? "Tracked" : "Waiting"}
                       </div>
                     </div>
                   </div>
-                  <div style={{
-                    height:4, borderRadius:2,
-                    background:dark?"rgba(90,158,58,.12)":"rgba(90,158,58,.1)",
-                    overflow:"hidden",
-                  }}>
-                    <div style={{
-                      height:"100%", borderRadius:2,
-                      width: profile?.free_trial_used ? "100%" : "40%",
-                      background:`linear-gradient(90deg,${t.accent},${t.accentLt})`,
-                      transition:"width .8s cubic-bezier(.22,1,.36,1)",
-                    }}/>
+                  <div style={{ display:"grid", gap:10 }}>
+                    <div style={{ fontSize:13, color:t.textSub, lineHeight:1.65 }}>
+                      {leadingClip
+                        ? `${leadingClip.views} views · ${leadingClip.downloads} downloads · ${leadingClip.published ? "published" : "private"}`
+                        : "Generate and publish clips to unlock comparative performance insight."}
+                    </div>
+                    <div style={{ display:"grid", gap:8 }}>
+                      {[
+                        `${done} episode${done === 1 ? "" : "s"} are ready for clips.`,
+                        `${processing} currently processing${payments ? ` · ${payments} waiting on payment` : ""}.`,
+                        analytics?.average_virality_score
+                          ? `Average virality score is ${analytics.average_virality_score.toFixed(1)} across tracked clips.`
+                          : "Virality averages will appear after clips are generated.",
+                      ].map((line) => (
+                        <div
+                          key={line}
+                          style={{
+                            padding:"10px 12px",
+                            borderRadius:12,
+                            border:`1px solid ${t.borderSub}`,
+                            background:dark?"rgba(90,158,58,.05)":"rgba(90,158,58,.04)",
+                            color:t.textSub,
+                            fontSize:12,
+                            lineHeight:1.6,
+                          }}
+                        >
+                          {line}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -1022,8 +1108,9 @@ export default function DashboardPage() {
                   </div>
                   {[
                     { icon:Plus,    label:"Upload episode",    sub:"Add new content",    href:"/upload" },
-                    { icon:Play,    label:"View clips",        sub:"AI moments",         href:"/clips" },
-                    { icon:Settings,label:"Account settings",  sub:"Profile & billing",  href:"/profile" },
+                    { icon:Library, label:"Browse podcasts",   sub:"Search your library", href:"/podcasts" },
+                    { icon:Play,    label:"View clips",        sub:"Open discovery flow", href:"/clips" },
+                    { icon:BarChart2,label:"View analytics",   sub:"Performance summary", href:"/analytics" },
                   ].map(({ icon:Icon, label, sub, href }) => (
                     <Link key={href} href={href} className="sidebar-link" style={{
                       display:"flex", alignItems:"center", justifyContent:"space-between",
@@ -1173,6 +1260,7 @@ export default function DashboardPage() {
                             analysis={analysisByPodcast[podcast.id]}
                             analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
                             onAnalyze={() => void runAnalysis(podcast.id)}
+                            generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
                           />
                         </div>
                       ))}

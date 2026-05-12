@@ -21,9 +21,11 @@ import { useAuth } from "@/context/AuthContext";
 import {
   analyzePodcast,
   getJson,
+  getPodcastAnalytics,
   getPodcastAnalysis,
   type AnalysisSummary,
   type Podcast,
+  type PodcastAnalyticsSummary,
   type PodcastsResponse,
 } from "@/lib/api";
 
@@ -85,6 +87,7 @@ export default function PodcastsPage() {
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
+  const [analyticsByPodcastId, setAnalyticsByPodcastId] = useState<Record<string, PodcastAnalyticsSummary>>({});
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "processing" | "payments" | "done">("all");
 
@@ -118,8 +121,16 @@ export default function PodcastsPage() {
           return;
         }
 
-        const podcastsResponse = await getJson<PodcastsResponse>("/podcasts", token);
+        const [podcastsResponse, analyticsResponse] = await Promise.all([
+          getJson<PodcastsResponse>("/podcasts", token),
+          getPodcastAnalytics(token).catch(() => null),
+        ]);
         setPodcasts(podcastsResponse.podcasts);
+        setAnalyticsByPodcastId(
+          Object.fromEntries(
+            (analyticsResponse?.podcasts ?? []).map((podcast) => [podcast.podcast_id, podcast]),
+          ) as Record<string, PodcastAnalyticsSummary>,
+        );
 
         const analysisEntries = await Promise.all(
           podcastsResponse.podcasts.map(async (podcast) => {
@@ -156,7 +167,24 @@ export default function PodcastsPage() {
   const filtered = useMemo(() => {
     return podcastsWithStatus.filter((podcast) => {
       const normalizedQuery = query.trim().toLowerCase();
-      const matchesQuery = !normalizedQuery || podcast.title.toLowerCase().includes(normalizedQuery);
+      const analysis = analysisByPodcast[podcast.id];
+      const searchFields = [
+        podcast.title,
+        podcast.status.replaceAll("_", " "),
+        getEffectivePodcastStatus(
+          podcast,
+          analysis,
+          Boolean(analysisLoadingByPodcast[podcast.id]),
+        ).replaceAll("_", " "),
+        fmtDur(podcast.duration || 0),
+        analysis?.total_scored_segments
+          ? `${analysis.total_scored_segments} scored segments ready for clips`
+          : "",
+        analysis?.highest_score ? `peak score ${analysis.highest_score.toFixed(1)}` : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || searchFields.includes(normalizedQuery);
       const matchesFilter =
         filter === "all"
           ? true
@@ -167,11 +195,12 @@ export default function PodcastsPage() {
               : ["done", "completed"].includes(podcast.status);
       return matchesQuery && matchesFilter;
     });
-  }, [filter, podcastsWithStatus, query]);
+  }, [analysisByPodcast, analysisLoadingByPodcast, filter, podcastsWithStatus, query]);
 
   const doneCount = podcastsWithStatus.filter((podcast) => ["done", "completed"].includes(podcast.status)).length;
   const processingCount = podcastsWithStatus.filter((podcast) => ["processing", "queued"].includes(podcast.status)).length;
   const totalDuration = podcasts.reduce((sum, podcast) => sum + (podcast.duration || 0), 0);
+  const hasActiveDiscoveryFilters = query.trim().length > 0 || filter !== "all";
   const strongestPodcast = [...podcastsWithStatus]
     .filter((podcast) => analysisByPodcast[podcast.id]?.highest_score)
     .sort(
@@ -458,13 +487,13 @@ export default function PodcastsPage() {
           <div style={{ borderRadius: 22, background: t.card, border: `1px solid ${t.border}`, padding: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, background: t.cardAlt, border: `1px solid ${t.borderSub}`, padding: "12px 14px" }}>
               <Search size={16} color={t.textSub} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search podcasts by title"
-                style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: t.text, fontSize: 14 }}
-              />
-            </div>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search by title, status, duration, or clip readiness"
+                  style={{ flex: 1, border: "none", outline: "none", background: "transparent", color: t.text, fontSize: 14 }}
+                />
+              </div>
           </div>
 
           <div style={{ borderRadius: 22, background: t.card, border: `1px solid ${t.border}`, padding: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -521,6 +550,33 @@ export default function PodcastsPage() {
             </div>
           </div>
 
+          {hasActiveDiscoveryFilters ? (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16, color: t.textSub, fontSize: 13 }}>
+              <span>
+                {filtered.length} match{filtered.length === 1 ? "" : "es"} for your current discovery view
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setFilter("all");
+                }}
+                className="pill-btn"
+                style={{
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "9px 13px",
+                  background: t.cardAlt,
+                  color: t.textSub,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Clear search
+              </button>
+            </div>
+          ) : null}
+
           {loading || authLoading ? (
             <div style={{ display: "flex", justifyContent: "center", padding: "64px 0", color: t.textSub }}>
               <Loader2 size={24} className="animate-spin" />
@@ -529,7 +585,33 @@ export default function PodcastsPage() {
             <div style={{ borderRadius: 22, border: `1px dashed ${t.border}`, padding: "54px 24px", textAlign: "center", color: t.textSub }}>
               <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
               <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text, margin: 0 }}>No podcasts match this view</h2>
-              <p style={{ marginTop: 10, lineHeight: 1.8 }}>Try another filter or upload a new episode to grow your library.</p>
+              <p style={{ marginTop: 10, lineHeight: 1.8 }}>
+                {hasActiveDiscoveryFilters
+                  ? "Try clearing the current search or changing the filter to surface more episodes."
+                  : "Upload a new episode to grow your library."}
+              </p>
+              {hasActiveDiscoveryFilters ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    setFilter("all");
+                  }}
+                  className="pill-btn"
+                  style={{
+                    marginTop: 18,
+                    border: "none",
+                    borderRadius: 999,
+                    padding: "11px 16px",
+                    background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                    color: "#fff",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  Reset discovery
+                </button>
+              ) : null}
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
@@ -540,6 +622,7 @@ export default function PodcastsPage() {
                   analysis={analysisByPodcast[podcast.id]}
                   analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
                   onAnalyze={() => void runAnalysis(podcast.id)}
+                  generatedClipsCount={analyticsByPodcastId[podcast.id]?.total_clips ?? 0}
                 />
               ))}
             </div>

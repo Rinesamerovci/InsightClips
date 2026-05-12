@@ -6,14 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BarChart2,
-  Download,
-  Eye,
   Loader2,
   Moon,
   Sparkles,
   SunMedium,
-  TrendingDown,
-  TrendingUp,
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +20,11 @@ import {
   type PodcastClipMetrics,
   type PodcastsResponse,
 } from "@/lib/api";
+import {
+  AnalyticsMetricsDisplay,
+  buildAnalyticsSnapshot,
+  formatAnalyticsChange,
+} from "@/lib/analytics-presentation";
 
 const T = {
   dark: {
@@ -64,11 +65,6 @@ const T = {
   },
 };
 
-function formatChange(value: number): string {
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${value.toFixed(1)}%`;
-}
-
 function AnalyticsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -89,11 +85,9 @@ function AnalyticsPageContent() {
   const selectedPodcast =
     podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
 
-  const topClip = metrics?.top_clips[0] ?? null;
-  const totalVisibility = useMemo(
-    () => (metrics ? metrics.total_views + metrics.total_downloads : 0),
-    [metrics],
-  );
+  const analyticsSnapshot = useMemo(() => buildAnalyticsSnapshot(metrics), [metrics]);
+  const topClip = analyticsSnapshot.topClip;
+  const publishRate = analyticsSnapshot.publishRate;
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("insightclips-theme");
@@ -403,7 +397,7 @@ function AnalyticsPageContent() {
                 { label: "Podcasts", value: podcasts.length, sub: "available in analytics" },
                 { label: "Top Views", value: topClip?.views ?? 0, sub: "best clip reach" },
                 { label: "Downloads", value: metrics?.total_downloads ?? 0, sub: "selected podcast total" },
-                { label: "Trend", value: formatChange(metrics?.average_click_trend ?? 0), sub: "average click change" },
+                { label: "Trend", value: formatAnalyticsChange(metrics?.average_click_trend ?? 0), sub: "average click change" },
               ].map((item) => (
                 <div key={item.label}>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 4 }}>
@@ -520,6 +514,7 @@ function AnalyticsPageContent() {
                 {[
                   `${metrics?.published_clips ?? 0} published clip${metrics?.published_clips === 1 ? "" : "s"} are currently active.`,
                   `${metrics?.unpublished_clips ?? 0} clip${metrics?.unpublished_clips === 1 ? "" : "s"} are still private.`,
+                  `${publishRate}% of this podcast's clips are currently published.`,
                   topClip
                     ? `Clip ${topClip.clip_number} is the current leader for ${selectedPodcast?.title ?? "this podcast"}.`
                     : "Generate and publish clips to populate ranking insights.",
@@ -582,207 +577,23 @@ function AnalyticsPageContent() {
                 ) : null}
               </div>
 
-              {loadingMetrics ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub, padding: "32px 0" }}>
-                  <Loader2 size={20} className="animate-spin" />
-                  Loading clip metrics...
-                </div>
-              ) : !metrics ? (
-                <div style={{ color: t.textSub, lineHeight: 1.8 }}>
-                  No metrics yet for this podcast. Generate clips first to populate analytics.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4, 1fr)", gap: 14 }}>
-                  {[
-                    { label: "Views", value: metrics.total_views, icon: Eye },
-                    { label: "Downloads", value: metrics.total_downloads, icon: Download },
-                    { label: "Published", value: metrics.published_clips, icon: Sparkles },
-                    {
-                      label: "Click Trend",
-                      value: formatChange(metrics.average_click_trend),
-                      icon: metrics.average_click_trend >= 0 ? TrendingUp : TrendingDown,
-                    },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="lift-card"
-                      style={{
-                        borderRadius: 18,
-                        border: `1px solid ${t.borderSub}`,
-                        background: t.cardAlt,
-                        padding: 16,
-                      }}
-                    >
-                      <item.icon size={18} color={t.accent} />
-                      <div style={{ marginTop: 14, fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint }}>
-                        {item.label}
-                      </div>
-                      <div style={{ marginTop: 6, fontFamily: "'DM Serif Display', serif", fontSize: 30, fontStyle: "italic" }}>
-                        {item.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                gap: 18,
-              }}
-            >
-              <div
-                className="lift-card"
-                style={{
-                  borderRadius: 24,
-                  background: t.card,
-                  border: `1px solid ${t.border}`,
-                  padding: 20,
+              <AnalyticsMetricsDisplay
+                isMobile={isMobile}
+                loadingMetrics={loadingMetrics}
+                metrics={metrics}
+                theme={{
+                  card: t.card,
+                  cardAlt: t.cardAlt,
+                  border: t.border,
+                  borderSub: t.borderSub,
+                  text: t.text,
+                  textSub: t.textSub,
+                  textFaint: t.textFaint,
+                  accent: t.accent,
+                  chip: t.chip,
+                  errorText: t.errorText,
                 }}
-              >
-                <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
-                  Reach Snapshot
-                </div>
-                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.04, marginBottom: 8 }}>
-                  {totalVisibility}
-                </div>
-                <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                  Combined views and downloads across the selected podcast&apos;s top clip set.
-                </div>
-              </div>
-
-              <div
-                className="lift-card"
-                style={{
-                  borderRadius: 24,
-                  background: t.card,
-                  border: `1px solid ${t.border}`,
-                  padding: 20,
-                }}
-              >
-                <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
-                  Leading Clip
-                </div>
-                {topClip ? (
-                  <>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, lineHeight: 1.04 }}>
-                      Clip {topClip.clip_number}
-                    </div>
-                    <div style={{ marginTop: 8, color: t.textSub, lineHeight: 1.75 }}>
-                      {topClip.title}
-                    </div>
-                    <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ borderRadius: 999, padding: "7px 10px", background: t.chip, color: t.accent, fontWeight: 700 }}>
-                        {topClip.views} views
-                      </span>
-                      <span style={{ borderRadius: 999, padding: "7px 10px", background: t.cardAlt, border: `1px solid ${t.borderSub}`, color: t.textSub, fontWeight: 700 }}>
-                        {topClip.downloads} downloads
-                      </span>
-                      <span style={{ borderRadius: 999, padding: "7px 10px", background: t.cardAlt, border: `1px solid ${t.borderSub}`, color: t.textSub, fontWeight: 700 }}>
-                        {formatChange(topClip.click_trend)}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                    Once metrics are available, the strongest clip will surface here automatically.
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section
-              style={{
-                borderRadius: 24,
-                background: t.card,
-                border: `1px solid ${t.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-                <div>
-                  <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                    Top Clips Table
-                  </div>
-                  <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 30, lineHeight: 1.05 }}>
-                    Views, downloads, and click trends
-                  </h3>
-                </div>
-                {metrics?.estimated ? (
-                  <div
-                    style={{
-                      borderRadius: 999,
-                      padding: "10px 14px",
-                      background: t.cardAlt,
-                      border: `1px solid ${t.borderSub}`,
-                      color: t.textSub,
-                      fontSize: 13,
-                      fontWeight: 600,
-                    }}
-                  >
-                    Estimated metrics
-                  </div>
-                ) : null}
-              </div>
-
-              {loadingMetrics ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub, padding: "20px 0" }}>
-                  <Loader2 size={18} className="animate-spin" />
-                  Building the ranking table...
-                </div>
-              ) : !metrics || metrics.top_clips.length === 0 ? (
-                <div style={{ color: t.textSub, lineHeight: 1.8 }}>
-                  No top clips available yet for this podcast.
-                </div>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-                    <thead>
-                      <tr style={{ textAlign: "left", color: t.textFaint, fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase" }}>
-                        <th style={{ padding: "0 0 12px" }}>Clip</th>
-                        <th style={{ padding: "0 0 12px" }}>Views</th>
-                        <th style={{ padding: "0 0 12px" }}>Downloads</th>
-                        <th style={{ padding: "0 0 12px" }}>Click Trend</th>
-                        <th style={{ padding: "0 0 12px" }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metrics.top_clips.map((clip) => (
-                        <tr key={clip.clip_id} style={{ borderTop: `1px solid ${t.borderSub}` }}>
-                          <td style={{ padding: "14px 0", verticalAlign: "top" }}>
-                            <div style={{ fontWeight: 700 }}>Clip {clip.clip_number}</div>
-                            <div style={{ marginTop: 4, color: t.textSub, lineHeight: 1.65 }}>
-                              {clip.title}
-                            </div>
-                          </td>
-                          <td style={{ padding: "14px 0", fontWeight: 700 }}>{clip.views}</td>
-                          <td style={{ padding: "14px 0", fontWeight: 700 }}>{clip.downloads}</td>
-                          <td style={{ padding: "14px 0", fontWeight: 700, color: clip.click_trend >= 0 ? t.accent : t.errorText }}>
-                            {formatChange(clip.click_trend)}
-                          </td>
-                          <td style={{ padding: "14px 0" }}>
-                            <span
-                              style={{
-                                borderRadius: 999,
-                                padding: "7px 10px",
-                                background: clip.published ? t.chip : t.cardAlt,
-                                border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
-                                color: clip.published ? t.accent : t.textSub,
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              {clip.published ? "Published" : "Private"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              />
             </section>
           </main>
         </div>

@@ -154,6 +154,56 @@ class AudioEnhancementSettings(BaseModel):
         return self
 
 
+class GenerationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_duration_seconds: int = Field(default=30, ge=8, le=90)
+    number_of_clips: int = Field(default=5, ge=1, le=10)
+    topic_focus: str | None = Field(default=None, max_length=120)
+    subtitles_enabled: bool = True
+
+    @field_validator("topic_focus")
+    @classmethod
+    def normalize_topic_focus(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9\s,.'\-#/&]+", cleaned):
+            raise ValueError("topic_focus can only contain letters, numbers, spaces, and simple punctuation.")
+        return cleaned
+
+
+class GenerationSettingsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_duration_seconds: int | None = Field(default=None, ge=8, le=90)
+    number_of_clips: int | None = Field(default=None, ge=1, le=10)
+    topic_focus: str | None = Field(default=None, max_length=120)
+    subtitles_enabled: bool | None = None
+
+    @field_validator("topic_focus")
+    @classmethod
+    def normalize_topic_focus(cls, value: str | None) -> str | None:
+        return GenerationSettings.normalize_topic_focus(value)
+
+    def resolve(self, base: GenerationSettings | None = None) -> GenerationSettings:
+        resolved_base = base or GenerationSettings()
+        return resolved_base.model_copy(
+            update={
+                key: value
+                for key, value in {
+                    "clip_duration_seconds": self.clip_duration_seconds,
+                    "number_of_clips": self.number_of_clips,
+                    "topic_focus": self.topic_focus,
+                    "subtitles_enabled": self.subtitles_enabled,
+                }.items()
+                if value is not None
+            }
+        )
+
+
 class ExportSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -165,6 +215,7 @@ class ExportSettings(BaseModel):
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
     audio_enhancement: AudioEnhancementSettings = Field(default_factory=AudioEnhancementSettings)
+    generation_settings: GenerationSettings = Field(default_factory=GenerationSettings)
 
     @model_validator(mode="after")
     def validate_export_preferences(self) -> "ExportSettings":
@@ -200,6 +251,7 @@ class ExportSettingsInput(BaseModel):
     face_tracking_enabled: bool = False
     subtitle_style: SubtitleStyle | None = None
     audio_enhancement: AudioEnhancementSettings | None = None
+    generation_settings: GenerationSettingsInput | None = None
 
     @model_validator(mode="after")
     def validate_request_preferences(self) -> "ExportSettingsInput":
@@ -235,4 +287,9 @@ class ExportSettingsInput(BaseModel):
             face_tracking_enabled=self.face_tracking_enabled,
             subtitle_style=self.subtitle_style or SubtitleStyle(),
             audio_enhancement=self.audio_enhancement or AudioEnhancementSettings(),
+            generation_settings=(
+                self.generation_settings.resolve()
+                if self.generation_settings is not None
+                else GenerationSettings()
+            ),
         )

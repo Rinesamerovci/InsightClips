@@ -15,7 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.dependencies.auth import AuthenticatedUser  # noqa: E402
 from app.models.analysis import AnalysisResult, AnalyzePodcastRequest, ScoreSegment  # noqa: E402
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest  # noqa: E402
-from app.models.export_settings import ExportSettings  # noqa: E402
+from app.models.export_settings import ExportSettings, GenerationSettings  # noqa: E402
 from app.models.transcription import TranscriptionResult, TranscriptWord  # noqa: E402
 from app.routers.podcasts import (  # noqa: E402
     analyze_podcast,
@@ -47,6 +47,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         )
 
     @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.analyze_and_score")
@@ -59,8 +60,10 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         analyze_and_score_mock,
         build_analysis_result_mock,
         persist_analysis_result_mock,
+        get_user_export_settings_mock,
         generate_clips_mock,
     ) -> None:
+        get_user_export_settings_mock.return_value = None
         analyze_and_score_mock.return_value = [
             ScoreSegment(
                 segment_start_seconds=0.0,
@@ -118,10 +121,12 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         generate_clips_mock.assert_called_once()
         self.assertEqual(generate_clips_mock.call_args.args[3].resolve().export_mode, "portrait")
+        self.assertEqual(generate_clips_mock.call_args.args[4].number_of_clips, 5)
         analyze_and_score_mock.assert_not_called()
         persist_analysis_result_mock.assert_not_called()
 
     @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
@@ -136,8 +141,10 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         transcribe_podcast_mock,
         build_analysis_result_mock,
         persist_analysis_result_mock,
+        get_user_export_settings_mock,
         generate_clips_mock,
     ) -> None:
+        get_user_export_settings_mock.return_value = None
         get_scored_segments_mock.return_value = [
             ScoreSegment(
                 segment_start_seconds=5.0,
@@ -179,6 +186,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         persist_analysis_result_mock.assert_not_called()
 
     @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.analyze_and_score")
@@ -195,8 +203,10 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         analyze_and_score_mock,
         build_analysis_result_mock,
         persist_analysis_result_mock,
+        get_user_export_settings_mock,
         generate_clips_mock,
     ) -> None:
+        get_user_export_settings_mock.return_value = None
         get_scored_segments_mock.return_value = [
             ScoreSegment(
                 segment_start_seconds=0.0,
@@ -249,6 +259,92 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         analyze_and_score_mock.assert_called_once_with("podcast-123", self.payload.transcription)
         build_analysis_result_mock.assert_called_once()
         persist_analysis_result_mock.assert_called_once()
+
+    @patch("app.routers.podcasts.update_user_export_settings")
+    @patch("app.routers.podcasts.get_user_export_settings")
+    @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.get_scored_segments_for_podcast")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_generate_podcast_clips_reuses_and_saves_generation_settings(
+        self,
+        podcast_belongs_mock,
+        update_status_mock,
+        get_scored_segments_mock,
+        generate_clips_mock,
+        get_user_export_settings_mock,
+        update_user_export_settings_mock,
+    ) -> None:
+        preferred_export_settings = ExportSettings(
+            generation_settings=GenerationSettings(
+                clip_duration_seconds=45,
+                number_of_clips=4,
+                topic_focus="ai",
+                subtitles_enabled=False,
+            )
+        )
+        get_user_export_settings_mock.return_value = type(
+            "SettingsResponse",
+            (),
+            {
+                "user_id": "user-123",
+                "export_settings": preferred_export_settings,
+            },
+        )()
+        get_scored_segments_mock.return_value = [
+            ScoreSegment(
+                segment_start_seconds=5.0,
+                segment_end_seconds=35.0,
+                duration_seconds=30.0,
+                virality_score=88.0,
+                transcript_snippet="AI launch segment",
+                sentiment="positive",
+                keywords=["ai"],
+            )
+        ]
+        generate_clips_mock.return_value = [
+            ClipResult(
+                id="clip-1",
+                clip_number=1,
+                clip_start_seconds=5.0,
+                clip_end_seconds=35.0,
+                duration_seconds=30.0,
+                virality_score=88.0,
+                video_url="https://example.com/clip-1.mp4",
+                subtitle_text="",
+                status="ready",
+                generation_settings=GenerationSettings(
+                    clip_duration_seconds=30,
+                    number_of_clips=2,
+                    topic_focus="product launch",
+                    subtitles_enabled=False,
+                ),
+            )
+        ]
+
+        result = asyncio.run(
+            generate_podcast_clips(
+                "podcast-123",
+                GenerateClipsRequest(
+                    use_preferred_generation_settings=True,
+                    save_generation_settings=True,
+                    number_of_clips=2,
+                    clip_duration_seconds=30,
+                    topic_focus="product launch",
+                ),
+                self.user,
+            )
+        )
+
+        self.assertEqual(result.generation_settings.number_of_clips, 2)
+        self.assertEqual(result.generation_settings.clip_duration_seconds, 30)
+        self.assertEqual(result.generation_settings.topic_focus, "product launch")
+        self.assertFalse(result.generation_settings.subtitles_enabled)
+        get_scored_segments_mock.assert_called_once_with("podcast-123", limit=2)
+        generate_clips_mock.assert_called_once()
+        self.assertEqual(generate_clips_mock.call_args.args[4].topic_focus, "product launch")
+        update_user_export_settings_mock.assert_called_once()
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
 
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")

@@ -43,6 +43,7 @@ from app.services.publishing_service import (
 )
 from app.services.recommendation_service import RecommendationServiceError, recommend_clips
 from app.services.profile_service import get_profile_for_analytics
+from app.services.profile_service import get_user_export_settings, update_user_export_settings
 from app.services.podcast_service import (
     get_podcasts_for_user,
     get_user_podcast_analytics,
@@ -211,11 +212,40 @@ async def generate_podcast_clips(
             detail="Podcast not found for the current user.",
         )
 
+    preferred_export_settings = (
+        get_user_export_settings(current_user.id)
+        if payload.use_preferred_generation_settings or payload.save_generation_settings
+        else None
+    )
+    if payload.save_generation_settings and preferred_export_settings is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found for the current user.",
+        )
+    preferred_generation_settings = (
+        preferred_export_settings.export_settings.generation_settings
+        if payload.use_preferred_generation_settings and preferred_export_settings is not None
+        else None
+    )
+    generation_settings = payload.resolve_generation_settings(preferred_generation_settings)
+    if payload.save_generation_settings and preferred_export_settings is not None:
+        update_user_export_settings(
+            current_user.id,
+            preferred_export_settings.export_settings.model_copy(
+                update={"generation_settings": generation_settings},
+                deep=True,
+            ),
+        )
+
     started_at = time.perf_counter()
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
 
     try:
-        score_segments = payload.score_segments or get_scored_segments_for_podcast(podcast_id, limit=5)
+
+        score_segments = payload.score_segments or get_scored_segments_for_podcast(
+            podcast_id,
+            limit=generation_settings.number_of_clips,
+        )
         transcription = payload.transcription
         refreshed_scores = False
 
@@ -246,6 +276,7 @@ async def generate_podcast_clips(
             score_segments,
             transcription,
             payload.export_settings,
+            generation_settings,
         )
     except (AnalysisError, ClippingError) as exc:
         update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")
@@ -257,6 +288,7 @@ async def generate_podcast_clips(
         clips,
         processing_time_seconds=round(time.perf_counter() - started_at, 3),
         export_settings=clips[0].export_settings if clips else None,
+        generation_settings=generation_settings,
     )
 
 

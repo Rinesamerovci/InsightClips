@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   buildAuthenticatedBackendUrl,
+  generateClips,
   getClipMetrics,
   getPodcastAnalytics,
   getUserExportSettings,
@@ -55,6 +56,8 @@ export async function runApiTests(): Promise<void> {
   await testGetUserExportSettingsUsesProtectedEndpoint();
   await testUpdateUserExportSettingsPersistsPreferences();
   await testPrepareUploadPostsExportSettings();
+  await testGenerateClipsPostsGenerationSettingsPayload();
+  await testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFields();
   await testGetPodcastAnalyticsUsesBackendRoute();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
@@ -476,6 +479,193 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
           },
         },
       }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testGenerateClipsPostsGenerationSettingsPayload(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/pod-77/generate-clips")) {
+      return jsonResponse({
+        podcast_id: "pod-77",
+        total_clips_generated: 2,
+        processing_time_seconds: 1.2,
+        download_folder_url: "/podcasts/pod-77/clips",
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "DM Sans",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
+        },
+        clips: [],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await generateClips(
+      "pod-77",
+      {
+        generation_settings: {
+          clip_duration_seconds: 30,
+          number_of_clips: 4,
+          topic_focus: "Prioritize strong opening hooks.",
+          subtitles_enabled: true,
+        },
+        save_generation_settings: true,
+        use_preferred_generation_settings: true,
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "DM Sans",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
+        },
+      },
+      "token-123",
+    );
+
+    assert.equal(result.podcast_id, "pod-77");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.deepEqual(
+      JSON.parse(String(calls[0]?.init?.body)),
+      {
+        generation_settings: {
+          clip_duration_seconds: 30,
+          number_of_clips: 4,
+          topic_focus: "Prioritize strong opening hooks.",
+          subtitles_enabled: true,
+        },
+        save_generation_settings: true,
+        use_preferred_generation_settings: true,
+        export_settings: {
+          export_mode: "portrait",
+          crop_mode: "smart_crop",
+          mobile_optimized: true,
+          face_tracking_enabled: true,
+          subtitle_style: {
+            preset: "bold",
+            font_family: "DM Sans",
+            font_size: 26,
+            primary_color: "#F8FAFC",
+            outline_color: "#000000",
+            background_color: "#000000",
+            background_opacity: 0.25,
+            position: "center",
+            bold: true,
+            italic: false,
+          },
+        },
+      },
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFields(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url, init) => {
+    if (!url.endsWith("/podcasts/pod-legacy/generate-clips")) {
+      throw new Error(`Unexpected URL ${url}`);
+    }
+
+    if (String(init?.body).includes("generation_settings")) {
+      return jsonResponse({ detail: "Request failed." }, 422);
+    }
+
+    return jsonResponse({
+      podcast_id: "pod-legacy",
+      total_clips_generated: 1,
+      processing_time_seconds: 0.9,
+      download_folder_url: "/podcasts/pod-legacy/clips",
+      clips: [],
+      export_settings: JSON.parse(String(init?.body)).export_settings,
+    });
+  });
+
+  try {
+    const result = await generateClips(
+      "pod-legacy",
+      {
+        generation_settings: {
+          clip_duration_seconds: 45,
+          number_of_clips: 3,
+          topic_focus: "Keep setup and payoff together.",
+          subtitles_enabled: false,
+        },
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
+          subtitle_style: {
+            preset: "minimal",
+            font_family: "Trebuchet MS",
+            font_size: 18,
+            primary_color: "#F8FAFC",
+            outline_color: "#222222",
+            background_color: "#000000",
+            background_opacity: 0,
+            position: "top",
+            bold: false,
+            italic: false,
+          },
+        },
+      },
+      "token-123",
+    );
+
+    assert.equal(result.podcast_id, "pod-legacy");
+    assert.equal(calls.length, 3);
+    assert.deepEqual(
+      JSON.parse(String(calls[2]?.init?.body)),
+      {
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
+          subtitle_style: {
+            preset: "minimal",
+            font_family: "Trebuchet MS",
+            font_size: 18,
+            primary_color: "#F8FAFC",
+            outline_color: "#222222",
+            background_color: "#000000",
+            background_opacity: 0,
+            position: "top",
+            bold: false,
+            italic: false,
+          },
+        },
+      },
     );
   } finally {
     restore();

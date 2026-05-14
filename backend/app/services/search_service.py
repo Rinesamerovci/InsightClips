@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
+from app.models.clip_insights import RankingFactor
 from app.models.overlay import OverlayDecision
 from app.models.search import ClipSearchHit, ClipSearchResult
 import app.services.overlay_mapping_service as overlay_mapping_service_module
@@ -20,6 +21,13 @@ STOPWORDS = {
     "it", "its", "of", "on", "or", "that", "the", "their", "them", "this", "to", "was", "we",
     "with", "you", "your",
 }
+HOOK_TERMS = {
+    "audit", "before", "biggest", "boost", "build", "change", "convert", "conversion", "conversions",
+    "fix", "faster", "framework", "growth", "hook", "hooks", "how", "improve", "lesson", "lessons",
+    "mistake", "mistakes", "pricing", "repeatable", "retention", "secret", "steps", "system", "trust",
+    "why", "wins",
+}
+SECOND_PERSON_TERMS = {"you", "your", "yours"}
 
 
 class SearchServiceError(Exception):
@@ -61,6 +69,13 @@ class SearchFilters:
     max_score: float | None = None
 
 
+@dataclass(frozen=True)
+class ClipInsightEvaluation:
+    score: float
+    summary: str
+    factors: tuple[RankingFactor, ...]
+
+
 def search_clips(
     podcast_id: str,
     query: str,
@@ -76,13 +91,19 @@ def search_clips(
         if not _matches_filters(context, normalized_filters):
             continue
 
+        insight = build_clip_insight(context)
         if normalized_query:
-            search_score, matched_fields = _score_context(context, normalized_query)
+            search_score, matched_fields, ranking_factors = _score_context(
+                context,
+                normalized_query,
+                insight,
+            )
             if search_score <= 0:
                 continue
         else:
-            search_score = round(context.virality_score, 2)
+            search_score = round(insight.score, 2)
             matched_fields = []
+            ranking_factors = list(insight.factors[:4])
 
         hits.append(
             ClipSearchHit(
@@ -103,14 +124,29 @@ def search_clips(
                 download_url=context.download_url,
                 published_at=context.published_at,
                 overlay=context.overlay,
+                insight_score=insight.score,
+                insight_summary=insight.summary,
+                ranking_factors=ranking_factors,
                 search_score=search_score,
                 matched_fields=matched_fields,
                 match_reason=_resolve_match_reason(matched_fields),
             )
         )
 
-    hits.sort(key=lambda item: (-item.search_score, -item.virality_score, item.clip_number))
-    return ClipSearchResult(query=cleaned_query, total_results=len(hits), clips=hits)
+    hits.sort(
+        key=lambda item: (
+            -item.search_score,
+            -(item.insight_score or 0.0),
+            -item.virality_score,
+            item.clip_number,
+            item.id,
+        )
+    )
+    ranked_hits = [
+        item.model_copy(update={"rank_position": index + 1})
+        for index, item in enumerate(hits)
+    ]
+    return ClipSearchResult(query=cleaned_query, total_results=len(ranked_hits), clips=ranked_hits)
 
 
 def load_discovery_context(podcast_id: str) -> list[ClipDiscoveryContext]:
@@ -160,6 +196,94 @@ def load_discovery_context(podcast_id: str) -> list[ClipDiscoveryContext]:
 
 def tokenize_text(value: str) -> list[str]:
     return re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", value.lower())
+
+
+def build_clip_insight(context: ClipDiscoveryContext) -> ClipInsightEvaluation:
+    informative_tokens = _informative_tokens(context.transcript_text)
+    unique_tokens = set(informative_tokens)
+    keyword_count = len(context.keywords)
+    duration_fit = _duration_fit(context.duration_seconds)
+    hook_strength = _hook_strength(context.title, context.transcript_text)
+    transcript_depth = min(len(unique_tokens), 18) / 18 if unique_tokens else 0.0
+    keyword_strength = min(keyword_count, 6) / 6 if keyword_count else 0.0
+    readiness_strength = _readiness_strength(context)
+    metadata_strength = _metadata_strength(context)
+
+    virality_component = context.virality_score * 0.5
+    duration_component = duration_fit * 14.0
+    hook_component = hook_strength * 13.0
+    transcript_component = transcript_depth * 10.0
+    keyword_component = keyword_strength * 7.0
+    readiness_component = readiness_strength * 4.0
+    metadata_component = metadata_strength * 2.0
+
+    score = min(
+        100.0,
+        round(
+            virality_component
+            + duration_component
+            + hook_component
+            + transcript_component
+            + keyword_component
+            + readiness_component
+            + metadata_component,
+            2,
+        ),
+    )
+    factors = _select_top_factors(
+        [
+            _build_factor(
+                "Virality signal",
+                f"{context.virality_score:.1f}/100",
+                round((context.virality_score - 50.0) / 4.0, 2),
+                "performance",
+                evidence="Baseline model score for this clip.",
+            ),
+            _build_factor(
+                "Duration fit",
+                f"{context.duration_seconds:.1f}s",
+                _duration_impact(context.duration_seconds),
+                "metadata",
+                evidence=_duration_evidence(context.duration_seconds),
+            ),
+            _build_factor(
+                "Transcript hook",
+                _hook_value_summary(context.title, context.transcript_text),
+                round((hook_strength * 10.0) - 1.0, 2),
+                "transcript",
+                evidence="Looks for numbers, direct-address phrasing, and high-signal hook terms.",
+            ),
+            _build_factor(
+                "Transcript depth",
+                f"{len(unique_tokens)} informative terms",
+                round((transcript_depth * 6.0) - 1.0, 2),
+                "transcript",
+                evidence="Measures whether the clip carries enough distinct ideas to feel substantial.",
+            ),
+            _build_factor(
+                "Keyword coverage",
+                f"{keyword_count} keyword{'s' if keyword_count != 1 else ''}",
+                round((keyword_strength * 5.0) - 0.5, 2),
+                "metadata",
+                evidence="Keyword variety improves searchability and recommendation explanations.",
+            ),
+            _build_factor(
+                "Publish readiness",
+                _readiness_label(context),
+                _readiness_impact(context),
+                "metadata",
+                evidence="Ready unpublished clips get the most upside for next-action ranking.",
+            ),
+            _build_factor(
+                "Metadata proof",
+                _metadata_label(context),
+                round(metadata_strength * 3.0, 2),
+                "metadata",
+                evidence="Published/download/overlay metadata adds confidence to surfaced results.",
+            ),
+        ]
+    )
+    return ClipInsightEvaluation(score=score, summary=_build_insight_summary(context, duration_fit, hook_strength), factors=tuple(factors))
 
 
 def _load_score_rows(podcast_id: str) -> list[dict[str, Any]]:
@@ -263,54 +387,91 @@ def _matches_filters(context: ClipDiscoveryContext, filters: SearchFilters) -> b
     return True
 
 
-def _score_context(context: ClipDiscoveryContext, normalized_query: str) -> tuple[float, list[str]]:
+def _score_context(
+    context: ClipDiscoveryContext,
+    normalized_query: str,
+    insight: ClipInsightEvaluation,
+) -> tuple[float, list[str], list[RankingFactor]]:
     matched_fields: list[str] = []
     score = 0.0
     query_tokens = tokenize_text(normalized_query)
     if not query_tokens:
-        return 0.0, matched_fields
+        return 0.0, matched_fields, []
 
-    title_tokens = set(tokenize_text(context.title))
-    transcript_tokens = tokenize_text(context.transcript_text)
-    transcript_token_set = set(transcript_tokens)
-    keyword_tokens = {token for keyword in context.keywords for token in tokenize_text(keyword)}
-    podcast_tokens = set(tokenize_text(context.podcast_title))
-    clip_number_text = f"clip {context.clip_number}"
-
-    def add_match(field: str, amount: float) -> None:
-        nonlocal score
-        score += amount
-        if field not in matched_fields:
-            matched_fields.append(field)
-
-    if normalized_query in context.title.lower():
-        add_match("title", 44.0)
-    if normalized_query in context.transcript_text.lower():
-        add_match("transcript", 30.0)
-    if any(normalized_query in keyword for keyword in context.keywords):
-        add_match("keywords", 38.0)
-    if normalized_query in context.podcast_title.lower():
-        add_match("podcast_title", 16.0)
-    if normalized_query in clip_number_text:
-        add_match("clip_number", 12.0)
-
-    for token in query_tokens:
-        if token in title_tokens:
-            add_match("title", 12.0)
-        if token in transcript_token_set:
-            add_match("transcript", 8.0)
-        if token in keyword_tokens:
-            add_match("keywords", 10.0)
-        if token in podcast_tokens:
-            add_match("podcast_title", 4.0)
-        if token.isdigit() and int(token) == context.clip_number:
-            add_match("clip_number", 6.0)
+    query_factors: list[RankingFactor] = []
+    score += _add_field_match(
+        matched_fields,
+        query_factors,
+        field="title",
+        label="Title match",
+        text=context.title,
+        normalized_query=normalized_query,
+        query_tokens=query_tokens,
+        exact_points=44.0,
+        token_points=12.0,
+    )
+    score += _add_field_match(
+        matched_fields,
+        query_factors,
+        field="keywords",
+        label="Keyword match",
+        text=" ".join(context.keywords),
+        normalized_query=normalized_query,
+        query_tokens=query_tokens,
+        exact_points=38.0,
+        token_points=10.0,
+    )
+    score += _add_field_match(
+        matched_fields,
+        query_factors,
+        field="transcript",
+        label="Transcript match",
+        text=context.transcript_text,
+        normalized_query=normalized_query,
+        query_tokens=query_tokens,
+        exact_points=30.0,
+        token_points=8.0,
+    )
+    score += _add_field_match(
+        matched_fields,
+        query_factors,
+        field="podcast_title",
+        label="Podcast title match",
+        text=context.podcast_title,
+        normalized_query=normalized_query,
+        query_tokens=query_tokens,
+        exact_points=16.0,
+        token_points=4.0,
+    )
+    score += _add_field_match(
+        matched_fields,
+        query_factors,
+        field="clip_number",
+        label="Clip number match",
+        text=f"clip {context.clip_number}",
+        normalized_query=normalized_query,
+        query_tokens=query_tokens,
+        exact_points=12.0,
+        token_points=6.0,
+    )
 
     if not matched_fields:
-        return 0.0, []
+        return 0.0, [], []
 
-    score += round(context.virality_score * 0.12, 2)
-    return round(score, 2), matched_fields
+    coverage_ratio = _query_coverage_ratio(context, query_tokens)
+    query_factors.append(
+        _build_factor(
+            "Query coverage",
+            f"{round(coverage_ratio * 100)}%",
+            round((coverage_ratio * 10.0) - 1.0, 2),
+            "search",
+            evidence="How much of the query vocabulary appears across title, transcript, keywords, and metadata.",
+        )
+    )
+    score += coverage_ratio * 18.0
+    score += round(insight.score * 0.12, 2)
+    ranking_factors = _merge_ranking_factors(query_factors, list(insight.factors), limit=5)
+    return round(score, 2), matched_fields, ranking_factors
 
 
 def _resolve_match_reason(matched_fields: list[str]) -> str | None:
@@ -358,6 +519,254 @@ def _dedupe_strings(items: list[str]) -> list[str]:
 
 def _ranges_overlap(start_a: float, end_a: float, start_b: float, end_b: float) -> bool:
     return max(start_a, start_b) <= min(end_a, end_b)
+
+
+def _informative_tokens(text: str) -> list[str]:
+    return [token for token in tokenize_text(text) if len(token) > 2 and token not in STOPWORDS]
+
+
+def _duration_fit(duration_seconds: float) -> float:
+    if 18.0 <= duration_seconds <= 42.0:
+        return 1.0
+    if 12.0 <= duration_seconds < 18.0 or 42.0 < duration_seconds <= 55.0:
+        return 0.72
+    if 8.0 <= duration_seconds < 12.0 or 55.0 < duration_seconds <= 70.0:
+        return 0.38
+    return 0.12
+
+
+def _duration_impact(duration_seconds: float) -> float:
+    if 18.0 <= duration_seconds <= 42.0:
+        return 8.0
+    if 12.0 <= duration_seconds < 18.0 or 42.0 < duration_seconds <= 55.0:
+        return 4.0
+    if 8.0 <= duration_seconds < 12.0 or 55.0 < duration_seconds <= 70.0:
+        return -2.5
+    return -6.0
+
+
+def _duration_evidence(duration_seconds: float) -> str:
+    if 18.0 <= duration_seconds <= 42.0:
+        return "Falls inside the strongest social-clip duration band."
+    if 12.0 <= duration_seconds < 18.0 or 42.0 < duration_seconds <= 55.0:
+        return "Still close to the preferred duration window."
+    return "Length is more likely to hurt retention or completion rate."
+
+
+def _hook_strength(title: str, transcript_text: str) -> float:
+    combined = f"{title} {transcript_text}".strip()
+    tokens = tokenize_text(combined)
+    if not tokens:
+        return 0.0
+
+    hook_hits = sum(1 for token in tokens if token in HOOK_TERMS)
+    second_person_hits = sum(1 for token in tokens if token in SECOND_PERSON_TERMS)
+    numeric_hit = any(char.isdigit() for char in combined)
+    question_hit = "?" in combined
+
+    score = min(hook_hits, 5) * 0.14
+    score += min(second_person_hits, 2) * 0.08
+    if numeric_hit:
+        score += 0.16
+    if question_hit:
+        score += 0.14
+    return min(score, 1.0)
+
+
+def _hook_value_summary(title: str, transcript_text: str) -> str:
+    combined = f"{title} {transcript_text}".strip()
+    tokens = tokenize_text(combined)
+    hook_hits = sum(1 for token in tokens if token in HOOK_TERMS)
+    has_digits = any(char.isdigit() for char in combined)
+    if hook_hits >= 3 and has_digits:
+        return "Strong hook language + numbers"
+    if hook_hits >= 3:
+        return "Strong hook language"
+    if has_digits:
+        return "Specific numeric promise"
+    if "?" in combined:
+        return "Curiosity-led framing"
+    return "Light hook framing"
+
+
+def _readiness_strength(context: ClipDiscoveryContext) -> float:
+    status = context.status.strip().lower()
+    if status == "failed":
+        return 0.0
+    if status == "processing":
+        return 0.35
+    if not context.published and status == "ready":
+        return 1.0
+    if context.published:
+        return 0.74
+    return 0.6
+
+
+def _readiness_impact(context: ClipDiscoveryContext) -> float:
+    status = context.status.strip().lower()
+    if status == "failed":
+        return -12.0
+    if status == "processing":
+        return -4.5
+    if not context.published and status == "ready":
+        return 7.0
+    if context.published:
+        return 3.5
+    return 1.5
+
+
+def _readiness_label(context: ClipDiscoveryContext) -> str:
+    status = context.status.strip().lower() or "ready"
+    if not context.published and status == "ready":
+        return "Ready and unpublished"
+    if context.published:
+        return "Published"
+    return status.replace("_", " ").title()
+
+
+def _metadata_strength(context: ClipDiscoveryContext) -> float:
+    score = 0.0
+    if context.overlay is not None:
+        score += 0.45
+    if context.published_at or context.download_url:
+        score += 0.35
+    if len(context.keywords) >= 3:
+        score += 0.2
+    return min(score, 1.0)
+
+
+def _metadata_label(context: ClipDiscoveryContext) -> str:
+    labels: list[str] = []
+    if context.overlay is not None:
+        labels.append("overlay mapped")
+    if context.download_url:
+        labels.append("download ready")
+    if context.published_at:
+        labels.append("publish timestamp")
+    if not labels:
+        return "Basic metadata only"
+    return ", ".join(labels[:2])
+
+
+def _build_insight_summary(
+    context: ClipDiscoveryContext,
+    duration_fit: float,
+    hook_strength: float,
+) -> str:
+    parts: list[str] = []
+    if context.virality_score >= 85.0:
+        parts.append("strong virality signal")
+    elif context.virality_score >= 72.0:
+        parts.append("solid virality baseline")
+
+    if hook_strength >= 0.55:
+        parts.append("clear transcript hook")
+
+    if duration_fit >= 0.9:
+        parts.append("platform-friendly length")
+    elif duration_fit <= 0.2:
+        parts.append("length risk")
+
+    if not context.published and context.status.strip().lower() == "ready":
+        parts.append("ready to publish")
+    elif context.published:
+        parts.append("already validated in publishing")
+
+    if not parts:
+        parts.append("balanced transcript and metadata signals")
+    if len(parts) == 1:
+        return parts[0].capitalize() + "."
+    return f"{', '.join(parts[:-1]).capitalize()}, and {parts[-1]}."
+
+
+def _select_top_factors(factors: list[RankingFactor], *, limit: int = 4) -> list[RankingFactor]:
+    return sorted(
+        factors,
+        key=lambda factor: (-abs(factor.impact), factor.label.lower(), factor.value.lower()),
+    )[:limit]
+
+
+def _build_factor(
+    label: str,
+    value: str,
+    impact: float,
+    category: str,
+    *,
+    evidence: str | None = None,
+) -> RankingFactor:
+    return RankingFactor(
+        label=label,
+        value=value,
+        impact=round(impact, 2),
+        category=category,
+        evidence=evidence,
+    )
+
+
+def _add_field_match(
+    matched_fields: list[str],
+    query_factors: list[RankingFactor],
+    *,
+    field: str,
+    label: str,
+    text: str,
+    normalized_query: str,
+    query_tokens: list[str],
+    exact_points: float,
+    token_points: float,
+) -> float:
+    normalized_text = text.lower()
+    token_set = set(tokenize_text(text))
+    exact_match = bool(normalized_query and normalized_query in normalized_text)
+    token_hits = len(set(query_tokens) & token_set)
+    if not exact_match and token_hits == 0:
+        return 0.0
+
+    score = 0.0
+    if exact_match:
+        score += exact_points
+    if token_hits:
+        score += min(token_hits, len(query_tokens)) * token_points
+    matched_fields.append(field)
+    match_value = "Exact phrase" if exact_match else f"{token_hits}/{len(query_tokens)} tokens"
+    query_factors.append(
+        _build_factor(
+            label,
+            match_value,
+            round(score / 6.0, 2),
+            "search",
+            evidence=f"Matched against the clip {field.replace('_', ' ')} field.",
+        )
+    )
+    return score
+
+
+def _query_coverage_ratio(context: ClipDiscoveryContext, query_tokens: list[str]) -> float:
+    searchable_tokens = set(tokenize_text(context.title))
+    searchable_tokens.update(tokenize_text(context.transcript_text))
+    searchable_tokens.update(tokenize_text(context.podcast_title))
+    searchable_tokens.update(token for keyword in context.keywords for token in tokenize_text(keyword))
+    searchable_tokens.update(tokenize_text(f"clip {context.clip_number}"))
+    return len(set(query_tokens) & searchable_tokens) / len(set(query_tokens))
+
+
+def _merge_ranking_factors(
+    primary: list[RankingFactor],
+    secondary: list[RankingFactor],
+    *,
+    limit: int,
+) -> list[RankingFactor]:
+    merged: list[RankingFactor] = []
+    seen: set[tuple[str, str]] = set()
+    for factor in [*primary, *secondary]:
+        key = (factor.label.lower(), factor.value.lower())
+        if key in seen:
+            continue
+        merged.append(factor)
+        seen.add(key)
+        if len(merged) >= limit:
+            break
+    return merged
 
 
 def _coerce_bool(value: Any) -> bool | None:

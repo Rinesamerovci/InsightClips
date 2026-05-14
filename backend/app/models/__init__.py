@@ -8,6 +8,7 @@ from app.models.clip_insights import (
     ClipSearchItem,
     ClipSearchResponse,
     PodcastClipMetrics,
+    RankingFactor,
 )
 from app.models.export_settings import AudioEnhancementSettings, ExportSettings, ExportSettingsInput, SubtitleStyle
 from app.models.media import MediaInspectionResult
@@ -64,6 +65,7 @@ __all__ = [
     "PublicationStatus",
     "PublishClipRequest",
     "PublishClipsRequest",
+    "RankingFactor",
     "RecommendationItem",
     "RecommendationResult",
     "ScoreSegment",

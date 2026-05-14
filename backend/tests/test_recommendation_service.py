@@ -248,6 +248,25 @@ class RecommendationServiceTests(unittest.TestCase):
         self.assertIsNotNone(result.recommendations[0].overlay)
         self.assertEqual(result.recommendations[0].overlay.keyword, "retention")
 
+    def test_recommend_clips_is_deterministic_and_explainable(self) -> None:
+        fake_supabase = FakeSupabase(self.podcasts, self.clips, self.scores)
+
+        with patch.object(search_service_module, "service_supabase", fake_supabase):
+            first = recommend_clips("pod-1", limit=4)
+            second = recommend_clips("pod-1", limit=4)
+
+        self.assertEqual(
+            [item.id for item in first.recommendations],
+            [item.id for item in second.recommendations],
+        )
+        top_item = first.recommendations[0]
+        self.assertGreater(top_item.insight_score or 0.0, 80.0)
+        self.assertEqual(top_item.rank_position, 1)
+        self.assertTrue(top_item.ranking_factors)
+        self.assertEqual(top_item.ranking_factors[0].label, "Recommendation strategy")
+        self.assertTrue(any(factor.label == "Novelty balance" for factor in top_item.ranking_factors))
+        self.assertIsNotNone(top_item.insight_summary)
+
 
 if __name__ == "__main__":
     unittest.main()

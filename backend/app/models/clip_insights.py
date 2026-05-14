@@ -5,6 +5,24 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+class RankingFactor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    value: str
+    impact: float
+    category: str
+    evidence: str | None = None
+
+    @field_validator("label", "value", "category")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        cleaned = " ".join(value.split()) if value.strip() else value.strip()
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+
 class ClipSearchItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -24,6 +42,10 @@ class ClipSearchItem(BaseModel):
     published_at: datetime | None = None
     match_reason: str | None = None
     recommendation_reason: str | None = None
+    insight_score: float | None = Field(default=None, ge=0, le=100)
+    insight_summary: str | None = None
+    ranking_factors: list[RankingFactor] = Field(default_factory=list)
+    rank_position: int | None = Field(default=None, ge=1)
 
     @field_validator("id", "podcast_id", "podcast_title", "video_url", "subtitle_text", "status")
     @classmethod
@@ -69,6 +91,9 @@ class ClipMetricRow(BaseModel):
     published: bool
     published_at: datetime | None = None
     virality_score: float = Field(ge=0, le=100)
+    insight_score: float | None = Field(default=None, ge=0, le=100)
+    insight_summary: str | None = None
+    ranking_factors: list[RankingFactor] = Field(default_factory=list)
 
     @field_validator("clip_id", "title")
     @classmethod

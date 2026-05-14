@@ -203,6 +203,20 @@ class ClipInsightsServiceTests(unittest.TestCase):
         self.assertEqual(updated["view_count"], 4)
         self.assertEqual(updated["download_count"], 2)
 
+    def test_search_and_metrics_include_explainable_insight_fields(self) -> None:
+        fake_supabase = FakeSupabase(self.podcasts, self.clips)
+
+        with patch.object(clip_insights_module, "service_supabase", fake_supabase):
+            search_result = search_clips_for_user("user-123", query="retention", status="all")
+            metrics = get_clip_metrics_for_podcast("pod-1")
+
+        self.assertEqual(search_result.clips[0].rank_position, 1)
+        self.assertGreater(search_result.clips[0].insight_score or 0.0, 0.0)
+        self.assertTrue(search_result.clips[0].ranking_factors)
+        self.assertIn("hook", (search_result.clips[0].insight_summary or "").lower())
+        self.assertGreater(metrics.top_clips[0].insight_score or 0.0, 0.0)
+        self.assertTrue(metrics.top_clips[0].ranking_factors)
+
 
 if __name__ == "__main__":
     unittest.main()

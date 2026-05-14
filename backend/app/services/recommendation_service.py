@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from app.models.clip_insights import RankingFactor
 from app.models.search import RecommendationItem, RecommendationResult
 from app.services.search_service import (
+    ClipInsightEvaluation,
     ClipDiscoveryContext,
     SearchServiceError,
+    build_clip_insight,
     load_discovery_context,
     tokenize_text,
 )
@@ -30,15 +33,29 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
         raise RecommendationServiceError(exc.detail, status_code=exc.status_code) from exc
 
     remaining = _dedupe_by_clip_id(contexts)
+    insights_by_clip_id = {
+        context.clip_id: build_clip_insight(context)
+        for context in remaining
+    }
     selected: list[tuple[ClipDiscoveryContext, float, str]] = []
 
     while remaining and len(selected) < normalized_limit:
         best_context = max(
             remaining,
-            key=lambda candidate: _recommendation_score(candidate, [item[0] for item in selected]),
+            key=lambda candidate: (
+                _recommendation_score(
+                    candidate,
+                    [item[0] for item in selected],
+                    insights_by_clip_id[candidate.clip_id],
+                ),
+                insights_by_clip_id[candidate.clip_id].score,
+                candidate.virality_score,
+                -candidate.clip_number,
+            ),
         )
-        score = _recommendation_score(best_context, [item[0] for item in selected])
-        reason = _recommendation_reason(best_context, [item[0] for item in selected])
+        insight = insights_by_clip_id[best_context.clip_id]
+        score = _recommendation_score(best_context, [item[0] for item in selected], insight)
+        reason = _recommendation_reason(best_context, [item[0] for item in selected], insight)
         selected.append((best_context, score, reason))
         remaining = [item for item in remaining if item.clip_id != best_context.clip_id]
 
@@ -63,10 +80,18 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
                 download_url=context.download_url,
                 published_at=context.published_at,
                 overlay=context.overlay,
+                insight_score=insights_by_clip_id[context.clip_id].score,
+                insight_summary=insights_by_clip_id[context.clip_id].summary,
+                ranking_factors=_build_recommendation_factors(
+                    context,
+                    [item[0] for item in selected[:index]],
+                    insights_by_clip_id[context.clip_id],
+                ),
+                rank_position=index + 1,
                 recommendation_score=round(score, 2),
                 recommendation_reason=reason,
             )
-            for context, score, reason in selected
+            for index, (context, score, reason) in enumerate(selected)
         ],
     )
 
@@ -74,21 +99,23 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
 def _recommendation_score(
     context: ClipDiscoveryContext,
     selected: list[ClipDiscoveryContext],
+    insight: ClipInsightEvaluation,
 ) -> float:
-    score = context.virality_score
+    score = insight.score
     if not context.published:
-        score += 12.0
+        score += 8.0
+    else:
+        score += 2.5
     if context.status.strip().lower() == "ready":
         score += 4.0
+    elif context.status.strip().lower() == "processing":
+        score -= 8.0
     elif context.status.strip().lower() == "failed":
-        score -= 16.0
+        score -= 20.0
 
-    if 15.0 <= context.duration_seconds <= 45.0:
-        score += 3.5
-    elif context.duration_seconds < 8.0 or context.duration_seconds > 60.0:
-        score -= 4.0
-
-    score += min(len(context.keywords), 5) * 1.2
+    if context.overlay is not None:
+        score += 2.0
+    score += min(len(context.keywords), 5) * 0.8
     score -= _novelty_penalty(context, selected)
     return round(score, 2)
 
@@ -96,15 +123,18 @@ def _recommendation_score(
 def _recommendation_reason(
     context: ClipDiscoveryContext,
     selected: list[ClipDiscoveryContext],
+    insight: ClipInsightEvaluation,
 ) -> str:
     penalty = _novelty_penalty(context, selected)
     if not selected and not context.published:
         return "Highest upside right now"
+    if context.published and insight.score >= 82.0:
+        return "Already validated and still worth resurfacing"
     if penalty <= 4.0 and context.keywords:
-        return "Covers a fresh angle for this podcast"
-    if context.published:
-        return "Already published and still worth amplifying"
-    if 15.0 <= context.duration_seconds <= 45.0:
+        return "Fresh angle with low topic overlap"
+    if insight.score >= 85.0:
+        return "Strong engagement signals across transcript and metadata"
+    if 18.0 <= context.duration_seconds <= 42.0:
         return "Balanced duration with strong discovery potential"
     return "Strong discovery score with low overlap"
 
@@ -153,4 +183,44 @@ def _dedupe_by_clip_id(items: Iterable[ClipDiscoveryContext]) -> list[ClipDiscov
             continue
         deduped.append(item)
         seen.add(item.clip_id)
+    return deduped
+
+
+def _build_recommendation_factors(
+    context: ClipDiscoveryContext,
+    selected: list[ClipDiscoveryContext],
+    insight: ClipInsightEvaluation,
+) -> list[RankingFactor]:
+    factors = list(insight.factors)
+    factors.insert(
+        0,
+        RankingFactor(
+            label="Recommendation strategy",
+            value="Promote unpublished upside" if not context.published else "Keep proven clip visible",
+            impact=8.0 if not context.published else 2.5,
+            category="recommendation",
+            evidence="Recommendation ranking prefers clips that are either ready to publish or already validated.",
+        ),
+    )
+    novelty_penalty = _novelty_penalty(context, selected)
+    factors.insert(
+        1,
+        RankingFactor(
+            label="Novelty balance",
+            value=f"{max(0.0, 100.0 - (novelty_penalty * 4.0)):.0f}% distinct",
+            impact=round(-novelty_penalty, 2),
+            category="recommendation",
+            evidence="Penalizes clips that repeat the same keywords and transcript patterns already selected.",
+        ),
+    )
+    deduped: list[RankingFactor] = []
+    seen: set[tuple[str, str]] = set()
+    for factor in factors:
+        key = (factor.label.lower(), factor.value.lower())
+        if key in seen:
+            continue
+        deduped.append(factor)
+        seen.add(key)
+        if len(deduped) >= 5:
+            break
     return deduped

@@ -61,11 +61,22 @@ async def search_clips_route(
             result = search_clips(podcast.id, query=cleaned_query, filters=filters)
             combined_hits.extend(result.clips)
 
-        combined_hits.sort(key=lambda item: (-item.search_score, -item.virality_score, item.clip_number))
+        combined_hits.sort(
+            key=lambda item: (
+                -item.search_score,
+                -(item.insight_score or 0.0),
+                -item.virality_score,
+                item.clip_number,
+                item.id,
+            )
+        )
         return ClipSearchResult(
             query=cleaned_query,
             total_results=len(combined_hits),
-            clips=combined_hits,
+            clips=[
+                item.model_copy(update={"rank_position": index + 1})
+                for index, item in enumerate(combined_hits)
+            ],
         )
     except SearchServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

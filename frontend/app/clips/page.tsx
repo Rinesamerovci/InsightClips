@@ -16,6 +16,8 @@ import {
   Wand2,
 } from "lucide-react";
 
+import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
+import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
   buildAuthenticatedBackendUrl,
@@ -32,15 +34,31 @@ import {
   type ClipOverlay,
   type ClipResult,
   type ClipSearchResult,
+  type ExportSettings,
+  type GenerationSettings,
+  type GenerationTemplateId,
   type Podcast,
   type PodcastsResponse,
 } from "@/lib/api";
+import {
+  applyGenerationTemplate,
+  buildGenerationRequestPayload,
+  buildDefaultGenerationSettings,
+  loadSavedGenerationPreferences,
+  normalizeGenerationSettings,
+  saveGenerationPreferences,
+} from "@/lib/generation-settings";
 import {
   buildDiscoveryItem,
   type ClipStatusFilter,
 } from "@/lib/clip-insights";
 import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
-import { formatCropMode, formatExportMode } from "@/lib/subtitle-style";
+import {
+  buildSubtitleStyleFromPreset,
+  formatCropMode,
+  formatExportMode,
+  normalizeExportSettings,
+} from "@/lib/subtitle-style";
 
 const T = {
   dark: {
@@ -284,6 +302,13 @@ function ClipsPageContent() {
     tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
+  const [generationTemplateId, setGenerationTemplateId] =
+    useState<GenerationTemplateId>("hook_spotlight");
+  const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
+    buildDefaultGenerationSettings(),
+  );
+  const [generationExportSettings, setGenerationExportSettings] =
+    useState<ExportSettings | null>(null);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -316,6 +341,11 @@ function ClipsPageContent() {
     clips.length > 0
       ? clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length
       : 0;
+  const activeGenerationExportSettings = normalizeExportSettings(
+    generationExportSettings ?? selectedPodcast?.export_settings ?? null,
+  );
+  const activeSubtitleStyle =
+    activeGenerationExportSettings.subtitle_style ?? buildSubtitleStyleFromPreset("classic");
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("insightclips-theme");
@@ -337,6 +367,24 @@ function ClipsPageContent() {
 
     window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
   }, [dark, mounted]);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+
+    const savedPreferences = loadSavedGenerationPreferences();
+    setGenerationTemplateId(savedPreferences.templateId);
+    setGenerationSettings(savedPreferences.settings);
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+
+    saveGenerationPreferences(generationTemplateId, generationSettings);
+  }, [generationSettings, generationTemplateId, mounted]);
 
   useEffect(() => {
     if (authLoading) {
@@ -505,6 +553,15 @@ function ClipsPageContent() {
     syncBackendSession,
   ]);
 
+  useEffect(() => {
+    if (!selectedPodcast) {
+      setGenerationExportSettings(null);
+      return;
+    }
+
+    setGenerationExportSettings(normalizeExportSettings(selectedPodcast.export_settings));
+  }, [selectedPodcast]);
+
   const syncClipEverywhere = (
     clipId: string,
     updater: (clip: ClipResult | ClipSearchResult | ClipRecommendation) => {
@@ -524,6 +581,44 @@ function ClipsPageContent() {
     );
   };
 
+  const handleGenerationSettingsChange = (
+    changes: Partial<GenerationSettings>,
+  ) => {
+    setGenerationSettings((current) =>
+      normalizeGenerationSettings({
+        ...current,
+        ...changes,
+      }),
+    );
+  };
+
+  const handleGenerationTemplateChange = (templateId: GenerationTemplateId) => {
+    const next = applyGenerationTemplate(templateId, generationExportSettings);
+    setGenerationTemplateId(templateId);
+    setGenerationSettings(next.generationSettings);
+    setGenerationExportSettings(next.exportSettings);
+  };
+
+  const handleSubtitleStyleChange = (
+    changes: Partial<
+      Pick<
+        NonNullable<ExportSettings["subtitle_style"]>,
+        "font_family" | "primary_color" | "font_size" | "position"
+      >
+    >,
+  ) => {
+    setGenerationExportSettings((current) => {
+      const resolved = normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null);
+      return {
+        ...resolved,
+        subtitle_style: {
+          ...(resolved.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+          ...changes,
+        },
+      };
+    });
+  };
+
   const handleGenerateClips = async () => {
     if (!selectedPodcastId) {
       return;
@@ -539,7 +634,18 @@ function ClipsPageContent() {
         return;
       }
 
-      const generated = await generateClips(selectedPodcastId, token);
+      const generated = await generateClips(
+        selectedPodcastId,
+        {
+          generation_settings: buildGenerationRequestPayload(generationSettings),
+          export_settings:
+            generationExportSettings ??
+            normalizeExportSettings(selectedPodcast?.export_settings ?? null),
+          save_generation_settings: true,
+          use_preferred_generation_settings: true,
+        },
+        token,
+      );
       const recommended = await getRecommendations(selectedPodcastId, token).catch(() => null);
 
       setClips(generated.clips);
@@ -552,7 +658,7 @@ function ClipsPageContent() {
       }
       setActionFeedback({
         tone: "success",
-        message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast?.title ?? "this podcast"}.`,
+        message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast?.title ?? "this podcast"} using ${generationSettings.clip_duration_seconds}s targets.`,
       });
     } catch (generationError) {
       setError(
@@ -1254,6 +1360,53 @@ function ClipsPageContent() {
                 </button>
               </div>
 
+              <GenerationSettingsPanel
+                dark={dark}
+                templateId={generationTemplateId}
+                settings={generationSettings}
+                onTemplateChange={handleGenerationTemplateChange}
+                onSettingsChange={handleGenerationSettingsChange}
+                storageHint="These preferences are reused across the upload and clips workflow on this device."
+                palette={{
+                  border: t.border,
+                  subBorder: t.borderSub,
+                  muted: t.textSub,
+                  hi: t.accent,
+                  hi2: t.accentLt,
+                }}
+              />
+
+              <SubtitleStylePanel
+                dark={dark}
+                exportMode={activeGenerationExportSettings.export_mode}
+                styleValue={activeSubtitleStyle}
+                onPresetChange={(preset) =>
+                  setGenerationExportSettings((current) => ({
+                    ...normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null),
+                    subtitle_style: buildSubtitleStyleFromPreset(preset),
+                  }))
+                }
+                onFontFamilyChange={(fontFamily) =>
+                  handleSubtitleStyleChange({ font_family: fontFamily })
+                }
+                onColorChange={(color) => handleSubtitleStyleChange({ primary_color: color })}
+                onFontSizeChange={(size) => handleSubtitleStyleChange({ font_size: size })}
+                onPositionChange={(position) => handleSubtitleStyleChange({ position })}
+                disabled={!generationSettings.subtitles_enabled}
+                disabledMessage={
+                  generationSettings.subtitles_enabled
+                    ? null
+                    : "Subtitles are currently off for this generation run. Turn them back on above to style the text layer."
+                }
+                palette={{
+                  border: t.border,
+                  subBorder: t.borderSub,
+                  muted: t.textSub,
+                  hi: t.accent,
+                  hi2: t.accentLt,
+                }}
+              />
+
               <div
                 style={{
                   display: "grid",
@@ -1382,7 +1535,7 @@ function ClipsPageContent() {
                   </h3>
                   <p style={{ marginTop: 10, lineHeight: 1.8 }}>
                     {clips.length === 0
-                      ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions."
+                      ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, topic focus, and subtitle behavior first."
                       : "Try another search or filter to surface different clip candidates."}
                   </p>
                   {clips.length > 0 && activeSearch ? (

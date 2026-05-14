@@ -17,9 +17,12 @@ type SubtitleStylePanelProps = {
   exportMode: ExportMode;
   styleValue: SubtitleStyle;
   onPresetChange: (preset: SubtitleStylePreset) => void;
+  onFontFamilyChange: (fontFamily: string) => void;
   onColorChange: (color: string) => void;
   onFontSizeChange: (size: number) => void;
   onPositionChange: (position: SubtitlePosition) => void;
+  disabled?: boolean;
+  disabledMessage?: string | null;
   palette: {
     border: string;
     subBorder: string;
@@ -30,6 +33,12 @@ type SubtitleStylePanelProps = {
 };
 
 const POSITION_OPTIONS: SubtitlePosition[] = ["top", "center", "bottom"];
+const FONT_FAMILY_OPTIONS = [
+  { value: "Arial", label: "Arial", preview: "Clean default" },
+  { value: "DM Sans", label: "DM Sans", preview: "Modern sans" },
+  { value: "Trebuchet MS", label: "Trebuchet", preview: "Friendly sans" },
+  { value: "Georgia", label: "Georgia", preview: "Editorial serif" },
+] as const;
 const PRESET_ENTRIES = Object.entries(SUBTITLE_PRESET_DETAILS) as Array<
   [
     SubtitleStylePreset,
@@ -71,15 +80,19 @@ export default function SubtitleStylePanel({
   exportMode,
   styleValue,
   onPresetChange,
+  onFontFamilyChange,
   onColorChange,
   onFontSizeChange,
   onPositionChange,
+  disabled = false,
+  disabledMessage = null,
   palette,
 }: SubtitleStylePanelProps) {
   const previewPreset = SUBTITLE_PRESET_DETAILS[styleValue.preset];
   const hasManualTuning = hasSubtitleManualOverrides(styleValue);
   const previewWidth = exportMode === "portrait" ? 150 : 250;
   const previewHeight = exportMode === "portrait" ? 250 : 150;
+  const panelOpacity = disabled ? 0.68 : 1;
 
   return (
     <div
@@ -90,6 +103,7 @@ export default function SubtitleStylePanel({
         background: dark ? "rgba(14,24,11,.88)" : "rgba(255,255,255,.9)",
         padding: "24px 24px 22px",
         marginBottom: 16,
+        opacity: panelOpacity,
       }}
     >
       <div
@@ -135,6 +149,23 @@ export default function SubtitleStylePanel({
             Pick a subtitle look, then adjust color, size, and placement before the export
             record is created.
           </p>
+
+          {disabledMessage ? (
+            <div
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
+                padding: "12px 13px",
+                fontSize: 12,
+                lineHeight: 1.65,
+                color: palette.muted,
+                marginBottom: 16,
+              }}
+            >
+              {disabledMessage}
+            </div>
+          ) : null}
 
           <div
             style={{
@@ -192,6 +223,7 @@ export default function SubtitleStylePanel({
                   key={preset}
                   type="button"
                   onClick={() => onPresetChange(preset)}
+                  disabled={disabled}
                   className={`mode-option${active ? " active" : ""}`}
                   style={{
                     textAlign: "left",
@@ -206,6 +238,7 @@ export default function SubtitleStylePanel({
                         ? "rgba(11,18,9,.55)"
                         : "rgba(248,252,245,.82)",
                     color: dark ? "#e8f5df" : "#152412",
+                    cursor: disabled ? "default" : "pointer",
                   }}
                 >
                   <div
@@ -330,6 +363,76 @@ export default function SubtitleStylePanel({
                 gap: 12,
               }}
             >
+              <div
+                style={{
+                  borderRadius: 14,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
+                  padding: "12px 13px",
+                  gridColumn: "1 / -1",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: ".18em",
+                    textTransform: "uppercase",
+                    color: palette.muted,
+                    fontWeight: 600,
+                    marginBottom: 8,
+                  }}
+                >
+                  Font family
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {FONT_FAMILY_OPTIONS.map((option) => {
+                    const active = styleValue.font_family === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onFontFamilyChange(option.value)}
+                        style={{
+                          borderRadius: 12,
+                          border: `1px solid ${active ? palette.hi : palette.subBorder}`,
+                          background: active
+                            ? dark
+                              ? "rgba(90,158,58,.14)"
+                              : "rgba(90,158,58,.1)"
+                            : "transparent",
+                          color: active ? palette.hi : dark ? "#dff0d8" : "#1e3418",
+                          padding: "11px 10px",
+                          textAlign: "left",
+                          cursor: disabled ? "default" : "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: option.value,
+                            fontSize: 14,
+                            fontWeight: 700,
+                            marginBottom: 3,
+                          }}
+                        >
+                          {option.label}
+                        </div>
+                        <div style={{ fontSize: 11, color: palette.muted }}>
+                          {option.preview}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <label
                 style={{
                   borderRadius: 14,
@@ -356,6 +459,7 @@ export default function SubtitleStylePanel({
                     aria-label="Subtitle text color"
                     value={styleValue.primary_color}
                     onChange={(event) => onColorChange(event.target.value.toUpperCase())}
+                    disabled={disabled}
                     style={{
                       width: 42,
                       height: 42,
@@ -416,6 +520,7 @@ export default function SubtitleStylePanel({
                   value={styleValue.font_size}
                   onChange={(event) => onFontSizeChange(Number(event.target.value))}
                   aria-label="Subtitle font size"
+                  disabled={disabled}
                   style={{ width: "100%", accentColor: palette.hi }}
                 />
                 <div style={{ fontSize: 11, color: palette.muted, marginTop: 6 }}>
@@ -458,6 +563,7 @@ export default function SubtitleStylePanel({
                         key={position}
                         type="button"
                         onClick={() => onPositionChange(position)}
+                        disabled={disabled}
                         className="btn-ghost"
                         style={{
                           borderRadius: 10,
@@ -471,6 +577,7 @@ export default function SubtitleStylePanel({
                           fontSize: 12,
                           fontWeight: 600,
                           padding: "10px 8px",
+                          cursor: disabled ? "default" : "pointer",
                         }}
                       >
                         {formatSubtitlePosition(position)}
@@ -609,6 +716,7 @@ export default function SubtitleStylePanel({
                           ? hexToRgba(styleValue.background_color, styleValue.background_opacity)
                           : "transparent",
                       color: styleValue.primary_color,
+                      fontFamily: styleValue.font_family,
                       fontSize: `${Math.max(14, styleValue.font_size - 2)}px`,
                       lineHeight: 1.25,
                       fontWeight: styleValue.bold ? 700 : 600,
@@ -640,6 +748,7 @@ export default function SubtitleStylePanel({
                 { label: "Position", value: formatSubtitlePosition(styleValue.position) },
                 { label: "Size", value: `${styleValue.font_size}px` },
                 { label: "Color", value: styleValue.primary_color.toUpperCase() },
+                { label: "Font", value: styleValue.font_family },
               ].map(({ label, value }) => (
                 <div
                   key={label}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,13 +9,21 @@ import {
   UploadCloud, XCircle, Zap, ShieldCheck, Clock,
 } from "lucide-react";
 
+import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
 import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
-  type AudioEnhancementSettings, type ExportMode, type ExportSettings, type PrepareUploadResponse,
-  type SubtitleStyle,
+  type AudioEnhancementSettings, type ExportMode, type ExportSettings, type GenerationSettings,
+  type GenerationTemplateId, type PrepareUploadResponse, type SubtitleStyle,
   type UploadPriceResponse, type UploadState,
 } from "@/lib/api";
+import {
+  applyGenerationTemplate,
+  buildDefaultGenerationSettings,
+  loadSavedGenerationPreferences,
+  normalizeGenerationSettings,
+  saveGenerationPreferences,
+} from "@/lib/generation-settings";
 import {
   SUBTITLE_PRESET_DETAILS,
   buildSubtitleStyleFromPreset,
@@ -226,6 +234,10 @@ export default function UploadPage() {
   });
   const [exportMode,      setExportMode]      = useState<ExportMode>("portrait");
   const [subtitleStyle,   setSubtitleStyle]   = useState<SubtitleStyle>(() => buildSubtitleStyleFromPreset("classic"));
+  const [generationTemplateId, setGenerationTemplateId] = useState<GenerationTemplateId>("hook_spotlight");
+  const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
+    buildDefaultGenerationSettings(),
+  );
   const [dragging,        setDragging]        = useState(false);
   const [file,            setFile]            = useState<File | null>(null);
   const [state,           setState]           = useState<UploadState>("idle");
@@ -255,10 +267,21 @@ export default function UploadPage() {
     : activeSubtitlePreset.label;
   const subtitleStyleSummary = `${formatSubtitlePosition(subtitleStyle.position)} aligned · ${subtitleStyle.font_size}px · ${subtitleStyle.primary_color.toUpperCase()}`;
 
+  const generationSummary = `${generationSettings.number_of_clips} clips Â· ${generationSettings.clip_duration_seconds}s Â· ${generationSettings.subtitles_enabled ? "Subtitles on" : "Subtitles off"}`;
   const selectedAudioFeedback = getAudioEnhancementFeedback({
     audioEnhancement: exportSettings.audio_enhancement,
     context: "setup",
   });
+
+  useEffect(() => {
+    const savedPreferences = loadSavedGenerationPreferences();
+    setGenerationTemplateId(savedPreferences.templateId);
+    setGenerationSettings(savedPreferences.settings);
+  }, []);
+
+  useEffect(() => {
+    saveGenerationPreferences(generationTemplateId, generationSettings);
+  }, [generationSettings, generationTemplateId]);
 
   const fileMeta = useMemo(() => {
     if (!file) return null;
@@ -349,7 +372,33 @@ export default function UploadPage() {
     if (err) setErr("");
   };
 
-  const updateSubtitleStyle = (changes: Partial<Pick<SubtitleStyle, "primary_color" | "font_size" | "position">>) => {
+  const selectGenerationTemplate = (templateId: GenerationTemplateId) => {
+    const next = applyGenerationTemplate(
+      templateId,
+      buildExportSettings(exportMode, subtitleStyle),
+    );
+    setGenerationTemplateId(templateId);
+    setGenerationSettings(next.generationSettings);
+    setExportMode(next.exportSettings.export_mode);
+    setSubtitleStyle(next.exportSettings.subtitle_style ?? buildSubtitleStyleFromPreset("classic"));
+    setPrep(null);
+    if (err) setErr("");
+  };
+
+  const updateGenerationSettings = (changes: Partial<GenerationSettings>) => {
+    setGenerationSettings((current) =>
+      normalizeGenerationSettings({
+        ...current,
+        ...changes,
+      }),
+    );
+    setPrep(null);
+    if (err) setErr("");
+  };
+
+  const updateSubtitleStyle = (
+    changes: Partial<Pick<SubtitleStyle, "font_family" | "primary_color" | "font_size" | "position">>,
+  ) => {
     setSubtitleStyle((current) => ({
       ...current,
       ...changes,
@@ -759,11 +808,28 @@ export default function UploadPage() {
             </div>
           </div>
 
+          <GenerationSettingsPanel
+            dark={d}
+            templateId={generationTemplateId}
+            settings={generationSettings}
+            onTemplateChange={selectGenerationTemplate}
+            onSettingsChange={updateGenerationSettings}
+            storageHint="These generation preferences are saved locally and reused when you open the clips workflow."
+            palette={{
+              border: bord,
+              subBorder: subBord,
+              muted: muted as string,
+              hi,
+              hi2,
+            }}
+          />
+
           <SubtitleStylePanel
             dark={d}
             exportMode={exportMode}
             styleValue={subtitleStyle}
             onPresetChange={selectSubtitlePreset}
+            onFontFamilyChange={(fontFamily) => updateSubtitleStyle({ font_family: fontFamily })}
             onColorChange={(color) => updateSubtitleStyle({ primary_color: color })}
             onFontSizeChange={(size) => updateSubtitleStyle({ font_size: size })}
             onPositionChange={(position) => updateSubtitleStyle({ position })}
@@ -972,6 +1038,29 @@ export default function UploadPage() {
                 }}>
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:5 }}>
                     <div style={{ fontSize:9, letterSpacing:".18em", textTransform:"uppercase", color:muted as string, fontWeight:600 }}>
+                      Clip generation
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:hi2, letterSpacing:".14em", textTransform:"uppercase" }}>
+                      {generationTemplateId.replace(/_/g, " ")}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:d?"#dff0d8":"#1e3418", marginBottom:4 }}>
+                    {generationSummary}
+                  </div>
+                  <div style={{ fontSize:12, lineHeight:1.6, color:muted as string }}>
+                    {generationSettings.topic_focus.trim()
+                      ? generationSettings.topic_focus
+                      : "No extra topic focus yet. These defaults carry into the clips page."}
+                  </div>
+                </div>
+
+                <div className="chip" style={{
+                  borderRadius:12, padding:"12px 14px",
+                  background:d?"rgba(90,158,58,.09)":"rgba(90,158,58,.06)",
+                  border:`1px solid ${subBord}`,
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:5 }}>
+                    <div style={{ fontSize:9, letterSpacing:".18em", textTransform:"uppercase", color:muted as string, fontWeight:600 }}>
                       Audio leveling
                     </div>
                     <div style={{ fontSize:10, fontWeight:700, color:hi2, letterSpacing:".14em", textTransform:"uppercase" }}>
@@ -1084,7 +1173,7 @@ export default function UploadPage() {
                       {state === "free_ready" ? "Reserve your free upload" : "Create payment record"}
                     </div>
                     <div style={{ fontSize:13, color:muted as string, lineHeight:1.65, display:"flex", alignItems:"center", gap:7 }}>
-                      <Clock size={13}/> {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {selectedAudioFeedback.tone === "enabled" ? "Audio leveling will be included." : "Audio leveling is currently off."} {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
+                      <Clock size={13}/> {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {generationSummary}. {selectedAudioFeedback.tone === "enabled" ? "Audio leveling will be included." : "Audio leveling is currently off."} {exportMode === "portrait" ? "TikTok/Shorts framing will be saved with this upload." : "Widescreen framing will be saved with this upload."}
                     </div>
                   </div>
                 </div>

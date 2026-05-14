@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
 import {
+  applyGenerationTemplate,
+  normalizeGenerationSettings,
+} from "../lib/generation-settings";
+import {
   buildDiscoveryItem,
   filterDiscoveryItems,
   rankRecommendedItems,
@@ -128,4 +132,23 @@ export function runClipsTests(): void {
 
   assert.equal(normalized.crop_mode, "smart_crop");
   assert.equal(normalized.face_tracking_enabled, true);
+
+  const normalizedGeneration = normalizeGenerationSettings({
+    clip_duration_seconds: 999,
+    number_of_clips: 99,
+    topic_focus: "   audience retention moments   ",
+    subtitles_enabled: false,
+  });
+
+  assert.equal(normalizedGeneration.clip_duration_seconds, 30);
+  assert.equal(normalizedGeneration.number_of_clips, 4);
+  assert.equal(normalizedGeneration.topic_focus, "audience retention moments");
+  assert.equal(normalizedGeneration.subtitles_enabled, false);
+
+  const template = applyGenerationTemplate("story_arc", discoveryItems[0]?.export_settings);
+
+  assert.equal(template.generationSettings.clip_duration_seconds, 45);
+  assert.equal(template.generationSettings.number_of_clips, 3);
+  assert.equal(template.exportSettings.export_mode, "portrait");
+  assert.equal(template.exportSettings.subtitle_style?.preset, "boxed");
 }

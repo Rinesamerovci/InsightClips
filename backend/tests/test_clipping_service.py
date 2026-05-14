@@ -13,7 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.models.analysis import ScoreSegment  # noqa: E402
-from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
+from app.models.export_settings import ExportSettings, ExportSettingsInput, GenerationSettings, SubtitleStyle  # noqa: E402
 from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
 from app.models.overlay import OverlayDecision  # noqa: E402
 import app.services.clipping_service as clipping_service_module  # noqa: E402
@@ -27,6 +27,7 @@ from app.services.clipping_service import (  # noqa: E402
     _build_subtitle_force_style,
     _build_video_filters,
     _resolve_clip_window,
+    _select_segments,
 )
 
 
@@ -239,6 +240,54 @@ class ClippingServiceTests(unittest.TestCase):
             subtitle_text,
             "This is a strong hook for a viral clip and the subtitles should stay aligned.",
         )
+
+    def test_select_segments_honors_requested_clip_count_and_topic_focus(self) -> None:
+        segments = [
+            ScoreSegment(
+                segment_start_seconds=20.0,
+                segment_end_seconds=35.0,
+                duration_seconds=15.0,
+                virality_score=90.0,
+                transcript_snippet="General conversation about habits",
+                sentiment="neutral",
+                keywords=["habits"],
+            ),
+            ScoreSegment(
+                segment_start_seconds=40.0,
+                segment_end_seconds=55.0,
+                duration_seconds=15.0,
+                virality_score=84.0,
+                transcript_snippet="AI product launch with startup growth",
+                sentiment="positive",
+                keywords=["ai", "startup"],
+            ),
+            ScoreSegment(
+                segment_start_seconds=60.0,
+                segment_end_seconds=75.0,
+                duration_seconds=15.0,
+                virality_score=82.0,
+                transcript_snippet="Finance planning segment",
+                sentiment="neutral",
+                keywords=["finance"],
+            ),
+        ]
+
+        selected = _select_segments(
+            segments,
+            generation_settings=GenerationSettings(number_of_clips=1, topic_focus="AI startup"),
+        )
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0].transcript_snippet, "AI product launch with startup growth")
+
+    def test_resolve_clip_window_applies_requested_duration_when_possible(self) -> None:
+        clip_start, clip_end = _resolve_clip_window(
+            self.score_segments[0],
+            self.transcription,
+            target_duration_seconds=8,
+        )
+
+        self.assertEqual(round(clip_end - clip_start, 3), 8.0)
 
     def test_generate_clips_persists_ready_rows(self) -> None:
         case_dir = self._workspace_case_dir("clipping-persist")
@@ -680,6 +729,43 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(clips[0].video_url, f"/podcasts/clips/{clips[0].id}/download")
         self.assertEqual(captured_command["start"], 0.0)
         self.assertGreater(captured_command["duration"], 5.0)
+
+    def test_generate_clips_can_disable_subtitles_for_output(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-subtitles-disabled")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+        captured_subtitle_path = {"value": "not-set"}
+
+        def fake_ffmpeg(*args, **kwargs):
+            captured_subtitle_path["value"] = args[2]
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            clips = generate_clips(
+                                "podcast-123",
+                                self.score_segments,
+                                self.transcription,
+                                generation_settings=GenerationSettings(subtitles_enabled=False),
+                            )
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].subtitle_text, "")
+        self.assertFalse(clips[0].generation_settings.subtitles_enabled)
+        self.assertIsNone(captured_subtitle_path["value"])
+        insert_payload = clips_table.insert.call_args.args[0]
+        self.assertEqual(insert_payload[0]["subtitle_text"], "")
+        self.assertIsNone(insert_payload[0]["subtitle_url"])
 
     def test_generate_clips_raises_when_segment_has_no_overlapping_words(self) -> None:
         invalid_segment = ScoreSegment(

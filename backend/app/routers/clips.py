@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user
+from app.models.export_settings import GenerationSettings
 from app.models.publishing import (
     ClipMetricResponse,
     ClipPublicationStatus,
@@ -23,6 +24,13 @@ from app.services.publishing_service import (
 )
 
 router = APIRouter(prefix="/clips", tags=["clips"])
+
+
+@router.get("/generation-settings/defaults", response_model=GenerationSettings)
+async def get_generation_settings_defaults(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> GenerationSettings:
+    return GenerationSettings()
 
 
 @router.get("/search", response_model=ClipSearchResult)

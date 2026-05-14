@@ -10,7 +10,15 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.models.export_settings import AudioEnhancementSettings, ExportSettings, ExportSettingsInput, SubtitleStyle  # noqa: E402
+from app.models.clipping import GenerateClipsRequest  # noqa: E402
+from app.models.export_settings import (  # noqa: E402
+    AudioEnhancementSettings,
+    ExportSettings,
+    ExportSettingsInput,
+    GenerationSettings,
+    GenerationSettingsInput,
+    SubtitleStyle,
+)
 
 
 class ExportSettingsModelTests(unittest.TestCase):
@@ -112,6 +120,81 @@ class ExportSettingsModelTests(unittest.TestCase):
     def test_audio_enhancement_rejects_unsafe_loudness_target(self) -> None:
         with self.assertRaises(ValidationError):
             AudioEnhancementSettings(target_lufs=-40.0)
+
+    def test_generation_settings_accepts_safe_user_preferences(self) -> None:
+        settings = GenerationSettings(
+            clip_duration_seconds=45,
+            number_of_clips=7,
+            topic_focus="AI growth, startup clips",
+            subtitles_enabled=False,
+        )
+
+        self.assertEqual(settings.clip_duration_seconds, 45)
+        self.assertEqual(settings.number_of_clips, 7)
+        self.assertEqual(settings.topic_focus, "AI growth, startup clips")
+        self.assertFalse(settings.subtitles_enabled)
+
+    def test_generation_settings_rejects_unsafe_values(self) -> None:
+        with self.assertRaises(ValidationError) as exc_info:
+            GenerationSettings(clip_duration_seconds=3, number_of_clips=30)
+
+        self.assertIn("clip_duration_seconds", str(exc_info.exception))
+        self.assertIn("number_of_clips", str(exc_info.exception))
+
+    def test_generation_settings_rejects_unsafe_topic_focus(self) -> None:
+        with self.assertRaises(ValidationError) as exc_info:
+            GenerationSettings(topic_focus="AI <script>")
+
+        self.assertIn("topic_focus can only contain", str(exc_info.exception))
+
+    def test_export_settings_can_persist_generation_preferences(self) -> None:
+        settings = ExportSettingsInput(
+            generation_settings={
+                "clip_duration_seconds": 60,
+                "number_of_clips": 4,
+                "subtitles_enabled": False,
+            }
+        ).resolve()
+
+        self.assertEqual(settings.generation_settings.clip_duration_seconds, 60)
+        self.assertEqual(settings.generation_settings.number_of_clips, 4)
+        self.assertFalse(settings.generation_settings.subtitles_enabled)
+
+    def test_generation_settings_input_resolves_over_preferred_defaults(self) -> None:
+        preferred = GenerationSettings(
+            clip_duration_seconds=40,
+            number_of_clips=6,
+            topic_focus="marketing",
+            subtitles_enabled=False,
+        )
+
+        resolved = GenerationSettingsInput(number_of_clips=3).resolve(preferred)
+
+        self.assertEqual(resolved.clip_duration_seconds, 40)
+        self.assertEqual(resolved.number_of_clips, 3)
+        self.assertEqual(resolved.topic_focus, "marketing")
+        self.assertFalse(resolved.subtitles_enabled)
+
+    def test_generate_clips_request_supports_direct_generation_fields(self) -> None:
+        request = GenerateClipsRequest(
+            clip_duration_seconds=35,
+            number_of_clips=2,
+            topic_focus="product launch",
+            subtitles_enabled=True,
+        )
+
+        resolved = request.resolve_generation_settings()
+
+        self.assertEqual(resolved.clip_duration_seconds, 35)
+        self.assertEqual(resolved.number_of_clips, 2)
+        self.assertEqual(resolved.topic_focus, "product launch")
+        self.assertTrue(resolved.subtitles_enabled)
+
+    def test_generate_clips_request_requires_settings_when_saving_preferences(self) -> None:
+        with self.assertRaises(ValidationError) as exc_info:
+            GenerateClipsRequest(save_generation_settings=True)
+
+        self.assertIn("save_generation_settings requires", str(exc_info.exception))
 
 
 if __name__ == "__main__":

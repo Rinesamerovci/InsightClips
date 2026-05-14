@@ -10,7 +10,14 @@ from app.models.clip_insights import (
     PodcastClipMetrics,
     RankingFactor,
 )
-from app.models.export_settings import AudioEnhancementSettings, ExportSettings, ExportSettingsInput, SubtitleStyle
+from app.models.export_settings import (
+    AudioEnhancementSettings,
+    ExportSettings,
+    ExportSettingsInput,
+    GenerationSettings,
+    GenerationSettingsInput,
+    SubtitleStyle,
+)
 from app.models.media import MediaInspectionResult
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.publishing import (
@@ -56,6 +63,8 @@ __all__ = [
     "ClipSearchResponse",
     "ExportSettings",
     "ExportSettingsInput",
+    "GenerationSettings",
+    "GenerationSettingsInput",
     "GenerateClipsRequest",
     "MediaInspectionResult",
     "OverlayDecision",

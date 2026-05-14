@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.clip_insights import RankingFactor
 from app.models.overlay import OverlayDecision
 
 
@@ -27,6 +28,10 @@ class _ClipDiscoveryBase(BaseModel):
     download_url: str | None = None
     published_at: datetime | None = None
     overlay: OverlayDecision | None = None
+    insight_score: float | None = Field(default=None, ge=0, le=100)
+    insight_summary: str | None = None
+    ranking_factors: list[RankingFactor] = Field(default_factory=list)
+    rank_position: int | None = Field(default=None, ge=1)
 
     @field_validator("id", "podcast_id", "podcast_title", "title", "video_url", "subtitle_text", "status")
     @classmethod

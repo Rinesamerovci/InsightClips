@@ -223,6 +223,19 @@ class SearchServiceTests(unittest.TestCase):
         self.assertEqual(result.clips[0].overlay.overlay_asset, "marketing_graph")
         self.assertTrue(result.clips[0].overlay.rendered)
 
+    def test_search_clips_returns_explainable_ranked_results(self) -> None:
+        fake_supabase = FakeSupabase(self.podcasts, self.clips, self.scores)
+
+        with patch.object(search_service_module, "service_supabase", fake_supabase):
+            result = search_clips("pod-1", "retention", {})
+
+        top_hit = result.clips[0]
+        self.assertEqual(top_hit.rank_position, 1)
+        self.assertGreater(top_hit.insight_score or 0.0, 70.0)
+        self.assertTrue(top_hit.ranking_factors)
+        self.assertEqual(top_hit.ranking_factors[0].category, "search")
+        self.assertIn("virality", (top_hit.insight_summary or "").lower())
+
 
 if __name__ == "__main__":
     unittest.main()

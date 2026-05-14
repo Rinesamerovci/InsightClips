@@ -108,6 +108,19 @@ def _build_local_file_response(
     )
 
 
+def _build_basic_file_response(
+    file_path: Path,
+    *,
+    filename: str | None = None,
+) -> FileResponse:
+    return FileResponse(
+        path=file_path,
+        media_type="video/mp4",
+        filename=(filename or file_path.name),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("", response_model=PodcastsResponse)
 async def list_podcasts(
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -328,8 +341,8 @@ async def publish_podcast_clips(
 @router.get("/clips/{clip_id}/download")
 async def download_generated_clip(
     clip_id: str,
-    request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user_for_download),
+    request: Request = None,  # type: ignore[assignment]
 ):
     podcast_id = get_clip_podcast_id(clip_id)
     if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
@@ -349,19 +362,15 @@ async def download_generated_clip(
         )
     if file_path and file_path.exists():
         record_clip_download(clip_id)
-        return _build_local_file_response(
-            request,
-            file_path,
-            filename=(filename or file_path.name),
-        )
+        if request is None:
+            return _build_basic_file_response(file_path, filename=(filename or file_path.name))
+        return _build_local_file_response(request, file_path, filename=(filename or file_path.name))
 
     _, preview_file_path = get_clip_download_target(clip_id)
     if preview_file_path and preview_file_path.exists():
-        return _build_local_file_response(
-            request,
-            preview_file_path,
-            filename=preview_file_path.name,
-        )
+        if request is None:
+            return _build_basic_file_response(preview_file_path, filename=preview_file_path.name)
+        return _build_local_file_response(request, preview_file_path, filename=preview_file_path.name)
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,

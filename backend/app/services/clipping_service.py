@@ -11,7 +11,7 @@ from app.config import BACKEND_DIR, ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
-from app.models.export_settings import ExportSettings, ExportSettingsInput, SubtitleStyle
+from app.models.export_settings import ExportSettings, ExportSettingsInput, GenerationSettings, SubtitleStyle
 from app.models.media import SubtitleTimingContract
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
@@ -23,7 +23,7 @@ import app.services.overlay_mapping_service as overlay_mapping_service_module
 GENERATED_CLIPS_ROOT = ROOT_DIR / ".generated" / "clips"
 CLIP_STORAGE_BUCKET = "clips"
 SIGNED_URL_TTL_SECONDS = 3600
-MAX_GENERATED_CLIPS = 5
+MAX_GENERATED_CLIPS = 10
 CLIP_LEAD_IN_SECONDS = 2.0
 CLIP_LEAD_OUT_SECONDS = 1.0
 OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
@@ -96,7 +96,7 @@ SUBTITLE_PRESET_RENDER_TUNING: dict[str, _SubtitleRenderTuning] = {
 def build_ffmpeg_clip_command(
     source_path: Path,
     output_path: Path,
-    subtitle_path: Path,
+    subtitle_path: Path | None,
     *,
     start_seconds: float,
     duration_seconds: float,
@@ -227,10 +227,12 @@ def generate_clips(
     score_segments: list[ScoreSegment],
     transcription: TranscriptionResult | None,
     export_settings: ExportSettingsInput | ExportSettings | None = None,
+    generation_settings: GenerationSettings | None = None,
 ) -> list[ClipResult]:
     podcast_row = _get_podcast_row(podcast_id)
     source_path = _resolve_source_media_path(podcast_row)
-    selected_segments = _select_segments(score_segments)
+    resolved_generation_settings = generation_settings or GenerationSettings()
+    selected_segments = _select_segments(score_segments, generation_settings=resolved_generation_settings)
     if not selected_segments:
         raise ClippingError("No scored segments are available for clip generation.", status_code=404)
 
@@ -244,7 +246,11 @@ def generate_clips(
 
     for clip_number, segment in enumerate(selected_segments, start=1):
         clip_id = str(uuid.uuid4())
-        clip_start, clip_end = _resolve_clip_window(segment, transcription)
+        clip_start, clip_end = _resolve_clip_window(
+            segment,
+            transcription,
+            target_duration_seconds=resolved_generation_settings.clip_duration_seconds,
+        )
         clip_duration = round(clip_end - clip_start, 3)
         if clip_duration <= 0:
             continue
@@ -259,19 +265,22 @@ def generate_clips(
                 resolved_export_settings,
                 clip_duration_seconds=clip_duration,
             )
-            if transcription is not None:
+            if resolved_generation_settings.subtitles_enabled and transcription is not None:
                 srt_content, subtitle_text = build_srt_content(
                     transcription,
                     clip_start_seconds=clip_start,
                     clip_end_seconds=clip_end,
                     export_settings=clip_export_settings,
                 )
-            else:
+            elif resolved_generation_settings.subtitles_enabled:
                 srt_content, subtitle_text = build_segment_fallback_srt_content(
                     segment,
                     clip_duration_seconds=clip_duration,
                     export_settings=clip_export_settings,
                 )
+            else:
+                srt_content = None
+                subtitle_text = ""
             draft_clip = ClipResult(
                 id=clip_id,
                 clip_number=clip_number,
@@ -283,17 +292,19 @@ def generate_clips(
                 subtitle_text=subtitle_text,
                 status="ready",
                 export_settings=clip_export_settings,
+                generation_settings=resolved_generation_settings,
             )
             overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
                 podcast_id,
                 draft_clip,
                 segment,
             )
-            subtitle_path.write_text(srt_content, encoding="utf-8")
+            if srt_content is not None:
+                subtitle_path.write_text(srt_content, encoding="utf-8")
             final_overlay, clip_export_settings = _render_clip_with_optional_overlay(
                 source_path,
                 clip_path,
-                subtitle_path,
+                subtitle_path if srt_content is not None else None,
                 start_seconds=clip_start,
                 duration_seconds=clip_duration,
                 export_settings=clip_export_settings,
@@ -310,6 +321,7 @@ def generate_clips(
                         "video_url": video_url,
                         "overlay": final_overlay,
                         "export_settings": clip_export_settings,
+                        "generation_settings": resolved_generation_settings,
                     }
                 )
             )
@@ -324,7 +336,7 @@ def generate_clips(
                     "virality_score": segment.virality_score,
                     "storage_path": str(clip_path),
                     "storage_url": storage_url,
-                    "subtitle_url": subtitle_url or str(subtitle_path),
+                    "subtitle_url": subtitle_url or (str(subtitle_path) if srt_content is not None else None),
                     "subtitle_text": subtitle_text,
                     "status": "ready",
                     "preset_name": clip_export_settings.preset_name,
@@ -366,8 +378,12 @@ def build_clip_generation_result(
     *,
     processing_time_seconds: float,
     export_settings: ExportSettings | None = None,
+    generation_settings: GenerationSettings | None = None,
 ) -> ClipGenerationResult:
     resolved_export_settings = export_settings or (clips[0].export_settings if clips else ExportSettings())
+    resolved_generation_settings = generation_settings or (
+        clips[0].generation_settings if clips else resolved_export_settings.generation_settings
+    )
     return ClipGenerationResult(
         podcast_id=podcast_id,
         total_clips_generated=len(clips),
@@ -375,6 +391,7 @@ def build_clip_generation_result(
         processing_time_seconds=round(processing_time_seconds, 3),
         download_folder_url=f"/podcasts/{podcast_id}/clips",
         export_settings=resolved_export_settings,
+        generation_settings=resolved_generation_settings,
     )
 
 
@@ -456,38 +473,120 @@ def get_clip_podcast_id(clip_id: str) -> str | None:
     return str(rows[0]["podcast_id"])
 
 
-def _select_segments(score_segments: list[ScoreSegment]) -> list[ScoreSegment]:
-    return sorted(
+def _select_segments(
+    score_segments: list[ScoreSegment],
+    *,
+    generation_settings: GenerationSettings | None = None,
+) -> list[ScoreSegment]:
+    settings = generation_settings or GenerationSettings()
+    sorted_segments = sorted(
         score_segments,
-        key=lambda item: (-item.virality_score, item.segment_start_seconds),
-    )[:MAX_GENERATED_CLIPS]
+        key=lambda item: (
+            -_score_segment_for_generation(item, settings.topic_focus),
+            item.segment_start_seconds,
+        ),
+    )
+    return sorted_segments[:min(settings.number_of_clips, MAX_GENERATED_CLIPS)]
+
+
+def _score_segment_for_generation(segment: ScoreSegment, topic_focus: str | None) -> float:
+    score = float(segment.virality_score)
+    tokens = _topic_focus_tokens(topic_focus)
+    if not tokens:
+        return score
+    haystack = " ".join([segment.transcript_snippet, " ".join(segment.keywords)]).lower()
+    matches = sum(1 for token in tokens if token in haystack)
+    return score + (matches * 7.5)
+
+
+def _topic_focus_tokens(topic_focus: str | None) -> list[str]:
+    if not topic_focus:
+        return []
+    return [
+        token
+        for token in (_normalize_token(item) for item in topic_focus.replace(",", " ").split())
+        if len(token) >= 2
+    ]
 
 
 def _resolve_clip_window(
     segment: ScoreSegment,
     transcription: TranscriptionResult | None,
+    *,
+    target_duration_seconds: int | None = None,
 ) -> tuple[float, float]:
     if transcription is None:
-        return _expand_clip_window(
+        start, end = _expand_clip_window(
             segment.segment_start_seconds,
             segment.segment_end_seconds,
-            max_duration=max(segment.segment_end_seconds, segment.segment_start_seconds + 1.0),
+            max_duration=max(
+                segment.segment_end_seconds,
+                segment.segment_start_seconds + float(target_duration_seconds or 1.0),
+            ),
+        )
+        return _apply_requested_duration(
+            start,
+            end,
+            max_duration=max(end, segment.segment_start_seconds + float(target_duration_seconds or 1.0)),
+            target_duration_seconds=target_duration_seconds,
         )
 
     matched_window = _match_segment_snippet_window(segment, transcription.words)
     if matched_window is not None:
         start, end = matched_window
-        return _expand_clip_window(
+        expanded_start, expanded_end = _expand_clip_window(
             start,
             end,
             max_duration=transcription.duration_seconds,
         )
+        return _apply_requested_duration(
+            expanded_start,
+            expanded_end,
+            max_duration=transcription.duration_seconds,
+            target_duration_seconds=target_duration_seconds,
+        )
 
-    return _expand_clip_window(
+    expanded_start, expanded_end = _expand_clip_window(
         segment.segment_start_seconds,
         segment.segment_end_seconds,
         max_duration=transcription.duration_seconds,
     )
+    if not _collect_clip_words(
+        transcription.words,
+        clip_start_seconds=expanded_start,
+        clip_end_seconds=expanded_end,
+    ):
+        return expanded_start, expanded_end
+    return _apply_requested_duration(
+        expanded_start,
+        expanded_end,
+        max_duration=transcription.duration_seconds,
+        target_duration_seconds=target_duration_seconds,
+    )
+
+
+def _apply_requested_duration(
+    start_seconds: float,
+    end_seconds: float,
+    *,
+    max_duration: float,
+    target_duration_seconds: int | None,
+) -> tuple[float, float]:
+    if target_duration_seconds is None:
+        return start_seconds, end_seconds
+    target_duration = float(target_duration_seconds)
+    current_duration = round(end_seconds - start_seconds, 3)
+    if current_duration >= target_duration:
+        center = (start_seconds + end_seconds) / 2
+        adjusted_start = max(0.0, center - (target_duration / 2))
+        adjusted_end = min(max_duration, adjusted_start + target_duration)
+    else:
+        extra = target_duration - current_duration
+        adjusted_start = max(0.0, start_seconds - (extra / 2))
+        adjusted_end = min(max_duration, adjusted_start + target_duration)
+    if adjusted_end - adjusted_start < min(target_duration, max_duration):
+        adjusted_start = max(0.0, adjusted_end - target_duration)
+    return round(adjusted_start, 3), round(adjusted_end, 3)
 
 
 def _match_segment_snippet_window(
@@ -781,7 +880,7 @@ def _build_audio_filter(export_settings: ExportSettings | None = None) -> str | 
 
 
 def _build_video_filters(
-    subtitle_path: Path,
+    subtitle_path: Path | None,
     *,
     export_settings: ExportSettings | None = None,
     crop_window: CropWindow | None = None,
@@ -810,18 +909,19 @@ def _build_video_filters(
             )
         )
     filters.append("setpts=PTS-STARTPTS")
-    filters.append(
-        _build_subtitle_filter(
-            subtitle_path,
-            export_settings.subtitle_style if export_settings else None,
-            export_mode=render_contract.export_mode,
+    if subtitle_path is not None:
+        filters.append(
+            _build_subtitle_filter(
+                subtitle_path,
+                export_settings.subtitle_style if export_settings else None,
+                export_mode=render_contract.export_mode,
+            )
         )
-    )
     return ",".join(filters)
 
 
 def _build_video_filter_graph(
-    subtitle_path: Path,
+    subtitle_path: Path | None,
     overlay: OverlayDecision,
     *,
     export_settings: ExportSettings | None = None,
@@ -878,7 +978,7 @@ def _resolve_overlay_asset_path(asset_path: str | None) -> Path | None:
 def _render_clip_with_optional_overlay(
     source_path: Path,
     clip_path: Path,
-    subtitle_path: Path,
+    subtitle_path: Path | None,
     *,
     start_seconds: float,
     duration_seconds: float,
@@ -953,7 +1053,7 @@ def _render_clip_with_optional_overlay(
 def _run_ffmpeg_clip_generation(
     source_path: Path,
     clip_path: Path,
-    subtitle_path: Path,
+    subtitle_path: Path | None,
     *,
     start_seconds: float,
     duration_seconds: float,

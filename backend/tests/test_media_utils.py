@@ -78,6 +78,7 @@ class MediaUtilsTests(unittest.TestCase):
         self.assertEqual(contract.height, 1920)
         self.assertEqual(contract.subtitle_timing_profile, "compact")
         self.assertLessEqual(contract.subtitle_timing.max_words_per_cue, 5)
+        self.assertEqual(contract.subtitle_timing.max_lines, 3)
 
     def test_build_render_contract_returns_landscape_contract(self) -> None:
         contract = build_render_contract(
@@ -91,6 +92,39 @@ class MediaUtilsTests(unittest.TestCase):
         self.assertEqual(contract.height, 1080)
         self.assertEqual(contract.subtitle_timing_profile, "extended")
         self.assertGreaterEqual(contract.subtitle_timing.max_duration_seconds, 3.4)
+        self.assertEqual(contract.subtitle_timing.max_lines, 2)
+
+    def test_build_render_contract_switches_book_like_mode_policies(self) -> None:
+        contract = build_render_contract(
+            ExportSettingsInput(export_mode="portrait", crop_mode="smart_crop"),
+            visual_output_mode="book_like",
+            subtitles_available=True,
+            clip_duration_seconds=32.0,
+        )
+
+        self.assertEqual(contract.requested_visual_output_mode, "book_like")
+        self.assertEqual(contract.effective_visual_output_mode, "book_like")
+        self.assertEqual(contract.rendering_profile, "editorial_frame")
+        self.assertEqual(contract.overlay_policy, "disabled")
+        self.assertEqual(contract.subtitle_policy, "narrative_cards")
+        self.assertGreaterEqual(contract.overlay_safe_margin_y, 90)
+
+    def test_build_render_contract_falls_back_stylized_mode_on_landscape(self) -> None:
+        contract = build_render_contract(
+            ExportSettings(),
+            visual_output_mode="stylized_animated",
+            subtitles_available=True,
+            clip_duration_seconds=28.0,
+        )
+
+        self.assertEqual(contract.requested_visual_output_mode, "stylized_animated")
+        self.assertEqual(contract.effective_visual_output_mode, "original_people")
+        self.assertEqual(contract.rendering_profile, "live_action")
+        self.assertEqual(contract.overlay_policy, "full")
+        self.assertEqual(
+            contract.render_fallback_reason,
+            "stylized_animated_requires_portrait_export",
+        )
 
     def test_resolve_export_settings_for_render_tunes_short_portrait_subtitles(self) -> None:
         resolved = resolve_export_settings_for_render(
@@ -116,6 +150,22 @@ class MediaUtilsTests(unittest.TestCase):
 
         self.assertEqual(resolved.subtitle_style.background_opacity, 0)
         self.assertEqual(resolved.subtitle_style.preset, "minimal")
+
+    def test_resolve_export_settings_for_render_tunes_book_like_subtitles(self) -> None:
+        resolved = resolve_export_settings_for_render(
+            ExportSettingsInput(
+                export_mode="portrait",
+                subtitle_style=SubtitleStyle(preset="classic", font_family="Arial", font_size=18),
+            ),
+            visual_output_mode="book_like",
+            subtitles_available=True,
+            clip_duration_seconds=36.0,
+        )
+
+        self.assertEqual(resolved.subtitle_style.font_family, "Georgia")
+        self.assertEqual(resolved.subtitle_style.position, "top")
+        self.assertTrue(resolved.subtitle_style.italic)
+        self.assertGreaterEqual(resolved.subtitle_style.background_opacity, 0.42)
 
     def test_compute_portrait_crop_window_uses_face_center_when_available(self) -> None:
         with patch("app.utils.reframing.read_video_dimensions", return_value=(1920, 1080)):

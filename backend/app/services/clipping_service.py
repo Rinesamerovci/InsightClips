@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import uuid
@@ -12,7 +13,7 @@ from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
 from app.models.export_settings import ExportSettings, ExportSettingsInput, GenerationSettings, SubtitleStyle
-from app.models.media import SubtitleTimingContract
+from app.models.media import SubtitleTimingContract, VisualOutputMode
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
 from app.services.media_service import build_render_contract, resolve_export_settings_for_render
@@ -101,6 +102,7 @@ def build_ffmpeg_clip_command(
     start_seconds: float,
     duration_seconds: float,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
     crop_window: CropWindow | None = None,
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
@@ -135,6 +137,7 @@ def build_ffmpeg_clip_command(
                     subtitle_path,
                     overlay,
                     export_settings=export_settings,
+                    visual_output_mode=visual_output_mode,
                     crop_window=crop_window,
                     clip_duration_seconds=duration_seconds,
                 ),
@@ -151,6 +154,7 @@ def build_ffmpeg_clip_command(
                 _build_video_filters(
                     subtitle_path,
                     export_settings=export_settings,
+                    visual_output_mode=visual_output_mode,
                     crop_window=crop_window,
                     clip_duration_seconds=duration_seconds,
                 ),
@@ -187,6 +191,7 @@ def build_srt_content(
     clip_start_seconds: float,
     clip_end_seconds: float,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
 ) -> tuple[str, str]:
     clip_words = _collect_clip_words(
         transcription.words,
@@ -201,6 +206,8 @@ def build_srt_content(
         clip_start_seconds=clip_start_seconds,
         subtitle_timing=build_render_contract(
             export_settings,
+            visual_output_mode=visual_output_mode,
+            subtitles_available=True,
             clip_duration_seconds=round(clip_end_seconds - clip_start_seconds, 3),
         ).subtitle_timing,
     )
@@ -228,6 +235,7 @@ def generate_clips(
     transcription: TranscriptionResult | None,
     export_settings: ExportSettingsInput | ExportSettings | None = None,
     generation_settings: GenerationSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
 ) -> list[ClipResult]:
     podcast_row = _get_podcast_row(podcast_id)
     source_path = _resolve_source_media_path(podcast_row)
@@ -263,6 +271,14 @@ def generate_clips(
         try:
             clip_export_settings = resolve_export_settings_for_render(
                 resolved_export_settings,
+                visual_output_mode=visual_output_mode,
+                subtitles_available=resolved_generation_settings.subtitles_enabled,
+                clip_duration_seconds=clip_duration,
+            )
+            render_contract = build_render_contract(
+                clip_export_settings,
+                visual_output_mode=visual_output_mode,
+                subtitles_available=resolved_generation_settings.subtitles_enabled,
                 clip_duration_seconds=clip_duration,
             )
             if resolved_generation_settings.subtitles_enabled and transcription is not None:
@@ -271,12 +287,14 @@ def generate_clips(
                     clip_start_seconds=clip_start,
                     clip_end_seconds=clip_end,
                     export_settings=clip_export_settings,
+                    visual_output_mode=visual_output_mode,
                 )
             elif resolved_generation_settings.subtitles_enabled:
                 srt_content, subtitle_text = build_segment_fallback_srt_content(
                     segment,
                     clip_duration_seconds=clip_duration,
                     export_settings=clip_export_settings,
+                    visual_output_mode=visual_output_mode,
                 )
             else:
                 srt_content = None
@@ -293,6 +311,9 @@ def generate_clips(
                 status="ready",
                 export_settings=clip_export_settings,
                 generation_settings=resolved_generation_settings,
+                visual_output_mode=visual_output_mode,
+                effective_visual_output_mode=render_contract.effective_visual_output_mode,
+                render_fallback_reason=render_contract.render_fallback_reason,
             )
             overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
                 podcast_id,
@@ -308,6 +329,7 @@ def generate_clips(
                 start_seconds=clip_start,
                 duration_seconds=clip_duration,
                 export_settings=clip_export_settings,
+                visual_output_mode=visual_output_mode,
                 overlay=overlay_decision,
             )
             # Keep generation responsive by returning locally rendered clips immediately.
@@ -322,6 +344,9 @@ def generate_clips(
                         "overlay": final_overlay,
                         "export_settings": clip_export_settings,
                         "generation_settings": resolved_generation_settings,
+                        "visual_output_mode": visual_output_mode,
+                        "effective_visual_output_mode": render_contract.effective_visual_output_mode,
+                        "render_fallback_reason": render_contract.render_fallback_reason,
                     }
                 )
             )
@@ -724,11 +749,7 @@ def _finalize_subtitle_cue(
     start = max(0.0, round(words[0].start - clip_start_seconds, 3))
     end = max(start + 0.08, round(words[-1].end - clip_start_seconds, 3))
     tokens = [word.word for word in words]
-    midpoint = len(tokens) // 2
-    if max_lines > 1 and len(tokens) >= 8:
-        text = f"{_join_transcript_tokens(tokens[:midpoint])}\n{_join_transcript_tokens(tokens[midpoint:])}"
-    else:
-        text = _join_transcript_tokens(tokens)
+    text = _format_subtitle_lines(tokens, max_lines=max_lines)
     return _SubtitleCue(start=start, end=end, text=text)
 
 
@@ -737,6 +758,7 @@ def build_segment_fallback_srt_content(
     *,
     clip_duration_seconds: float,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
 ) -> tuple[str, str]:
     subtitle_text = _join_transcript_tokens(segment.transcript_snippet.split())
     if not subtitle_text:
@@ -744,22 +766,25 @@ def build_segment_fallback_srt_content(
 
     subtitle_timing = build_render_contract(
         export_settings,
+        visual_output_mode=visual_output_mode,
+        subtitles_available=True,
         clip_duration_seconds=clip_duration_seconds,
     ).subtitle_timing
     tokens = subtitle_text.split()
-    lines: list[str] = []
+    chunks: list[list[str]] = []
     current_tokens: list[str] = []
     for token in tokens:
         current_tokens.append(token)
         if len(current_tokens) >= subtitle_timing.max_words_per_cue:
-            lines.append(" ".join(current_tokens))
+            chunks.append(current_tokens)
             current_tokens = []
     if current_tokens:
-        lines.append(" ".join(current_tokens))
+        chunks.append(current_tokens)
 
-    if not lines:
-        lines = [subtitle_text]
+    if not chunks:
+        chunks = [tokens]
 
+    lines = [_format_subtitle_lines(chunk, max_lines=subtitle_timing.max_lines) for chunk in chunks]
     cue_count = len(lines)
     duration_per_cue = min(
         subtitle_timing.max_duration_seconds,
@@ -784,6 +809,37 @@ def build_segment_fallback_srt_content(
         )
 
     return "\n".join(srt_lines).strip(), subtitle_text
+
+
+def _format_subtitle_lines(tokens: list[str], *, max_lines: int) -> str:
+    cleaned_tokens = [str(token).strip() for token in tokens if str(token).strip()]
+    if not cleaned_tokens:
+        return ""
+
+    if max_lines <= 1 or len(cleaned_tokens) <= 4:
+        return _join_transcript_tokens(cleaned_tokens)
+
+    if max_lines >= 3:
+        line_count = 3 if len(cleaned_tokens) >= 8 else 2
+    else:
+        line_count = 2 if len(cleaned_tokens) >= 7 else 1
+
+    line_count = min(line_count, max_lines)
+    if line_count <= 1:
+        return _join_transcript_tokens(cleaned_tokens)
+
+    base_size = len(cleaned_tokens) // line_count
+    remainder = len(cleaned_tokens) % line_count
+    lines: list[str] = []
+    start_index = 0
+
+    for line_index in range(line_count):
+        chunk_size = base_size + (1 if line_index < remainder else 0)
+        end_index = start_index + max(1, chunk_size)
+        lines.append(_join_transcript_tokens(cleaned_tokens[start_index:end_index]))
+        start_index = end_index
+
+    return "\n".join(line for line in lines if line)
 
 
 def _join_transcript_tokens(tokens: Any) -> str:
@@ -879,15 +935,26 @@ def _build_audio_filter(export_settings: ExportSettings | None = None) -> str | 
     )
 
 
+def _build_visual_mode_video_filter(render_contract: Any) -> str | None:
+    if render_contract.effective_visual_output_mode == "book_like":
+        return "eq=saturation=0.84:contrast=1.04:brightness=0.02"
+    if render_contract.effective_visual_output_mode == "stylized_animated":
+        return "eq=saturation=1.10:contrast=1.08:brightness=0.01"
+    return None
+
+
 def _build_video_filters(
     subtitle_path: Path | None,
     *,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
     crop_window: CropWindow | None = None,
     clip_duration_seconds: float | None = None,
 ) -> str:
     render_contract = build_render_contract(
         export_settings,
+        visual_output_mode=visual_output_mode,
+        subtitles_available=subtitle_path is not None,
         clip_duration_seconds=clip_duration_seconds,
     )
     filters: list[str] = []
@@ -908,6 +975,9 @@ def _build_video_filters(
                 f"pad={render_contract.width}:{render_contract.height}:(ow-iw)/2:(oh-ih)/2"
             )
         )
+    visual_mode_filter = _build_visual_mode_video_filter(render_contract)
+    if visual_mode_filter is not None:
+        filters.append(visual_mode_filter)
     filters.append("setpts=PTS-STARTPTS")
     if subtitle_path is not None:
         filters.append(
@@ -925,12 +995,14 @@ def _build_video_filter_graph(
     overlay: OverlayDecision,
     *,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
     crop_window: CropWindow | None = None,
     clip_duration_seconds: float | None = None,
 ) -> str:
     subtitle_filter = _build_video_filters(
         subtitle_path,
         export_settings=export_settings,
+        visual_output_mode=visual_output_mode,
         crop_window=crop_window,
         clip_duration_seconds=clip_duration_seconds,
     )
@@ -983,6 +1055,7 @@ def _render_clip_with_optional_overlay(
     start_seconds: float,
     duration_seconds: float,
     export_settings: ExportSettings,
+    visual_output_mode: VisualOutputMode = "original_people",
     overlay: OverlayDecision,
 ) -> tuple[OverlayDecision, ExportSettings]:
     crop_window = _resolve_crop_window(
@@ -990,6 +1063,12 @@ def _render_clip_with_optional_overlay(
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
         export_settings=export_settings,
+    )
+    render_contract = build_render_contract(
+        export_settings,
+        visual_output_mode=visual_output_mode,
+        subtitles_available=subtitle_path is not None,
+        clip_duration_seconds=duration_seconds,
     )
     if not overlay.applied:
         final_export_settings = _run_ffmpeg_clip_generation(
@@ -999,13 +1078,40 @@ def _render_clip_with_optional_overlay(
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
             export_settings=export_settings,
+            visual_output_mode=visual_output_mode,
             crop_window=crop_window,
         )
         if final_export_settings is None:
             final_export_settings = export_settings
         return overlay.model_copy(update={"rendered": False, "render_status": "no_match"}), final_export_settings
 
-    overlay_asset_path = _resolve_overlay_asset_path(overlay.asset_path)
+    if render_contract.overlay_policy == "disabled":
+        final_export_settings = _run_ffmpeg_clip_generation(
+            source_path,
+            clip_path,
+            subtitle_path,
+            start_seconds=start_seconds,
+            duration_seconds=duration_seconds,
+            export_settings=export_settings,
+            visual_output_mode=visual_output_mode,
+            crop_window=crop_window,
+        )
+        if final_export_settings is None:
+            final_export_settings = export_settings
+        return overlay.model_copy(update={"rendered": False, "render_status": "mode_disabled"}), final_export_settings
+
+    overlay_for_render = overlay
+    success_status = "rendered"
+    if render_contract.overlay_policy == "limited":
+        overlay_for_render = overlay.model_copy(
+            update={
+                "opacity": min(float(overlay.opacity or 0.9), 0.58),
+                "scale": min(float(overlay.scale or 0.18), 0.14),
+            }
+        )
+        success_status = "mode_limited"
+
+    overlay_asset_path = _resolve_overlay_asset_path(overlay_for_render.asset_path)
     if overlay_asset_path is None:
         final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
@@ -1014,6 +1120,7 @@ def _render_clip_with_optional_overlay(
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
             export_settings=export_settings,
+            visual_output_mode=visual_output_mode,
             crop_window=crop_window,
         )
         if final_export_settings is None:
@@ -1028,13 +1135,14 @@ def _render_clip_with_optional_overlay(
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
             export_settings=export_settings,
+            visual_output_mode=visual_output_mode,
             crop_window=crop_window,
-            overlay=overlay,
+            overlay=overlay_for_render,
             overlay_asset_path=overlay_asset_path,
         )
         if final_export_settings is None:
             final_export_settings = export_settings
-        return overlay.model_copy(update={"rendered": True, "render_status": "rendered"}), final_export_settings
+        return overlay_for_render.model_copy(update={"rendered": True, "render_status": success_status}), final_export_settings
     except ClippingError:
         final_export_settings = _run_ffmpeg_clip_generation(
             source_path,
@@ -1043,6 +1151,7 @@ def _render_clip_with_optional_overlay(
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
             export_settings=export_settings,
+            visual_output_mode=visual_output_mode,
             crop_window=crop_window,
         )
         if final_export_settings is None:
@@ -1058,6 +1167,7 @@ def _run_ffmpeg_clip_generation(
     start_seconds: float,
     duration_seconds: float,
     export_settings: ExportSettings | None = None,
+    visual_output_mode: VisualOutputMode = "original_people",
     crop_window: CropWindow | None = None,
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
@@ -1073,6 +1183,7 @@ def _run_ffmpeg_clip_generation(
         start_seconds=start_seconds,
         duration_seconds=duration_seconds,
         export_settings=resolved_export_settings,
+        visual_output_mode=visual_output_mode,
         crop_window=crop_window,
         overlay=overlay,
         overlay_asset_path=overlay_asset_path,
@@ -1092,6 +1203,7 @@ def _run_ffmpeg_clip_generation(
             start_seconds=start_seconds,
             duration_seconds=duration_seconds,
             export_settings=fallback_export_settings,
+            visual_output_mode=visual_output_mode,
             crop_window=crop_window,
             overlay=overlay,
             overlay_asset_path=overlay_asset_path,

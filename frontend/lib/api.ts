@@ -35,6 +35,7 @@ export type CropMode = "none" | "center_crop" | "smart_crop";
 export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
 export type SubtitlePosition = "top" | "center" | "bottom";
 export type GenerationTemplateId = "hook_spotlight" | "story_arc" | "expert_take";
+export type VisualOutputMode = "original_people" | "book_like" | "stylized_animated";
 
 export type SubtitleStyle = {
   preset: SubtitleStylePreset;
@@ -77,6 +78,7 @@ export type GenerationSettings = {
 export type GenerateClipsPayload = {
   generation_settings?: GenerationSettings;
   export_settings?: ExportSettings;
+  visual_output_mode?: VisualOutputMode;
   save_generation_settings?: boolean;
   use_preferred_generation_settings?: boolean;
 };
@@ -264,6 +266,9 @@ export type ClipResult = {
   overlay?: ClipOverlay | null;
   export_settings?: ExportSettings | null;
   generation_settings?: GenerationSettings | null;
+  visual_output_mode?: VisualOutputMode | null;
+  effective_visual_output_mode?: VisualOutputMode | null;
+  render_fallback_reason?: string | null;
 };
 
 export type ClipGenerationResult = {
@@ -675,6 +680,9 @@ export async function generateClips(
   }
   if (payload?.export_settings) {
     requestBody.export_settings = payload.export_settings;
+  }
+  if (payload?.visual_output_mode) {
+    requestBody.visual_output_mode = payload.visual_output_mode;
   }
   if (typeof payload?.save_generation_settings === "boolean") {
     requestBody.save_generation_settings = payload.save_generation_settings;

@@ -844,6 +844,14 @@ class ClippingServiceTests(unittest.TestCase):
             clips[0].render_fallback_reason,
             "stylized_animated_requires_subtitles",
         )
+        insert_payload = clips_table.insert.call_args.args[0]
+        self.assertEqual(insert_payload[0]["generation_settings"]["subtitles_enabled"], False)
+        self.assertEqual(insert_payload[0]["visual_output_mode"], "stylized_animated")
+        self.assertEqual(insert_payload[0]["effective_visual_output_mode"], "original_people")
+        self.assertEqual(
+            insert_payload[0]["render_fallback_reason"],
+            "stylized_animated_requires_subtitles",
+        )
 
     def test_generate_clips_disables_overlay_rendering_for_book_like_mode(self) -> None:
         case_dir = self._workspace_case_dir("clipping-book-like-overlay-disabled")

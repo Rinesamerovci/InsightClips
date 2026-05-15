@@ -19,6 +19,7 @@ from app.services.publishing_service import (  # noqa: E402
     get_clip_metrics,
     get_clip_publication_status,
     get_published_clip_download_content,
+    build_content_calendar,
     publish_clips,
     revoke_clip_download,
 )
@@ -434,6 +435,50 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertIsNone(content)
         self.assertIsNone(file_path)
         self.assertIsNone(filename)
+
+    def test_build_content_calendar_returns_platform_specific_suggestions(self) -> None:
+        case_dir = self._workspace_case_dir("publishing-calendar")
+        rows = self._build_clip_rows(case_dir)
+        rows.append(
+            {
+                "id": "clip-2",
+                "podcast_id": "podcast-123",
+                "clip_number": 2,
+                "subtitle_text": "How leaders turn audience trust into consistent growth",
+                "status": "ready",
+                "virality_score": 94.0,
+                "published": False,
+                "published_at": None,
+            }
+        )
+        storage = FakeStorage()
+        fake_supabase = FakeSupabase(rows, storage)
+
+        with patch.object(publishing_service_module, "service_supabase", fake_supabase):
+            result = build_content_calendar("podcast-123", days=7, max_clips=2)
+
+        self.assertEqual(result.podcast_id, "podcast-123")
+        self.assertEqual(result.total_suggestions, 6)
+        self.assertEqual(
+            [suggestion.platform for suggestion in result.suggestions[:3]],
+            ["tiktok", "linkedin", "youtube"],
+        )
+        self.assertEqual(result.suggestions[0].clip_id, "clip-2")
+        self.assertIn("#PodcastClips", result.suggestions[0].hashtags)
+        self.assertEqual(result.suggestions[1].best_time_local, "09:00")
+
+    def test_build_content_calendar_rejects_invalid_days(self) -> None:
+        case_dir = self._workspace_case_dir("publishing-calendar-invalid")
+        rows = self._build_clip_rows(case_dir)
+        storage = FakeStorage()
+        fake_supabase = FakeSupabase(rows, storage)
+
+        with patch.object(publishing_service_module, "service_supabase", fake_supabase):
+            with self.assertRaises(PublishingError) as exc_info:
+                build_content_calendar("podcast-123", days=30)
+
+        self.assertEqual(exc_info.exception.status_code, 400)
+        self.assertIn("days", exc_info.exception.detail)
 
 
 if __name__ == "__main__":

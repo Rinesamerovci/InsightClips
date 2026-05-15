@@ -12,7 +12,8 @@ if str(BACKEND_ROOT) not in sys.path:
 
 import app.services.profile_service as profile_service_module  # noqa: E402
 from app.models.export_settings import ExportSettingsInput  # noqa: E402
-from app.services.profile_service import update_profile, update_user_export_settings  # noqa: E402
+from app.models.profile import UserMessageRequest  # noqa: E402
+from app.services.profile_service import submit_user_message, update_profile, update_user_export_settings  # noqa: E402
 
 
 class ProfileServiceTests(unittest.TestCase):
@@ -140,6 +141,88 @@ class ProfileServiceTests(unittest.TestCase):
         self.assertEqual(response.export_settings.export_mode, "portrait")
         update_payload = update_mock.call_args.args[0]
         self.assertEqual(update_payload["export_settings"]["crop_mode"], "center_crop")
+
+    def test_submit_user_message_persists_feedback_request(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "message-1",
+                        "user_id": "user-123",
+                        "message_type": "feedback",
+                        "category": "feature_request",
+                        "subject": "Calendar",
+                        "message": "Please add a better weekly planning flow.",
+                        "contact_email": "creator@example.com",
+                        "status": "received",
+                        "created_at": None,
+                    }
+                ]
+            )
+        )
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        table_mock = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
+        service_supabase_mock.table = table_mock
+
+        payload = UserMessageRequest(
+            message_type="feedback",
+            category="feature_request",
+            subject="  Calendar  ",
+            message=" Please add a better weekly planning flow. ",
+            contact_email="creator@example.com",
+        )
+
+        with patch.object(profile_service_module, "service_supabase", service_supabase_mock):
+            response = submit_user_message("user-123", payload)
+
+        self.assertEqual(response.id, "message-1")
+        self.assertEqual(response.category, "feature_request")
+        self.assertEqual(response.subject, "Calendar")
+        insert_payload = insert_mock.call_args.args[0]
+        self.assertEqual(insert_payload["user_id"], "user-123")
+        self.assertEqual(insert_payload["message"], "Please add a better weekly planning flow.")
+    
+    def test_submit_user_message_persists_contact_request(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "message-2",
+                        "user_id": "user-123",
+                        "message_type": "contact",
+                        "category": "general",
+                        "subject": "Partnership",
+                        "message": "I want to contact the InsightClips team.",
+                        "contact_email": "creator@example.com",
+                        "status": "received",
+                        "created_at": None,
+                    }
+                ]
+            )
+        )
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
+
+        payload = UserMessageRequest(
+            message_type="contact",
+            category="general",
+            subject="Partnership",
+            message="I want to contact the InsightClips team.",
+            contact_email="creator@example.com",
+        )
+
+        with patch.object(profile_service_module, "service_supabase", service_supabase_mock):
+            response = submit_user_message("user-123", payload)
+
+        self.assertEqual(response.message_type, "contact")
+        self.assertEqual(response.contact_email, "creator@example.com")
+        self.assertEqual(insert_mock.call_args.args[0]["message_type"], "contact")
+
+    def test_user_message_request_rejects_short_messages(self) -> None:
+        with self.assertRaises(ValueError):
+            UserMessageRequest(message="short")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from app.models.clip_insights import ReferenceMention, ReferenceMentionType
 from app.database import service_supabase
 from app.models.analysis import AnalysisResult, AnalysisSummary, ScoreSegment
 from app.models.transcription import TranscriptWord, TranscriptionResult
@@ -49,6 +50,48 @@ MAX_SEGMENT_DURATION = 45.0
 MIN_SEGMENT_DURATION = 6.0
 PAUSE_BREAK_SECONDS = 1.4
 TOP_SEGMENT_COUNT = 5
+REFERENCE_BOOK_CUES = {"book", "books"}
+REFERENCE_SOURCE_CUES = {"article", "paper", "study", "report", "source", "podcast", "episode"}
+REFERENCE_CONCEPT_CUES = {"concept", "framework", "principle", "theory", "law", "effect", "method"}
+IGNORED_REFERENCE_LABELS = {
+    "because",
+    "for the audience",
+    "for the entire team",
+    "for the whole team",
+    "the audience",
+    "the founder",
+    "the whole team",
+    "the team",
+    "this episode",
+    "this podcast",
+    "this story",
+}
+REFERENCE_LEXICON: dict[str, tuple[ReferenceMentionType, tuple[str, ...]]] = {
+    "atomic habits": ("book", ("habits", "productivity", "growth")),
+    "deep work": ("book", ("productivity", "focus")),
+    "first principles": ("concept", ("product", "strategy")),
+    "good to great": ("book", ("leadership", "business", "growth")),
+    "harvard business review": ("source", ("business", "leadership", "strategy")),
+    "jobs to be done": ("concept", ("product", "customer", "strategy")),
+    "lean startup": ("book", ("startup", "product", "growth")),
+    "network effects": ("concept", ("growth", "product", "strategy")),
+    "openai": ("source", ("ai", "technology")),
+    "pareto principle": ("concept", ("productivity", "strategy")),
+    "product market fit": ("concept", ("startup", "product", "growth")),
+    "zero to one": ("book", ("startup", "innovation", "strategy")),
+}
+TOPIC_KEYWORD_MAP: dict[str, tuple[str, ...]] = {
+    "ai": ("ai", "artificial intelligence", "gpt", "machine learning", "openai"),
+    "finance": ("bitcoin", "blockchain", "cash", "crypto", "finance", "income", "money", "revenue"),
+    "growth": ("audience", "creator", "growth", "retention", "viral"),
+    "marketing": ("brand", "campaign", "marketing", "positioning"),
+    "startup": ("founder", "startup", "venture"),
+    "product": ("customer", "jobs to be done", "product", "product market fit"),
+    "leadership": ("culture", "leadership", "management", "team"),
+    "productivity": ("atomic habits", "deep work", "focus", "habit", "habits", "productivity"),
+    "research": ("article", "paper", "report", "research", "source", "study"),
+    "storytelling": ("hook", "lesson", "story", "stories"),
+}
 
 
 class AnalysisError(Exception):
@@ -74,6 +117,15 @@ class _SegmentCandidate:
     @property
     def duration(self) -> float:
         return round(self.end - self.start, 3)
+
+
+@dataclass(frozen=True)
+class _ReferenceCandidate:
+    label: str
+    normalized_label: str
+    mention_type: ReferenceMentionType
+    confidence: float
+    topic_hints: tuple[str, ...]
 
 
 def analyze_and_score(podcast_id: str, transcription: TranscriptionResult) -> list[ScoreSegment]:
@@ -423,3 +475,295 @@ def _calculate_virality_score(
     unique_ratio = (len(set(terms)) / len(terms)) if terms else 0.0
     score += round(unique_ratio * 12.0, 2)
     return round(max(0.0, min(100.0, score)), 2)
+
+
+def detect_reference_mentions(
+    text: str,
+    *,
+    segment_start_seconds: float = 0.0,
+    segment_end_seconds: float | None = None,
+    keywords: list[str] | tuple[str, ...] | None = None,
+) -> list[ReferenceMention]:
+    cleaned_text = " ".join(text.split()).strip()
+    if not cleaned_text:
+        return []
+
+    normalized_keywords = tuple(
+        cleaned
+        for item in (keywords or [])
+        if (cleaned := str(item).strip().lower())
+    )
+    candidates: dict[str, _ReferenceCandidate] = {}
+    lowered_text = cleaned_text.lower()
+
+    def register_candidate(
+        label: str,
+        mention_type: ReferenceMentionType,
+        confidence: float,
+        *,
+        topic_hints: tuple[str, ...] = (),
+    ) -> None:
+        normalized_label = _normalize_reference_label(label)
+        if not normalized_label or normalized_label in IGNORED_REFERENCE_LABELS:
+            return
+        candidate = _ReferenceCandidate(
+            label=" ".join(label.split()).strip(),
+            normalized_label=normalized_label,
+            mention_type=mention_type,
+            confidence=confidence,
+            topic_hints=topic_hints,
+        )
+        existing = candidates.get(normalized_label)
+        if existing is None or (
+            candidate.confidence,
+            candidate.mention_type,
+            candidate.label.lower(),
+        ) > (
+            existing.confidence,
+            existing.mention_type,
+            existing.label.lower(),
+        ):
+            candidates[normalized_label] = candidate
+
+    for phrase, (mention_type, topic_hints) in REFERENCE_LEXICON.items():
+        if phrase in lowered_text:
+            register_candidate(
+                phrase.title() if mention_type == "book" else phrase,
+                mention_type,
+                0.97 if mention_type in {"book", "source"} else 0.95,
+                topic_hints=topic_hints,
+            )
+
+    cue_patterns = (
+        re.compile(
+            r"\b(?P<cue>book|books|article|paper|study|report|source|podcast|episode|concept|framework|principle|theory|law|effect|method)\s+"
+            r"(?:called|named|titled|about|like)?\s*[\"“'](?P<label>[^\"”']{3,80})[\"”']",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?P<cue>book|books|article|paper|study|report|source|podcast|episode|concept|framework|principle|theory|law|effect|method)\s+"
+            r"(?:called|named|titled|about|like)?\s*(?P<label>[A-Z][A-Za-z0-9&'/-]+(?:\s+[A-Z][A-Za-z0-9&'/-]+){0,5})",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?:according to|from|citing|referencing|in)\s+(?P<label>[A-Z][A-Za-z0-9&'/-]+(?:\s+[A-Z][A-Za-z0-9&'/-]+){1,5})",
+            flags=re.IGNORECASE,
+        ),
+    )
+    for pattern in cue_patterns:
+        for match in pattern.finditer(cleaned_text):
+            label = match.group("label")
+            cue = (match.groupdict().get("cue") or "").lower()
+            mention_type = _resolve_reference_type(cue, label)
+            confidence = 0.94 if cue else 0.86
+            register_candidate(label, mention_type, confidence)
+
+    for quoted_match in re.finditer(r"[\"“'](?P<label>[A-Za-z0-9][^\"”']{2,80})[\"”']", cleaned_text):
+        label = quoted_match.group("label")
+        mention_type = _resolve_reference_type("", label)
+        register_candidate(label, mention_type, 0.84)
+
+    segment_end = _resolve_reference_segment_end(
+        cleaned_text,
+        segment_start_seconds=segment_start_seconds,
+        segment_end_seconds=segment_end_seconds,
+    )
+    mentions: list[ReferenceMention] = []
+    for candidate in sorted(
+        candidates.values(),
+        key=lambda item: (-item.confidence, item.normalized_label, item.label.lower()),
+    ):
+        mention_start, mention_end = _estimate_reference_window(
+            cleaned_text,
+            segment_start_seconds=segment_start_seconds,
+            segment_end_seconds=segment_end,
+            phrase=candidate.label,
+        )
+        topic_labels = _extract_topic_labels(
+            cleaned_text,
+            normalized_keywords,
+            reference_labels=(candidate.normalized_label,),
+            topic_hints=candidate.topic_hints,
+        )
+        mentions.append(
+            ReferenceMention(
+                label=candidate.label,
+                normalized_label=candidate.normalized_label,
+                mention_type=candidate.mention_type,
+                confidence=round(candidate.confidence, 3),
+                evidence_text=cleaned_text,
+                topic_labels=topic_labels,
+                start_seconds=mention_start,
+                end_seconds=mention_end,
+            )
+        )
+
+    return mentions
+
+
+def extract_topic_labels(
+    text: str,
+    *,
+    keywords: list[str] | tuple[str, ...] | None = None,
+    reference_mentions: list[ReferenceMention] | None = None,
+) -> list[str]:
+    reference_labels = tuple(
+        mention.normalized_label
+        for mention in (reference_mentions or [])
+        if mention.normalized_label
+    )
+    topic_hints = tuple(
+        topic
+        for mention in (reference_mentions or [])
+        for topic in mention.topic_labels
+    )
+    return _extract_topic_labels(
+        text,
+        tuple(str(item).strip().lower() for item in (keywords or []) if str(item).strip()),
+        reference_labels=reference_labels,
+        topic_hints=topic_hints,
+    )
+
+
+def _extract_topic_labels(
+    text: str,
+    keywords: tuple[str, ...],
+    *,
+    reference_labels: tuple[str, ...] = (),
+    topic_hints: tuple[str, ...] = (),
+) -> list[str]:
+    cleaned_text = " ".join(text.split()).strip().lower()
+    searchable_text = " ".join(
+        part
+        for part in (
+            cleaned_text,
+            " ".join(keywords),
+            " ".join(reference_labels),
+            " ".join(topic_hints),
+        )
+        if part
+    )
+    topics: list[str] = []
+    seen: set[str] = set()
+
+    for hint in topic_hints:
+        cleaned_hint = hint.strip().lower()
+        if cleaned_hint and cleaned_hint not in seen:
+            topics.append(cleaned_hint)
+            seen.add(cleaned_hint)
+
+    for label, cues in TOPIC_KEYWORD_MAP.items():
+        if label in seen:
+            continue
+        if any(_text_contains_phrase(searchable_text, cue) for cue in cues):
+            topics.append(label)
+            seen.add(label)
+        if len(topics) >= 6:
+            break
+
+    return topics[:6]
+
+
+def _resolve_reference_type(cue: str, label: str) -> ReferenceMentionType:
+    normalized_label = _normalize_reference_label(label)
+    if normalized_label in REFERENCE_LEXICON:
+        return REFERENCE_LEXICON[normalized_label][0]
+    if cue in REFERENCE_BOOK_CUES:
+        return "book"
+    if cue in REFERENCE_SOURCE_CUES:
+        return "source"
+    if cue in REFERENCE_CONCEPT_CUES:
+        return "concept"
+    if _looks_like_concept(label):
+        return "concept"
+    return "named_reference"
+
+
+def _normalize_reference_label(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    cleaned = " ".join(cleaned.split())
+    return cleaned
+
+
+def _looks_like_concept(label: str) -> bool:
+    lowered = label.lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "effect",
+            "first principles",
+            "framework",
+            "jobs to be done",
+            "law",
+            "network effects",
+            "product market fit",
+            "principle",
+            "theory",
+        )
+    )
+
+
+def _resolve_reference_segment_end(
+    text: str,
+    *,
+    segment_start_seconds: float,
+    segment_end_seconds: float | None,
+) -> float:
+    if segment_end_seconds is not None:
+        return max(segment_start_seconds + 0.6, segment_end_seconds)
+    estimated_duration = max(0.6, len(tokenize_text(text)) * 0.42)
+    return round(segment_start_seconds + estimated_duration, 3)
+
+
+def _estimate_reference_window(
+    text: str,
+    *,
+    segment_start_seconds: float,
+    segment_end_seconds: float,
+    phrase: str,
+) -> tuple[float, float]:
+    snippet_tokens = tokenize_text(text)
+    phrase_tokens = tokenize_text(phrase)
+    if not snippet_tokens:
+        return round(segment_start_seconds, 3), round(min(segment_end_seconds, segment_start_seconds + 1.0), 3)
+
+    match_index = 0
+    if phrase_tokens:
+        match_index = _find_token_sequence(snippet_tokens, phrase_tokens)
+        if match_index < 0:
+            focus_token = phrase_tokens[0]
+            match_index = next(
+                (index for index, token in enumerate(snippet_tokens) if focus_token in token),
+                0,
+            )
+
+    segment_duration = max(0.6, segment_end_seconds - segment_start_seconds)
+    focus_ratio = match_index / max(len(snippet_tokens) - 1, 1)
+    mention_start = segment_start_seconds + (segment_duration * focus_ratio)
+    mention_duration = min(2.8, max(0.9, len(phrase_tokens) * 0.42))
+    mention_end = min(segment_end_seconds, mention_start + mention_duration)
+    if mention_end - mention_start < 0.6:
+        mention_end = min(segment_end_seconds, mention_start + 0.6)
+    return round(mention_start, 3), round(mention_end, 3)
+
+
+def _find_token_sequence(tokens: list[str], phrase_tokens: list[str]) -> int:
+    if not tokens or not phrase_tokens or len(phrase_tokens) > len(tokens):
+        return -1
+    for index in range(len(tokens) - len(phrase_tokens) + 1):
+        if tokens[index:index + len(phrase_tokens)] == phrase_tokens:
+            return index
+    return -1
+
+
+def _text_contains_phrase(text: str, phrase: str) -> bool:
+    normalized_phrase = " ".join(phrase.lower().split()).strip()
+    if not normalized_phrase:
+        return False
+    if " " in normalized_phrase:
+        return normalized_phrase in text
+    return bool(re.search(rf"\b{re.escape(normalized_phrase)}\b", text))
+
+
+def tokenize_text(value: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", value.lower())

@@ -12,7 +12,13 @@ from app.config import BACKEND_DIR, ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
-from app.models.export_settings import ExportSettings, ExportSettingsInput, GenerationSettings, SubtitleStyle
+from app.models.export_settings import (
+    ExportSettings,
+    ExportSettingsInput,
+    GenerationSettings,
+    SubtitleStyle,
+    coerce_persisted_export_settings,
+)
 from app.models.media import SubtitleTimingContract, VisualOutputMode
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
@@ -1403,19 +1409,7 @@ def _resolve_crop_window(
 
 
 def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
-    export_mode = str(row.get("export_mode") or "landscape").strip() or "landscape"
-    crop_mode = str(row.get("crop_mode") or ("center_crop" if export_mode == "portrait" else "none")).strip()
-    return ExportSettings(
-        preset_name=str(row.get("preset_name") or "").strip() or ("youtube_shorts" if export_mode == "portrait" else "youtube_landscape"),  # type: ignore[arg-type]
-        export_mode=export_mode,  # type: ignore[arg-type]
-        crop_mode=crop_mode,  # type: ignore[arg-type]
-        subtitle_timing_profile=str(row.get("subtitle_timing_profile") or "").strip() or ("balanced" if export_mode == "portrait" else "extended"),  # type: ignore[arg-type]
-        mobile_optimized=bool(row.get("mobile_optimized") or False),
-        face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
-        subtitle_style=row.get("subtitle_style") or SubtitleStyle(),
-        audio_enhancement=row.get("audio_enhancement") or {},
-        generation_settings=row.get("generation_settings") or {},
-    )
+    return coerce_persisted_export_settings(row)
 
 
 def _persist_podcast_export_settings(podcast_id: str, export_settings: ExportSettings) -> None:

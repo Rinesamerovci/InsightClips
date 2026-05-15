@@ -1107,12 +1107,14 @@ export default function DashboardPage() {
                     Quick actions
                   </div>
                   {[
-                    { icon:Plus,    label:"Upload episode",    sub:"Add new content",    href:"/upload" },
-                    { icon:Library, label:"Browse podcasts",   sub:"Search your library", href:"/podcasts" },
-                    { icon:Play,    label:"View clips",        sub:"Open discovery flow", href:"/clips" },
-                    { icon:BarChart2,label:"View analytics",   sub:"Performance summary", href:"/analytics" },
-                  ].map(({ icon:Icon, label, sub, href }) => (
-                    <Link key={href} href={href} className="sidebar-link" style={{
+                    { id:"upload",    icon:Plus,      label:"Upload episode",  sub:"Add new content",      href:"/upload" },
+                    { id:"podcasts",  icon:Library,   label:"Browse podcasts", sub:"Search your library",  href:"/podcasts" },
+                    { id:"clips",     icon:Play,      label:"View clips",      sub:"Open discovery flow",  href:"/clips" },
+                    { id:"analytics", icon:BarChart2, label:"View analytics",  sub:"Performance summary",  href:"/analytics" },
+                    { id:"planning",  icon:Sparkles,  label:"Open planning",   sub:"Calendar and hashtags", href:"/clips" },
+                    { id:"feedback",  icon:Settings,  label:"Share feedback",  sub:"Support and contact",  href:"/settings" },
+                  ].map(({ id, icon:Icon, label, sub, href }) => (
+                    <Link key={id} href={href} className="sidebar-link" style={{
                       display:"flex", alignItems:"center", justifyContent:"space-between",
                       padding:"10px 10px", borderRadius:10, marginBottom:4,
                       background:dark?"rgba(90,158,58,.05)":"rgba(90,158,58,.04)",

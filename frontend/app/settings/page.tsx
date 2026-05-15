@@ -7,7 +7,11 @@ import {
   ArrowLeft,
   CheckCircle2,
   Loader2,
+  Mail,
+  MessageSquare,
   Monitor,
+  Send,
+  ShieldAlert,
   Moon,
   Settings2,
   Smartphone,
@@ -20,9 +24,14 @@ import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
   getUserExportSettings,
+  submitContactMessage,
+  submitFeedback,
+  submitSupportRequest,
   type AudioEnhancementSettings,
   type ExportMode,
   type ExportSettings,
+  type UserMessageCategory,
+  type UserMessageType,
   updateUserExportSettings,
 } from "@/lib/api";
 import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
@@ -256,6 +265,17 @@ export default function SettingsPage() {
     tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
+  const [messageType, setMessageType] = useState<UserMessageType>("feedback");
+  const [messageCategory, setMessageCategory] =
+    useState<UserMessageCategory>("feature_request");
+  const [messageSubject, setMessageSubject] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageFeedback, setMessageFeedback] = useState<{
+    tone: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
 
   const isMobile = viewportWidth < 900;
   const isTablet = viewportWidth < 1180;
@@ -425,6 +445,81 @@ export default function SettingsPage() {
     }
   };
 
+  const messageCategories: Record<UserMessageType, UserMessageCategory[]> = {
+    feedback: ["feature_request", "bug", "general"],
+    support: ["technical_support", "billing", "bug", "general"],
+    contact: ["general", "feature_request", "billing"],
+  };
+
+  const handleMessageTypeChange = (nextType: UserMessageType) => {
+    setMessageType(nextType);
+    setMessageCategory(messageCategories[nextType][0] ?? "general");
+    setMessageFeedback(null);
+  };
+
+  const handleSubmitMessage = async () => {
+    if (messageSending) {
+      return;
+    }
+
+    setMessageSending(true);
+    setMessageFeedback({
+      tone: "info",
+      message:
+        messageType === "support"
+          ? "Sending your support request..."
+          : messageType === "contact"
+            ? "Sending your contact message..."
+            : "Sending your feedback...",
+    });
+
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      const payload = {
+        category: messageCategory,
+        subject: messageSubject.trim() || null,
+        message: messageBody.trim(),
+        contact_email: contactEmail.trim() || null,
+      };
+
+      if (messageType === "support") {
+        await submitSupportRequest(payload, token);
+      } else if (messageType === "contact") {
+        await submitContactMessage(payload, token);
+      } else {
+        await submitFeedback(payload, token);
+      }
+
+      setMessageBody("");
+      setMessageSubject("");
+      setContactEmail("");
+      setMessageFeedback({
+        tone: "success",
+        message:
+          messageType === "support"
+            ? "Support request submitted. We captured it successfully."
+            : messageType === "contact"
+              ? "Contact message submitted successfully."
+              : "Feedback submitted successfully.",
+      });
+    } catch (error) {
+      setMessageFeedback({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to submit your message right now.",
+      });
+    } finally {
+      setMessageSending(false);
+    }
+  };
+
   if (loading || authLoading) {
     return (
       <div
@@ -452,6 +547,24 @@ export default function SettingsPage() {
           color: palette.successText,
         }
       : feedback?.tone === "error"
+        ? {
+            background: palette.errorBg,
+            border: palette.errorBorder,
+            color: palette.errorText,
+          }
+        : {
+            background: palette.chip,
+            border: palette.subBorder,
+            color: palette.text,
+          };
+  const messageFeedbackStyles =
+    messageFeedback?.tone === "success"
+      ? {
+          background: palette.successBg,
+          border: palette.successBorder,
+          color: palette.successText,
+        }
+      : messageFeedback?.tone === "error"
         ? {
             background: palette.errorBg,
             border: palette.errorBorder,
@@ -1016,6 +1129,190 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section
+              className="glass a-up"
+              style={{
+                borderRadius: 24,
+                background: palette.card,
+                border: `1px solid ${palette.border}`,
+                padding: 20,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <MessageSquare size={18} color={palette.accent} />
+                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
+                  Feedback & Support
+                </div>
+              </div>
+
+              <div style={{ fontSize: 13, lineHeight: 1.7, color: palette.muted, marginBottom: 14 }}>
+                Send product feedback, ask for help, or leave a contact note without leaving the creator workspace.
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
+                {[
+                  { id: "feedback" as const, label: "Feedback", icon: MessageSquare },
+                  { id: "support" as const, label: "Support", icon: ShieldAlert },
+                  { id: "contact" as const, label: "Contact", icon: Mail },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = messageType === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleMessageTypeChange(item.id)}
+                      style={{
+                        borderRadius: 16,
+                        border: `1px solid ${active ? palette.accent : palette.subBorder}`,
+                        background: active ? palette.chip : dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.78)",
+                        padding: "12px 10px",
+                        color: active ? palette.accent : palette.text,
+                        display: "grid",
+                        justifyItems: "center",
+                        gap: 6,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Icon size={16} />
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <label>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                    Category
+                  </div>
+                  <select
+                    value={messageCategory}
+                    onChange={(event) => setMessageCategory(event.target.value as UserMessageCategory)}
+                    style={{
+                      width: "100%",
+                      borderRadius: 14,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
+                      color: palette.text,
+                      padding: "12px 14px",
+                    }}
+                  >
+                    {messageCategories[messageType].map((category) => (
+                      <option key={category} value={category}>
+                        {category.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                    Subject
+                  </div>
+                  <input
+                    value={messageSubject}
+                    onChange={(event) => setMessageSubject(event.target.value)}
+                    placeholder="Add a short summary"
+                    style={{
+                      width: "100%",
+                      borderRadius: 14,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
+                      color: palette.text,
+                      padding: "12px 14px",
+                    }}
+                  />
+                </label>
+
+                <label>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                    Message
+                  </div>
+                  <textarea
+                    value={messageBody}
+                    onChange={(event) => setMessageBody(event.target.value)}
+                    placeholder={
+                      messageType === "support"
+                        ? "Describe the issue, what you expected, and what happened."
+                        : messageType === "contact"
+                          ? "Tell us why you want to get in touch."
+                          : "Share the workflow improvement or idea you want to see."
+                    }
+                    rows={5}
+                    style={{
+                      width: "100%",
+                      borderRadius: 16,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
+                      color: palette.text,
+                      padding: "12px 14px",
+                      resize: "vertical",
+                    }}
+                  />
+                </label>
+
+                <label>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                    Contact email
+                  </div>
+                  <input
+                    value={contactEmail}
+                    onChange={(event) => setContactEmail(event.target.value)}
+                    placeholder="Optional if we should reply"
+                    style={{
+                      width: "100%",
+                      borderRadius: 14,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
+                      color: palette.text,
+                      padding: "12px 14px",
+                    }}
+                  />
+                </label>
+              </div>
+
+              {messageFeedback ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    borderRadius: 16,
+                    padding: "12px 14px",
+                    background: messageFeedbackStyles.background,
+                    border: `1px solid ${messageFeedbackStyles.border}`,
+                    color: messageFeedbackStyles.color,
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  {messageFeedback.message}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => void handleSubmitMessage()}
+                disabled={messageSending || messageBody.trim().length < 10}
+                style={{
+                  marginTop: 14,
+                  border: "none",
+                  borderRadius: 999,
+                  background: `linear-gradient(135deg, ${palette.accent}, ${palette.accentLight})`,
+                  color: "#fff",
+                  padding: "12px 18px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontWeight: 700,
+                  cursor: messageSending || messageBody.trim().length < 10 ? "default" : "pointer",
+                  opacity: messageSending || messageBody.trim().length < 10 ? 0.72 : 1,
+                }}
+              >
+                {messageSending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                {messageSending ? "Sending..." : "Submit message"}
+              </button>
             </section>
           </aside>
         </div>

@@ -822,6 +822,15 @@ export default function SettingsPage() {
                   subtitle_style: buildSubtitleStyleFromPreset(preset),
                 }))
               }
+              onFontFamilyChange={(fontFamily) =>
+                updateSettings((current) => ({
+                  ...current,
+                  subtitle_style: {
+                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+                    font_family: fontFamily,
+                  },
+                }))
+              }
               onColorChange={(color) =>
                 updateSettings((current) => ({
                   ...current,

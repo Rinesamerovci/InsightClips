@@ -277,6 +277,7 @@ async def generate_podcast_clips(
             transcription,
             payload.export_settings,
             generation_settings,
+            payload.visual_output_mode,
         )
     except (AnalysisError, ClippingError) as exc:
         update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")

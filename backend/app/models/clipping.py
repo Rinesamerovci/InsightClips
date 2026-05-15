@@ -12,6 +12,7 @@ from app.models.export_settings import (
     GenerationSettings,
     GenerationSettingsInput,
 )
+from app.models.media import VisualOutputMode
 from app.models.overlay import OverlayDecision
 from app.models.transcription import TranscriptionResult
 
@@ -34,6 +35,9 @@ class ClipResult(BaseModel):
     overlay: OverlayDecision | None = None
     export_settings: ExportSettings = Field(default_factory=ExportSettings)
     generation_settings: GenerationSettings = Field(default_factory=GenerationSettings)
+    visual_output_mode: VisualOutputMode = "original_people"
+    effective_visual_output_mode: VisualOutputMode = "original_people"
+    render_fallback_reason: str | None = None
 
     @field_validator("id", "video_url")
     @classmethod
@@ -80,6 +84,7 @@ class GenerateClipsRequest(BaseModel):
     number_of_clips: int | None = Field(default=None, ge=1, le=10)
     topic_focus: str | None = Field(default=None, max_length=120)
     subtitles_enabled: bool | None = None
+    visual_output_mode: VisualOutputMode = "original_people"
     save_generation_settings: bool = False
     use_preferred_generation_settings: bool = False
 

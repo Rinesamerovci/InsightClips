@@ -217,6 +217,24 @@ class ClippingServiceTests(unittest.TestCase):
 
         self.assertNotIn("-af", command)
 
+    def test_build_ffmpeg_clip_command_applies_visual_mode_filter_chain(self) -> None:
+        command = build_ffmpeg_clip_command(
+            Path("input.mp4"),
+            Path("output.mp4"),
+            Path("captions.srt"),
+            start_seconds=0,
+            duration_seconds=12,
+            export_settings=ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+            ).resolve(),
+            visual_output_mode="book_like",
+        )
+
+        self.assertIn("-vf", command)
+        filters = command[command.index("-vf") + 1]
+        self.assertIn("eq=saturation=0.84:contrast=1.04:brightness=0.02", filters)
+
     def test_build_srt_content_offsets_timestamps_relative_to_clip_start(self) -> None:
         srt_content, subtitle_text = build_srt_content(
             self.transcription,
@@ -235,11 +253,33 @@ class ClippingServiceTests(unittest.TestCase):
         )
 
         self.assertIn("00:00:00,000 -->", srt_content)
-        self.assertIn("This is a strong hook", srt_content)
+        self.assertIn("This is a strong\nhook for a", srt_content)
         self.assertEqual(
             subtitle_text,
             "This is a strong hook for a viral clip and the subtitles should stay aligned.",
         )
+
+    def test_build_srt_content_uses_more_lines_for_portrait_video(self) -> None:
+        srt_content, _ = build_srt_content(
+            self.transcription,
+            clip_start_seconds=2.0,
+            clip_end_seconds=6.2,
+            export_settings=ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+            ).resolve(),
+        )
+
+        self.assertIn("This is a\nstrong hook", srt_content)
+
+    def test_build_segment_fallback_srt_content_keeps_landscape_lines_wider(self) -> None:
+        srt_content, _ = build_segment_fallback_srt_content(
+            self.score_segments[0],
+            clip_duration_seconds=4.2,
+            export_settings=ExportSettings(),
+        )
+
+        self.assertIn("This is a strong\nhook for a", srt_content)
 
     def test_select_segments_honors_requested_clip_count_and_topic_focus(self) -> None:
         segments = [
@@ -766,6 +806,98 @@ class ClippingServiceTests(unittest.TestCase):
         insert_payload = clips_table.insert.call_args.args[0]
         self.assertEqual(insert_payload[0]["subtitle_text"], "")
         self.assertIsNone(insert_payload[0]["subtitle_url"])
+
+    def test_generate_clips_falls_back_visual_mode_when_stylized_mode_has_no_subtitles(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-stylized-fallback")
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock())))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=MagicMock())),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            clips = generate_clips(
+                                "podcast-123",
+                                self.score_segments,
+                                self.transcription,
+                                export_settings=ExportSettingsInput(
+                                    export_mode="portrait",
+                                    crop_mode="smart_crop",
+                                ),
+                                generation_settings=GenerationSettings(subtitles_enabled=False),
+                                visual_output_mode="stylized_animated",
+                            )
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].visual_output_mode, "stylized_animated")
+        self.assertEqual(clips[0].effective_visual_output_mode, "original_people")
+        self.assertEqual(
+            clips[0].render_fallback_reason,
+            "stylized_animated_requires_subtitles",
+        )
+
+    def test_generate_clips_disables_overlay_rendering_for_book_like_mode(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-book-like-overlay-disabled")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        def fake_ffmpeg(*args, **kwargs):
+            self.assertIsNone(kwargs.get("overlay"))
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        overlay = OverlayDecision(
+            clip_id="clip-1",
+            podcast_id="podcast-123",
+            keyword="ai",
+            overlay_category="technology",
+            overlay_asset="ai_chip",
+            asset_path="technology/ai_chip.png",
+            position="bottom_right",
+            scale=0.2,
+            opacity=0.95,
+            render_start_seconds=0.8,
+            render_end_seconds=2.6,
+            applied=True,
+            render_status="mapped",
+        )
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module.overlay_mapping_service_module,
+                                "detect_overlay_decision",
+                                return_value=overlay,
+                            ):
+                                clips = generate_clips(
+                                    "podcast-123",
+                                    self.score_segments,
+                                    self.transcription,
+                                    visual_output_mode="book_like",
+                                )
+
+        self.assertEqual(len(clips), 1)
+        self.assertIsNotNone(clips[0].overlay)
+        self.assertEqual(clips[0].overlay.render_status, "mode_disabled")
+        self.assertFalse(clips[0].overlay.rendered)
 
     def test_generate_clips_raises_when_segment_has_no_overlapping_words(self) -> None:
         invalid_segment = ScoreSegment(

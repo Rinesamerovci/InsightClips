@@ -10,7 +10,9 @@ from app.config import BACKEND_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipResult
+from app.models.clip_insights import ReferenceMention
 from app.models.overlay import OverlayDecision, OverlayMappingResult
+from app.services.analysis_service import detect_reference_mentions, extract_topic_labels
 from app.services.media_service import build_render_contract
 
 
@@ -84,6 +86,7 @@ OVERLAY_RULES: tuple[_OverlayRule, ...] = (
         0.9,
     ),
 )
+OVERLAY_RULES_BY_ASSET = {rule.asset: rule for rule in OVERLAY_RULES}
 OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
 ASSET_EXTENSION = ".png"
 
@@ -178,14 +181,37 @@ def get_overlay_decisions_for_podcast(podcast_id: str) -> dict[str, OverlayDecis
     rows = response.data or []
     decisions: dict[str, OverlayDecision] = {}
     for row in rows:
+        matched_text = str(row.get("matched_text") or "").strip()
+        reference_mentions = detect_reference_mentions(
+            matched_text,
+            segment_start_seconds=float(row["render_start_seconds"]) if row.get("render_start_seconds") is not None else 0.0,
+            segment_end_seconds=float(row["render_end_seconds"]) if row.get("render_end_seconds") is not None else None,
+            keywords=[str(row.get("keyword") or "").strip()] if row.get("keyword") else [],
+        )
+        matched_reference = next(
+            (
+                mention
+                for mention in reference_mentions
+                if str(row.get("keyword") or "").strip().lower() in {mention.normalized_label, *mention.topic_labels}
+            ),
+            reference_mentions[0] if reference_mentions else None,
+        )
+        topic_labels = extract_topic_labels(
+            matched_text,
+            keywords=[str(row.get("keyword") or "").strip()] if row.get("keyword") else [],
+            reference_mentions=reference_mentions,
+        )
         decision = OverlayDecision(
             clip_id=str(row["clip_id"]),
             podcast_id=str(row["podcast_id"]),
             keyword=row.get("keyword"),
+            reference_label=matched_reference.label if matched_reference is not None else None,
+            reference_type=matched_reference.mention_type if matched_reference is not None else None,
             overlay_category=row.get("overlay_category"),
             overlay_asset=row.get("overlay_asset"),
             asset_path=row.get("asset_path"),
             matched_text=row.get("matched_text"),
+            topic_labels=matched_reference.topic_labels if matched_reference is not None else topic_labels,
             position=row.get("position"),
             scale=float(row["scale"]) if row.get("scale") is not None else None,
             opacity=float(row["opacity"]) if row.get("opacity") is not None else None,
@@ -211,27 +237,57 @@ def detect_overlay_decision(
 
 
 def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: ScoreSegment) -> OverlayDecision:
-    searchable_values = _build_search_candidates(segment)
+    reference_mentions = detect_reference_mentions(
+        segment.transcript_snippet,
+        segment_start_seconds=segment.segment_start_seconds,
+        segment_end_seconds=segment.segment_end_seconds,
+        keywords=segment.keywords,
+    )
+    topic_labels = extract_topic_labels(
+        segment.transcript_snippet,
+        keywords=segment.keywords,
+        reference_mentions=reference_mentions,
+    )
+    searchable_values = _build_search_candidates(segment, reference_mentions, topic_labels)
     asset_inventory = validate_overlay_assets()
-    candidates: list[tuple[float, _OverlayRule, str]] = []
+    candidates: list[tuple[float, _OverlayRule, str, ReferenceMention | None]] = []
 
     for index, rule in enumerate(OVERLAY_RULES):
         matched_keyword = _find_matching_keyword(searchable_values, segment, rule.keywords)
         if matched_keyword is None:
             continue
-        score = _score_rule_match(rule, matched_keyword, segment, rule_order=index)
-        candidates.append((score, rule, matched_keyword))
+        matched_reference = _select_reference_for_keyword(matched_keyword, reference_mentions)
+        score = _score_rule_match(
+            rule,
+            matched_keyword,
+            segment,
+            rule_order=index,
+            matched_reference=matched_reference,
+        )
+        candidates.append((score, rule, matched_keyword, matched_reference))
+
+    if not candidates and reference_mentions:
+        fallback_rule, fallback_keyword = _resolve_reference_fallback(reference_mentions[0], topic_labels)
+        score = _score_rule_match(
+            fallback_rule,
+            fallback_keyword,
+            segment,
+            rule_order=len(OVERLAY_RULES),
+            matched_reference=reference_mentions[0],
+        )
+        candidates.append((score, fallback_rule, fallback_keyword, reference_mentions[0]))
 
     if candidates:
-        _, rule, matched_keyword = max(
+        _, rule, matched_keyword, matched_reference = max(
             candidates,
-            key=lambda item: (item[0], item[1].category, item[1].asset, item[2]),
+            key=lambda item: (item[0], item[1].category, item[1].asset, item[2], item[3].label if item[3] else ""),
         )
         render_contract = build_render_contract(
             clip.export_settings,
             clip_duration_seconds=clip.duration_seconds,
         )
-        render_start_seconds, render_end_seconds = _estimate_render_window(clip, segment, matched_keyword)
+        trigger_phrase = matched_reference.label if matched_reference is not None else matched_keyword
+        render_start_seconds, render_end_seconds = _estimate_render_window(clip, segment, trigger_phrase)
         asset_path = _build_asset_path(rule)
         asset_exists = asset_path in asset_inventory
         is_portrait = render_contract.export_mode == "portrait"
@@ -239,10 +295,13 @@ def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: Scor
             clip_id=clip.id,
             podcast_id=podcast_id,
             keyword=matched_keyword,
+            reference_label=matched_reference.label if matched_reference is not None else None,
+            reference_type=matched_reference.mention_type if matched_reference is not None else None,
             overlay_category=rule.category,
             overlay_asset=rule.asset,
             asset_path=asset_path,
             matched_text=segment.transcript_snippet,
+            topic_labels=matched_reference.topic_labels if matched_reference is not None else topic_labels,
             position=rule.portrait_position if is_portrait else rule.landscape_position,
             scale=rule.portrait_scale if is_portrait else rule.landscape_scale,
             opacity=rule.opacity,
@@ -260,6 +319,7 @@ def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: Scor
         clip_id=clip.id,
         podcast_id=podcast_id,
         matched_text=segment.transcript_snippet,
+        topic_labels=topic_labels,
         applied=False,
         rendered=False,
         render_status="no_match",
@@ -267,9 +327,15 @@ def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: Scor
     )
 
 
-def _build_search_candidates(segment: ScoreSegment) -> set[str]:
+def _build_search_candidates(
+    segment: ScoreSegment,
+    reference_mentions: list[ReferenceMention],
+    topic_labels: list[str],
+) -> set[str]:
     values = {segment.transcript_snippet.lower()}
     values.update(keyword.lower() for keyword in segment.keywords)
+    values.update(mention.normalized_label for mention in reference_mentions)
+    values.update(topic_labels)
     return values
 
 
@@ -295,13 +361,15 @@ def _score_rule_match(
     segment: ScoreSegment,
     *,
     rule_order: int,
+    matched_reference: ReferenceMention | None = None,
 ) -> float:
     transcript = segment.transcript_snippet.lower()
     segment_keywords = set(segment.keywords)
     exact_keyword_bonus = 0.04 if matched_keyword in segment_keywords else 0.0
     transcript_bonus = 0.02 if matched_keyword in transcript else 0.0
+    reference_bonus = 0.03 if matched_reference is not None else 0.0
     position_penalty = rule_order * 0.0001
-    return round(rule.confidence + exact_keyword_bonus + transcript_bonus - position_penalty, 4)
+    return round(rule.confidence + exact_keyword_bonus + transcript_bonus + reference_bonus - position_penalty, 4)
 
 
 def _build_asset_path(rule: _OverlayRule) -> str:
@@ -321,10 +389,10 @@ def validate_overlay_assets() -> dict[str, Path]:
 def _estimate_render_window(
     clip: ClipResult,
     segment: ScoreSegment,
-    matched_keyword: str,
+    matched_phrase: str,
 ) -> tuple[float, float]:
     snippet_tokens = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", segment.transcript_snippet.lower())
-    keyword_tokens = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", matched_keyword.lower())
+    keyword_tokens = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", matched_phrase.lower())
     focus_index = None
 
     if snippet_tokens and keyword_tokens:
@@ -348,3 +416,35 @@ def _estimate_render_window(
         round(max(absolute_end - clip.clip_start_seconds, clip_relative_start + 0.6), 3),
     )
     return clip_relative_start, clip_relative_end
+
+
+def _select_reference_for_keyword(
+    matched_keyword: str,
+    reference_mentions: list[ReferenceMention],
+) -> ReferenceMention | None:
+    for mention in reference_mentions:
+        if matched_keyword in mention.normalized_label or matched_keyword in mention.topic_labels:
+            return mention
+    return reference_mentions[0] if reference_mentions else None
+
+
+def _resolve_reference_fallback(
+    reference: ReferenceMention,
+    topic_labels: list[str],
+) -> tuple[_OverlayRule, str]:
+    combined_topics = {topic.lower() for topic in [*reference.topic_labels, *topic_labels]}
+    normalized_label = reference.normalized_label
+
+    if any(topic in combined_topics for topic in {"ai", "technology"}) or any(
+        token in normalized_label for token in ("ai", "gpt", "openai")
+    ):
+        return OVERLAY_RULES_BY_ASSET["ai_chip"], "ai"
+    if any(topic in combined_topics for topic in {"finance"}) or any(
+        token in normalized_label for token in ("bitcoin", "crypto", "blockchain")
+    ):
+        if any(token in normalized_label for token in ("bitcoin", "crypto", "blockchain")):
+            return OVERLAY_RULES_BY_ASSET["bitcoin_icon"], "bitcoin"
+        return OVERLAY_RULES_BY_ASSET["money_stack"], "revenue"
+    if any(topic in combined_topics for topic in {"growth", "marketing", "storytelling"}) or reference.mention_type == "concept":
+        return OVERLAY_RULES_BY_ASSET["marketing_graph"], "growth"
+    return OVERLAY_RULES_BY_ASSET["startup_rocket"], normalized_label.split()[0]

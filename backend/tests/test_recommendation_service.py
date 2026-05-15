@@ -267,6 +267,28 @@ class RecommendationServiceTests(unittest.TestCase):
         self.assertTrue(any(factor.label == "Novelty balance" for factor in top_item.ranking_factors))
         self.assertIsNotNone(top_item.insight_summary)
 
+    def test_recommend_clips_returns_reference_aware_hashtag_suggestions(self) -> None:
+        clips = [dict(item) for item in self.clips]
+        scores = [dict(item) for item in self.scores]
+        clips[0]["subtitle_text"] = "Atomic Habits shows why audience growth compounds over time"
+        scores[0]["transcript_snippet"] = (
+            "In Atomic Habits James Clear explains why audience growth compounds over time."
+        )
+        scores[0]["keywords"] = ["atomic habits", "audience", "growth"]
+        fake_supabase = FakeSupabase(self.podcasts, clips, scores)
+
+        with patch.object(search_service_module, "service_supabase", fake_supabase):
+            result = recommend_clips("pod-1", limit=1)
+
+        planning = result.recommendations[0].planning_insight
+        self.assertIsNotNone(planning)
+        self.assertEqual(planning.reference_mentions[0].normalized_label, "atomic habits")
+        self.assertEqual(planning.reference_mentions[0].mention_type, "book")
+        self.assertIn("growth", planning.topic_labels)
+        self.assertEqual(planning.hashtags[0].tag, "#InsightClips")
+        self.assertTrue(any(item.tag == "#AtomicHabits" for item in planning.hashtags))
+        self.assertTrue(any(item.tag == "#Growth" for item in planning.hashtags))
+
 
 if __name__ == "__main__":
     unittest.main()

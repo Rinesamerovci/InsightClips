@@ -10,6 +10,7 @@ from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastR
 from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
+from app.models.publishing import ContentCalendarResponse
 from app.models.podcast import PodcastsResponse, UserPodcastAnalytics
 from app.models.search import RecommendationResult
 from app.services.analysis_service import (
@@ -38,6 +39,7 @@ from app.services.clipping_service import (
 )
 from app.services.publishing_service import (
     PublishingError,
+    build_content_calendar,
     get_published_clip_download_content,
     publish_clips,
 )
@@ -344,6 +346,22 @@ async def get_podcast_clip_metrics(
     try:
         return get_clip_metrics_for_podcast(podcast_id)
     except ClipInsightsError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/{podcast_id}/content-calendar", response_model=ContentCalendarResponse)
+async def get_podcast_content_calendar(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ContentCalendarResponse:
+    if not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    try:
+        return build_content_calendar(podcast_id)
+    except PublishingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 

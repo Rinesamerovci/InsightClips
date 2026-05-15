@@ -39,6 +39,7 @@ import {
   type GenerationTemplateId,
   type Podcast,
   type PodcastsResponse,
+  type VisualOutputMode,
 } from "@/lib/api";
 import {
   applyGenerationTemplate,
@@ -106,6 +107,36 @@ const FILTERS: Array<{ value: ClipStatusFilter; label: string }> = [
   { value: "ready", label: "Ready" },
   { value: "processing", label: "Processing" },
   { value: "failed", label: "Failed" },
+];
+
+const VISUAL_OUTPUT_MODES: Array<{
+  value: VisualOutputMode;
+  label: string;
+  title: string;
+  description: string;
+  badge: string;
+}> = [
+  {
+    value: "original_people",
+    label: "Original People",
+    title: "Keep the talking-head video",
+    description: "Preserves the source footage with subtitles and overlays rendered in the normal clip style.",
+    badge: "Default",
+  },
+  {
+    value: "book_like",
+    label: "Book Like",
+    title: "Editorial reading frame",
+    description: "Uses a quieter subtitle rhythm and disables overlays so the clip feels more like a sourced explainer.",
+    badge: "Editorial",
+  },
+  {
+    value: "stylized_animated",
+    label: "Stylized Animated",
+    title: "Motion-forward social style",
+    description: "Tuned for portrait output with stronger captions and limited overlays for a more animated presentation.",
+    badge: "Portrait",
+  },
 ];
 
 function formatTime(seconds: number): string {
@@ -309,6 +340,8 @@ function ClipsPageContent() {
   );
   const [generationExportSettings, setGenerationExportSettings] =
     useState<ExportSettings | null>(null);
+  const [visualOutputMode, setVisualOutputMode] =
+    useState<VisualOutputMode>("original_people");
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -599,6 +632,33 @@ function ClipsPageContent() {
     setGenerationExportSettings(next.exportSettings);
   };
 
+  const handleVisualOutputModeChange = (mode: VisualOutputMode) => {
+    setVisualOutputMode(mode);
+    if (mode === "stylized_animated") {
+      setGenerationExportSettings((current) => ({
+        ...normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null),
+        export_mode: "portrait",
+        crop_mode: "smart_crop",
+        mobile_optimized: true,
+        face_tracking_enabled: true,
+      }));
+      setGenerationSettings((current) =>
+        normalizeGenerationSettings({
+          ...current,
+          subtitles_enabled: true,
+        }),
+      );
+    }
+    if (mode === "book_like") {
+      setGenerationSettings((current) =>
+        normalizeGenerationSettings({
+          ...current,
+          subtitles_enabled: true,
+        }),
+      );
+    }
+  };
+
   const handleSubtitleStyleChange = (
     changes: Partial<
       Pick<
@@ -641,6 +701,7 @@ function ClipsPageContent() {
           export_settings:
             generationExportSettings ??
             normalizeExportSettings(selectedPodcast?.export_settings ?? null),
+          visual_output_mode: visualOutputMode,
           save_generation_settings: true,
           use_preferred_generation_settings: true,
         },
@@ -1375,6 +1436,146 @@ function ClipsPageContent() {
                   hi2: t.accentLt,
                 }}
               />
+
+              <section
+                className="glass a2"
+                style={{
+                  borderRadius: 22,
+                  border: `1px solid ${t.border}`,
+                  background: dark ? "rgba(14,24,11,.88)" : "rgba(255,255,255,.9)",
+                  padding: "24px 24px 22px",
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 16,
+                    flexWrap: "wrap",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: ".26em",
+                        textTransform: "uppercase",
+                        color: t.accentLt,
+                        fontWeight: 700,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Visual output mode
+                    </div>
+                    <h2
+                      style={{
+                        fontFamily: "'DM Serif Display',serif",
+                        fontStyle: "italic",
+                        fontSize: 24,
+                        fontWeight: 400,
+                        marginBottom: 10,
+                      }}
+                    >
+                      Choose how the rendered clip should feel
+                    </h2>
+                    <p style={{ fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 620 }}>
+                      The mode is sent with generation and controls overlay, subtitle, and fallback behavior in the render pipeline.
+                    </p>
+                  </div>
+                  <div
+                    style={{
+                      borderRadius: 999,
+                      border: `1px solid ${t.borderSub}`,
+                      background: dark ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+                      padding: "8px 12px",
+                      color: t.accent,
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode)?.label}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))",
+                    gap: 10,
+                  }}
+                >
+                  {VISUAL_OUTPUT_MODES.map((mode) => {
+                    const active = visualOutputMode === mode.value;
+                    return (
+                      <button
+                        key={mode.value}
+                        type="button"
+                        onClick={() => handleVisualOutputModeChange(mode.value)}
+                        style={{
+                          textAlign: "left",
+                          borderRadius: 18,
+                          padding: "16px 16px 15px",
+                          border: `1px solid ${active ? t.accent : t.borderSub}`,
+                          background: active
+                            ? dark
+                              ? "rgba(90,158,58,.16)"
+                              : "rgba(90,158,58,.1)"
+                            : dark
+                              ? "rgba(11,18,9,.55)"
+                              : "rgba(248,252,245,.82)",
+                          color: t.text,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              letterSpacing: ".16em",
+                              textTransform: "uppercase",
+                              color: active ? t.accent : t.accentLt,
+                            }}
+                          >
+                            {mode.label}
+                          </div>
+                          <span
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${active ? "rgba(255,255,255,.22)" : t.borderSub}`,
+                              padding: "4px 8px",
+                              fontSize: 9,
+                              fontWeight: 800,
+                              letterSpacing: ".14em",
+                              textTransform: "uppercase",
+                              color: active ? t.accent : t.textSub,
+                            }}
+                          >
+                            {mode.badge}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
+                          {mode.title}
+                        </div>
+                        <div style={{ fontSize: 12, lineHeight: 1.6, color: t.textSub }}>
+                          {mode.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
 
               <SubtitleStylePanel
                 dark={dark}

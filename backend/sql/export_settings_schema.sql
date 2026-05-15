@@ -9,7 +9,20 @@ alter table public.podcasts
   add column if not exists audio_enhancement jsonb not null default '{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}'::jsonb;
 
 alter table public.profiles
-  add column if not exists export_settings jsonb not null default '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"}}'::jsonb;
+  add column if not exists export_settings jsonb not null default '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb;
+
+update public.profiles
+set export_settings =
+  (
+    '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb
+    || coalesce(export_settings, '{}'::jsonb)
+  )
+  || jsonb_build_object(
+    'generation_settings',
+    '{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}'::jsonb
+      || coalesce(export_settings -> 'generation_settings', '{}'::jsonb)
+  )
+where jsonb_typeof(export_settings) = 'object';
 
 alter table public.podcasts
   drop constraint if exists podcasts_preset_name_check;

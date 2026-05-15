@@ -22,6 +22,8 @@ from app.models.publishing import (  # noqa: E402
     ClipPublicationStatus,
     ClipPublicationStatusResponse,
     ClipRevocationResult,
+    ContentCalendarResponse,
+    ContentCalendarSuggestion,
     PublishClipRequest,
     PublishClipsRequest,
 )
@@ -31,7 +33,7 @@ from app.routers.clips import (
     publish_clip_route,
     revoke_clip_download_route,
 )  # noqa: E402
-from app.routers.podcasts import download_generated_clip, publish_podcast_clips  # noqa: E402
+from app.routers.podcasts import download_generated_clip, get_podcast_content_calendar, publish_podcast_clips  # noqa: E402
 
 
 class PublishingRouterTests(unittest.TestCase):
@@ -110,6 +112,53 @@ class PublishingRouterTests(unittest.TestCase):
         self.assertEqual(exc_info.exception.status_code, 404)
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         publish_clips_mock.assert_not_called()
+
+    @patch("app.routers.podcasts.build_content_calendar")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_content_calendar_route_returns_owned_planning_data(
+        self,
+        podcast_belongs_mock,
+        build_content_calendar_mock,
+    ) -> None:
+        build_content_calendar_mock.return_value = ContentCalendarResponse(
+            podcast_id="podcast-123",
+            total_suggestions=1,
+            suggestions=[
+                ContentCalendarSuggestion(
+                    clip_id="clip-1",
+                    clip_number=1,
+                    platform="tiktok",
+                    scheduled_day=1,
+                    best_time_local="19:30",
+                    title="Strong hook",
+                    caption="Strong hook Watch until the end.",
+                    hashtags=["#PodcastClips"],
+                    call_to_action="Follow for more short podcast takeaways.",
+                    repurpose_angle="Lead with the strongest hook in the first two seconds.",
+                )
+            ],
+        )
+
+        result = asyncio.run(get_podcast_content_calendar("podcast-123", self.user))
+
+        self.assertEqual(result.total_suggestions, 1)
+        self.assertEqual(result.suggestions[0].platform, "tiktok")
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        build_content_calendar_mock.assert_called_once_with("podcast-123")
+
+    @patch("app.routers.podcasts.build_content_calendar")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=False)
+    def test_content_calendar_route_rejects_unowned_podcast(
+        self,
+        podcast_belongs_mock,
+        build_content_calendar_mock,
+    ) -> None:
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(get_podcast_content_calendar("podcast-123", self.user))
+
+        self.assertEqual(exc_info.exception.status_code, 404)
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        build_content_calendar_mock.assert_not_called()
 
     def test_publish_request_rejects_blank_clip_ids(self) -> None:
         with self.assertRaises(ValidationError):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -21,6 +22,96 @@ class RankingFactor(BaseModel):
         if not cleaned:
             raise ValueError("Field cannot be empty.")
         return cleaned
+
+
+ReferenceMentionType = Literal["book", "source", "concept", "named_reference"]
+
+
+class ReferenceMention(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    normalized_label: str
+    mention_type: ReferenceMentionType
+    confidence: float = Field(ge=0, le=1)
+    evidence_text: str
+    topic_labels: list[str] = Field(default_factory=list, max_length=6)
+    start_seconds: float | None = Field(default=None, ge=0)
+    end_seconds: float | None = Field(default=None, ge=0)
+
+    @field_validator("label", "normalized_label", "evidence_text")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        cleaned = " ".join(value.split()) if value.strip() else value.strip()
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+    @field_validator("topic_labels")
+    @classmethod
+    def normalize_topic_labels(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            cleaned = " ".join(item.split()).strip().lower()
+            if cleaned and cleaned not in seen:
+                normalized.append(cleaned)
+                seen.add(cleaned)
+        return normalized[:6]
+
+
+class HashtagSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tag: str
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+
+    @field_validator("tag")
+    @classmethod
+    def normalize_tag(cls, value: str) -> str:
+        cleaned = value.strip().replace(" ", "")
+        if not cleaned:
+            raise ValueError("tag cannot be empty.")
+        return cleaned if cleaned.startswith("#") else f"#{cleaned}"
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        cleaned = " ".join(value.split()) if value.strip() else value.strip()
+        if not cleaned:
+            raise ValueError("reason cannot be empty.")
+        return cleaned
+
+
+class ClipPlanningInsight(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_id: str
+    podcast_id: str
+    topic_labels: list[str] = Field(default_factory=list, max_length=6)
+    reference_mentions: list[ReferenceMention] = Field(default_factory=list)
+    hashtags: list[HashtagSuggestion] = Field(default_factory=list, max_length=8)
+
+    @field_validator("clip_id", "podcast_id")
+    @classmethod
+    def validate_ids(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+    @field_validator("topic_labels")
+    @classmethod
+    def normalize_topics(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            cleaned = " ".join(item.split()).strip().lower()
+            if cleaned and cleaned not in seen:
+                normalized.append(cleaned)
+                seen.add(cleaned)
+        return normalized[:6]
 
 
 class ClipSearchItem(BaseModel):

@@ -3,12 +3,15 @@
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest, ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest
 from app.models.clip_insights import (
+    ClipPlanningInsight,
     ClipMetricRow,
     ClipRecommendationsResponse,
     ClipSearchItem,
     ClipSearchResponse,
+    HashtagSuggestion,
     PodcastClipMetrics,
     RankingFactor,
+    ReferenceMention,
 )
 from app.models.export_settings import (
     AudioEnhancementSettings,
@@ -51,6 +54,7 @@ __all__ = [
     "AudioEnhancementSettings",
     "ClipGenerationResult",
     "ClipMetricRow",
+    "ClipPlanningInsight",
     "ClipPublicationResult",
     "ClipPublicationStatus",
     "ClipPublicationStatusResponse",
@@ -66,6 +70,7 @@ __all__ = [
     "GenerationSettings",
     "GenerationSettingsInput",
     "GenerateClipsRequest",
+    "HashtagSuggestion",
     "MediaInspectionResult",
     "OverlayDecision",
     "OverlayMappingResult",
@@ -75,6 +80,7 @@ __all__ = [
     "PublishClipRequest",
     "PublishClipsRequest",
     "RankingFactor",
+    "ReferenceMention",
     "RecommendationItem",
     "RecommendationResult",
     "ScoreSegment",

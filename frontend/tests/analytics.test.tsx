@@ -90,6 +90,8 @@ export function runAnalyticsTests(): void {
   assert.ok(overview.publish_rate > 60);
   assert.equal(overview.top_clips[0]?.clip_id, "clip-c");
   assert.equal(overview.podcasts[0]?.podcast_id, "pod-9");
+  assert.equal(overview.podcasts[0]?.latest_published_at, "2026-04-22T10:00:00Z");
+  assert.equal(overview.podcasts[0]?.average_virality_score, 85);
   assert.equal(overview.estimated, true);
 
   const snapshot = buildAnalyticsSnapshot(metrics);

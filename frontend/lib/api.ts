@@ -104,6 +104,34 @@ export type UserExportSettingsResponse = {
   export_settings: ExportSettings;
 };
 
+export type UserMessageType = "feedback" | "support" | "contact";
+export type UserMessageCategory =
+  | "bug"
+  | "feature_request"
+  | "general"
+  | "billing"
+  | "technical_support";
+
+export type UserMessagePayload = {
+  message_type?: UserMessageType;
+  category?: UserMessageCategory;
+  subject?: string | null;
+  message: string;
+  contact_email?: string | null;
+};
+
+export type UserMessageResponse = {
+  id: string;
+  user_id: string;
+  message_type: UserMessageType;
+  category: UserMessageCategory;
+  subject?: string | null;
+  message: string;
+  contact_email?: string | null;
+  status: "received" | "triaged";
+  created_at?: string | null;
+};
+
 export type UploadPriceRequest = {
   filename: string;
   filesize_bytes: number;
@@ -299,6 +327,28 @@ export type ClipRevocationResult = {
   clip_id: string;
   revoked: boolean;
   published: boolean;
+};
+
+export type ContentCalendarPlatform = "tiktok" | "linkedin" | "youtube";
+
+export type ContentCalendarSuggestion = {
+  clip_id: string;
+  clip_number: number;
+  platform: ContentCalendarPlatform;
+  scheduled_day: number;
+  best_time_local: string;
+  title: string;
+  caption: string;
+  hashtags: string[];
+  call_to_action: string;
+  repurpose_angle: string;
+};
+
+export type ContentCalendarResponse = {
+  podcast_id: string;
+  total_suggestions: number;
+  suggestions: ContentCalendarSuggestion[];
+  estimated?: boolean;
 };
 
 export type ClipSearchResult = ClipDiscoveryItem;
@@ -623,6 +673,45 @@ export async function updateUserExportSettings(
   );
 }
 
+async function submitUserMessage(
+  route: "feedback" | "support" | "contact",
+  payload: UserMessagePayload,
+  token?: string | null,
+): Promise<UserMessageResponse> {
+  return postJson<UserMessageResponse>(
+    `/users/${route}`,
+    {
+      ...payload,
+      message_type: route,
+      category: payload.category ?? "general",
+      subject: payload.subject ?? null,
+      contact_email: payload.contact_email ?? null,
+    },
+    token,
+  );
+}
+
+export async function submitFeedback(
+  payload: UserMessagePayload,
+  token?: string | null,
+): Promise<UserMessageResponse> {
+  return submitUserMessage("feedback", payload, token);
+}
+
+export async function submitSupportRequest(
+  payload: UserMessagePayload,
+  token?: string | null,
+): Promise<UserMessageResponse> {
+  return submitUserMessage("support", payload, token);
+}
+
+export async function submitContactMessage(
+  payload: UserMessagePayload,
+  token?: string | null,
+): Promise<UserMessageResponse> {
+  return submitUserMessage("contact", payload, token);
+}
+
 export async function calculateUploadPrice(
   payload: UploadPriceRequest,
   options: UploadRequestOptions = {},
@@ -741,6 +830,157 @@ export async function revokeClipDownload(
   token?: string | null,
 ): Promise<ClipRevocationResult> {
   return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
+}
+
+function normalizeCalendarText(value: string): string {
+  return value.split(/\s+/).filter(Boolean).join(" ").trim();
+}
+
+function truncateCalendarWords(value: string, limit: number): string {
+  const words = normalizeCalendarText(value).split(" ").filter(Boolean);
+  if (words.length === 0) {
+    return "Generated clip";
+  }
+
+  const shortened = words.slice(0, limit).join(" ");
+  return words.length <= limit ? shortened : `${shortened}...`;
+}
+
+function extractCalendarKeywords(value: string): string[] {
+  const blocked = new Set([
+    "this",
+    "that",
+    "with",
+    "from",
+    "your",
+    "have",
+    "will",
+    "about",
+    "into",
+    "they",
+    "them",
+  ]);
+
+  const words: string[] = [];
+  for (const rawWord of normalizeCalendarText(value)
+    .toLowerCase()
+    .replace(/[?.,]/g, " ")
+    .split(/\s+/)) {
+    const cleaned = rawWord.replace(/[^a-z0-9]/g, "");
+    if (!cleaned || blocked.has(cleaned) || words.includes(cleaned)) {
+      continue;
+    }
+    words.push(cleaned);
+  }
+
+  return words.slice(0, 3);
+}
+
+function buildPlatformHashtags(
+  platform: ContentCalendarPlatform,
+  subtitle: string,
+): string[] {
+  const base =
+    platform === "tiktok"
+      ? ["#PodcastClips", "#CreatorTips", "#InsightClips"]
+      : platform === "linkedin"
+        ? ["#Leadership", "#ContentStrategy", "#Podcast"]
+        : ["#Podcast", "#Shorts", "#Highlights"];
+
+  const keywords = extractCalendarKeywords(subtitle)
+    .filter((word) => word.length > 3)
+    .map((word) => `#${word.charAt(0).toUpperCase()}${word.slice(1)}`);
+
+  return [...new Set([...base, ...keywords])].slice(0, 6);
+}
+
+export function buildEstimatedContentCalendar(
+  podcastId: string,
+  clips: ClipResult[],
+): ContentCalendarResponse {
+  const platforms: ContentCalendarPlatform[] = ["tiktok", "linkedin", "youtube"];
+  const readyClips = [...clips]
+    .filter((clip) => ["ready", "done", "completed"].includes(clip.status))
+    .sort((left, right) => {
+      if (right.virality_score !== left.virality_score) {
+        return right.virality_score - left.virality_score;
+      }
+      return left.clip_number - right.clip_number;
+    })
+    .slice(0, 5);
+
+  const suggestions = readyClips.flatMap((clip, clipIndex) => {
+    const subtitle = normalizeCalendarText(clip.subtitle_text || "");
+    const titleSeed = subtitle || `Clip ${clip.clip_number}`;
+
+    return platforms.map((platform, platformIndex) => {
+      const scheduled_day = ((clipIndex + platformIndex) % 7) + 1;
+      const title = truncateCalendarWords(titleSeed, 9);
+      const platformTitle =
+        platform === "linkedin"
+          ? `Insight: ${title}`
+          : platform === "youtube"
+            ? `${title} | Podcast Clip`
+            : title;
+      const caption =
+        platform === "linkedin"
+          ? `${truncateCalendarWords(titleSeed, 18)}\n\nA concise takeaway from the full conversation.`
+          : platform === "youtube"
+            ? `${truncateCalendarWords(titleSeed, 18)}\n\nWatch this highlight and save the full episode for later.`
+            : `${truncateCalendarWords(titleSeed, 18)} Watch until the end for the key takeaway.`;
+      const call_to_action =
+        platform === "linkedin"
+          ? "Comment with the takeaway you would apply first."
+          : platform === "youtube"
+            ? "Subscribe for more clips from this podcast."
+            : "Follow for more short podcast takeaways.";
+      const repurpose_angle =
+        platform === "linkedin"
+          ? "Frame the clip as a professional lesson or discussion prompt."
+          : platform === "youtube"
+            ? "Package the clip as a searchable highlight from the episode."
+            : subtitle.includes("?")
+              ? "Open with the question and let the answer drive retention."
+              : "Lead with the strongest hook in the first two seconds.";
+      const best_time_local =
+        platform === "linkedin" ? "09:00" : platform === "youtube" ? "17:00" : "19:30";
+
+      return {
+        clip_id: clip.id,
+        clip_number: clip.clip_number,
+        platform,
+        scheduled_day,
+        best_time_local,
+        title: platformTitle,
+        caption,
+        hashtags: buildPlatformHashtags(platform, subtitle),
+        call_to_action,
+        repurpose_angle,
+      };
+    });
+  });
+
+  return {
+    podcast_id: podcastId,
+    total_suggestions: suggestions.length,
+    suggestions,
+    estimated: true,
+  };
+}
+
+export async function getContentCalendar(
+  podcastId: string,
+  token?: string | null,
+): Promise<ContentCalendarResponse> {
+  try {
+    return await getJson<ContentCalendarResponse>(
+      `/podcasts/${podcastId}/content-calendar`,
+      token,
+    );
+  } catch {
+    const clipsResult = await getClips(podcastId, token);
+    return buildEstimatedContentCalendar(podcastId, clipsResult.clips);
+  }
 }
 
 async function getAllDiscoveryClips(token?: string | null): Promise<ClipDiscoveryItem[]> {

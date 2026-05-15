@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarDays,
   Clapperboard,
+  Copy,
   Download,
+  Hash,
   Loader2,
   Moon,
   PlayCircle,
@@ -21,6 +24,7 @@ import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
   buildAuthenticatedBackendUrl,
+  getContentCalendar,
   downloadClip,
   generateClips,
   getBackendBaseUrl,
@@ -34,6 +38,9 @@ import {
   type ClipOverlay,
   type ClipResult,
   type ClipSearchResult,
+  type ContentCalendarPlatform,
+  type ContentCalendarResponse,
+  type ContentCalendarSuggestion,
   type ExportSettings,
   type GenerationSettings,
   type GenerationTemplateId,
@@ -178,6 +185,38 @@ function isPreviewable(url: string): boolean {
 
 function getPreviewAspectRatio(exportSettings?: ClipResult["export_settings"] | null): string {
   return exportSettings?.export_mode === "portrait" ? "9 / 16" : "16 / 9";
+}
+
+function formatPlatformLabel(platform: ContentCalendarPlatform): string {
+  if (platform === "tiktok") {
+    return "TikTok";
+  }
+  if (platform === "linkedin") {
+    return "LinkedIn";
+  }
+  return "YouTube";
+}
+
+function collectPlanningHashtags(suggestions: ContentCalendarSuggestion[]): string[] {
+  const seen = new Set<string>();
+  const hashtags: string[] = [];
+
+  for (const suggestion of suggestions) {
+    for (const hashtag of suggestion.hashtags) {
+      const normalized = hashtag.trim();
+      if (!normalized) {
+        continue;
+      }
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      hashtags.push(normalized);
+    }
+  }
+
+  return hashtags.slice(0, 8);
 }
 
 function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSearchResult[] {
@@ -326,9 +365,11 @@ function ClipsPageContent() {
   const [filter, setFilter] = useState<ClipStatusFilter>("all");
   const [searchEstimated, setSearchEstimated] = useState(false);
   const [recommendationsEstimated, setRecommendationsEstimated] = useState(false);
+  const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [downloadingClipId, setDownloadingClipId] = useState("");
   const [publishingClipIds, setPublishingClipIds] = useState<string[]>([]);
   const [revokingClipIds, setRevokingClipIds] = useState<string[]>([]);
+  const [contentCalendar, setContentCalendar] = useState<ContentCalendarResponse | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
     tone: "success" | "error" | "info";
     message: string;
@@ -365,6 +406,18 @@ function ClipsPageContent() {
     () => mergeOverlayMetadata(recommendations, overlayByClipId),
     [overlayByClipId, recommendations],
   );
+  const calendarSuggestions = contentCalendar?.suggestions ?? [];
+  const contentCalendarByClipId = useMemo(() => {
+    const next = new Map<string, ContentCalendarSuggestion[]>();
+    for (const suggestion of calendarSuggestions) {
+      const existing = next.get(suggestion.clip_id) ?? [];
+      existing.push(suggestion);
+      next.set(suggestion.clip_id, existing);
+    }
+    return next;
+  }, [calendarSuggestions]);
+  const calendarPreview = calendarSuggestions.slice(0, 6);
+  const plannedClipCount = contentCalendarByClipId.size;
 
   const publishedCount = clips.filter((clip) => clip.published).length;
   const overlayEnabledCount = clips.filter(
@@ -468,6 +521,7 @@ function ClipsPageContent() {
     const loadClipData = async () => {
       setLoadingClips(true);
       setLoadingRecommendations(true);
+      setLoadingCalendar(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -475,9 +529,10 @@ function ClipsPageContent() {
           return;
         }
 
-        const [clipsResult, recommendationsResult] = await Promise.allSettled([
+        const [clipsResult, recommendationsResult, calendarResult] = await Promise.allSettled([
           getClips(selectedPodcastId, token),
           getRecommendations(selectedPodcastId, token),
+          getContentCalendar(selectedPodcastId, token),
         ]);
 
         if (clipsResult.status === "fulfilled") {
@@ -501,14 +556,22 @@ function ClipsPageContent() {
           setRecommendationsEstimated(false);
         }
 
+        if (calendarResult.status === "fulfilled") {
+          setContentCalendar(calendarResult.value);
+        } else {
+          setContentCalendar(null);
+        }
+
         setError("");
       } catch (loadError) {
         setClips([]);
         setRecommendations([]);
+        setContentCalendar(null);
         setError(
           loadError instanceof Error ? loadError.message : "Unable to load clips.",
         );
       } finally {
+        setLoadingCalendar(false);
         setLoadingClips(false);
         setLoadingRecommendations(false);
       }
@@ -708,6 +771,7 @@ function ClipsPageContent() {
         token,
       );
       const recommended = await getRecommendations(selectedPodcastId, token).catch(() => null);
+      const calendar = await getContentCalendar(selectedPodcastId, token).catch(() => null);
 
       setClips(generated.clips);
       setSearchResults(
@@ -716,6 +780,9 @@ function ClipsPageContent() {
       if (recommended) {
         setRecommendations(recommended.recommendations);
         setRecommendationsEstimated(Boolean(recommended.estimated));
+      }
+      if (calendar) {
+        setContentCalendar(calendar);
       }
       setActionFeedback({
         tone: "success",
@@ -729,6 +796,33 @@ function ClipsPageContent() {
       );
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleCopyPlanning = async (text: string, label: string) => {
+    const value = text.trim();
+    if (!value) {
+      setActionFeedback({
+        tone: "error",
+        message: `No ${label.toLowerCase()} is available to copy yet.`,
+      });
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setActionFeedback({
+        tone: "success",
+        message: `${label} copied to your clipboard.`,
+      });
+    } catch (copyError) {
+      setActionFeedback({
+        tone: "error",
+        message:
+          copyError instanceof Error
+            ? copyError.message
+            : `Unable to copy ${label.toLowerCase()}.`,
+      });
     }
   };
 
@@ -1608,6 +1702,204 @@ function ClipsPageContent() {
                 }}
               />
 
+              <section
+                style={{
+                  borderRadius: 24,
+                  background: t.card,
+                  border: `1px solid ${t.border}`,
+                  padding: 20,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: ".22em",
+                        textTransform: "uppercase",
+                        color: t.accentLt,
+                        fontWeight: 700,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Content Calendar
+                    </div>
+                    <h2
+                      style={{
+                        fontFamily: "'DM Serif Display',serif",
+                        fontStyle: "italic",
+                        fontSize: 24,
+                        fontWeight: 400,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Reuse planning content right after generation
+                    </h2>
+                    <p style={{ fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 640 }}>
+                      Suggested posting slots, captions, and hashtags are grouped per clip so you can move from generation to publishing faster.
+                    </p>
+                  </div>
+                  <div
+                    style={{
+                      borderRadius: 18,
+                      border: `1px solid ${t.borderSub}`,
+                      background: t.cardAlt,
+                      padding: "14px 16px",
+                      minWidth: 220,
+                    }}
+                  >
+                    <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                      Planning coverage
+                    </div>
+                    <div style={{ fontSize: 14, color: t.text, fontWeight: 700 }}>
+                      {plannedClipCount} planned clip{plannedClipCount === 1 ? "" : "s"} / {calendarSuggestions.length} total slots
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                      {contentCalendar?.estimated
+                        ? "Showing estimated planning suggestions from current clip data."
+                        : "Using structured planning data from the backend calendar endpoint."}
+                    </div>
+                  </div>
+                </div>
+
+                {loadingCalendar ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub }}>
+                    <Loader2 size={18} className="animate-spin" />
+                    Building the content calendar...
+                  </div>
+                ) : !selectedPodcast ? (
+                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                    Pick a podcast to load its planning suggestions.
+                  </div>
+                ) : clips.length === 0 ? (
+                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                    Generate clips first and the posting calendar will appear here automatically.
+                  </div>
+                ) : calendarPreview.length === 0 ? (
+                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                    No planning suggestions are available yet for these clips. The clip cards below will still show gracefully if planning data is partial.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {calendarPreview.map((suggestion) => (
+                      <article
+                        key={`${suggestion.clip_id}-${suggestion.platform}`}
+                        style={{
+                          borderRadius: 18,
+                          border: `1px solid ${t.borderSub}`,
+                          background: t.cardAlt,
+                          padding: 14,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                              Clip {suggestion.clip_number}
+                            </div>
+                            <div style={{ marginTop: 4, fontWeight: 700 }}>{formatPlatformLabel(suggestion.platform)}</div>
+                          </div>
+                          <div
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${t.borderSub}`,
+                              background: t.chip,
+                              color: t.accent,
+                              padding: "6px 10px",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Day {suggestion.scheduled_day}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: t.text, lineHeight: 1.55, marginBottom: 6 }}>
+                          {suggestion.title}
+                        </div>
+                        <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65, marginBottom: 8 }}>
+                          Best time: {suggestion.best_time_local}
+                        </div>
+                        <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65, marginBottom: 10 }}>
+                          {truncateText(suggestion.caption, 140)}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                          {suggestion.hashtags.slice(0, 4).map((hashtag) => (
+                            <span
+                              key={hashtag}
+                              style={{
+                                borderRadius: 999,
+                                border: `1px solid ${t.borderSub}`,
+                                background: "transparent",
+                                color: t.textSub,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: "5px 9px",
+                              }}
+                            >
+                              {hashtag}
+                            </span>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
+                            style={{
+                              border: `1px solid ${t.borderSub}`,
+                              borderRadius: 999,
+                              background: "transparent",
+                              color: t.textSub,
+                              padding: "8px 12px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <Copy size={13} />
+                            Copy caption
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
+                            style={{
+                              border: `1px solid ${t.borderSub}`,
+                              borderRadius: 999,
+                              background: "transparent",
+                              color: t.textSub,
+                              padding: "8px 12px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <Hash size={13} />
+                            Copy tags
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               <div
                 style={{
                   display: "grid",
@@ -1802,6 +2094,10 @@ function ClipsPageContent() {
                     const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
                     const overlayState = getOverlayState(clip.overlay);
+                    const clipPlanningSuggestions =
+                      contentCalendarByClipId.get(clip.id) ?? [];
+                    const clipPlanningHashtags =
+                      collectPlanningHashtags(clipPlanningSuggestions);
                     const effectiveExportSettings =
                       clip.export_settings ?? selectedPodcast?.export_settings ?? null;
                     const previewUrl = buildAuthenticatedBackendUrl(
@@ -2222,7 +2518,132 @@ function ClipsPageContent() {
                                   : "Uses the original frame without mobile optimization."}
                               </div>
                             </div>
+
+                            <div
+                              style={{
+                                borderRadius: 16,
+                                border: `1px solid ${t.borderSub}`,
+                                background: clipPlanningSuggestions.length > 0 ? t.chip : "transparent",
+                                padding: "12px 14px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <CalendarDays size={14} color={clipPlanningSuggestions.length > 0 ? t.accent : t.textSub} />
+                                <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                                  Planning
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: clipPlanningSuggestions.length > 0 ? t.accent : t.text, lineHeight: 1.55 }}>
+                                {clipPlanningSuggestions.length > 0
+                                  ? `${clipPlanningSuggestions.length} posting suggestion${clipPlanningSuggestions.length === 1 ? "" : "s"} ready`
+                                  : "No planning suggestions yet"}
+                              </div>
+                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                {clipPlanningSuggestions.length > 0
+                                  ? `${formatPlatformLabel(clipPlanningSuggestions[0]!.platform)} on day ${clipPlanningSuggestions[0]!.scheduled_day} at ${clipPlanningSuggestions[0]!.best_time_local}.`
+                                  : "The UI stays usable even if content calendar data is empty or still loading."}
+                              </div>
+                              {clipPlanningHashtags.length > 0 ? (
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                                  {clipPlanningHashtags.map((hashtag) => (
+                                    <span
+                                      key={hashtag}
+                                      style={{
+                                        borderRadius: 999,
+                                        border: `1px solid ${t.borderSub}`,
+                                        background: "transparent",
+                                        color: t.textSub,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        padding: "6px 10px",
+                                      }}
+                                    >
+                                      {hashtag}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
+
+                          {clipPlanningSuggestions.length > 0 ? (
+                            <div
+                              style={{
+                                marginTop: 14,
+                                display: "grid",
+                                gap: 10,
+                              }}
+                            >
+                              {clipPlanningSuggestions.map((suggestion) => (
+                                <div
+                                  key={`${clip.id}-${suggestion.platform}`}
+                                  style={{
+                                    borderRadius: 16,
+                                    border: `1px solid ${t.borderSub}`,
+                                    background: "transparent",
+                                    padding: "12px 14px",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                                    <div>
+                                      <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                                        {formatPlatformLabel(suggestion.platform)}
+                                      </div>
+                                      <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: t.text }}>
+                                        Day {suggestion.scheduled_day} at {suggestion.best_time_local}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
+                                        style={{
+                                          border: `1px solid ${t.borderSub}`,
+                                          borderRadius: 999,
+                                          background: "transparent",
+                                          color: t.textSub,
+                                          padding: "8px 12px",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: 6,
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <Copy size={13} />
+                                        Caption
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
+                                        style={{
+                                          border: `1px solid ${t.borderSub}`,
+                                          borderRadius: 999,
+                                          background: "transparent",
+                                          color: t.textSub,
+                                          padding: "8px 12px",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: 6,
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <Hash size={13} />
+                                        Hashtags
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                    {truncateText(suggestion.caption, 180)}
+                                  </div>
+                                  <div style={{ marginTop: 8, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                                    {suggestion.repurpose_angle}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
                             {clip.published ? (

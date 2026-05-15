@@ -4,6 +4,7 @@ import {
   buildAuthenticatedBackendUrl,
   generateClips,
   getClipMetrics,
+  getContentCalendar,
   getPodcastAnalytics,
   getUserExportSettings,
   getUserProfile,
@@ -12,6 +13,7 @@ import {
   publishClips,
   revokeClipDownload,
   searchClips,
+  submitFeedback,
   updateUserExportSettings,
   updateUserProfile,
 } from "../lib/api";
@@ -55,9 +57,12 @@ export async function runApiTests(): Promise<void> {
   await testUpdateUserProfilePatchesProfileFields();
   await testGetUserExportSettingsUsesProtectedEndpoint();
   await testUpdateUserExportSettingsPersistsPreferences();
+  await testSubmitFeedbackPostsProtectedMessage();
   await testPrepareUploadPostsExportSettings();
   await testGenerateClipsPostsGenerationSettingsPayload();
   await testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFields();
+  await testGetContentCalendarUsesBackendRoute();
+  await testContentCalendarFallbackProducesEstimatedSuggestions();
   await testGetPodcastAnalyticsUsesBackendRoute();
   await testSearchClipsUsesBackendDiscoveryRoute();
   await testSearchClipsFallsBackToCurrentClipData();
@@ -352,6 +357,54 @@ async function testUpdateUserExportSettingsPersistsPreferences(): Promise<void> 
             status: "disabled",
           },
         },
+      }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testSubmitFeedbackPostsProtectedMessage(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/feedback")) {
+      return jsonResponse({
+        id: "message-1",
+        user_id: "user-1",
+        message_type: "feedback",
+        category: "feature_request",
+        subject: "Planning board",
+        message: "Please add easier reuse for planned captions and hashtags.",
+        contact_email: "creator@example.com",
+        status: "received",
+        created_at: "2026-05-15T10:00:00Z",
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await submitFeedback(
+      {
+        category: "feature_request",
+        subject: "Planning board",
+        message: "Please add easier reuse for planned captions and hashtags.",
+        contact_email: "creator@example.com",
+      },
+      "token-123",
+    );
+
+    assert.equal(result.message_type, "feedback");
+    assert.equal(result.category, "feature_request");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        category: "feature_request",
+        subject: "Planning board",
+        message: "Please add easier reuse for planned captions and hashtags.",
+        contact_email: "creator@example.com",
+        message_type: "feedback",
       }),
     );
   } finally {
@@ -669,6 +722,111 @@ async function testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFie
         },
       },
     );
+  } finally {
+    restore();
+  }
+}
+
+async function testGetContentCalendarUsesBackendRoute(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/pod-1/content-calendar")) {
+      return jsonResponse({
+        podcast_id: "pod-1",
+        total_suggestions: 2,
+        suggestions: [
+          {
+            clip_id: "clip-1",
+            clip_number: 1,
+            platform: "tiktok",
+            scheduled_day: 1,
+            best_time_local: "19:30",
+            title: "Strong hook",
+            caption: "Strong hook Watch until the end for the key takeaway.",
+            hashtags: ["#PodcastClips", "#CreatorTips"],
+            call_to_action: "Follow for more short podcast takeaways.",
+            repurpose_angle: "Lead with the strongest hook in the first two seconds.",
+          },
+          {
+            clip_id: "clip-1",
+            clip_number: 1,
+            platform: "youtube",
+            scheduled_day: 2,
+            best_time_local: "17:00",
+            title: "Strong hook | Podcast Clip",
+            caption: "Watch this highlight and save the full episode for later.",
+            hashtags: ["#Podcast", "#Shorts"],
+            call_to_action: "Subscribe for more clips from this podcast.",
+            repurpose_angle: "Package the clip as a searchable highlight from the episode.",
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getContentCalendar("pod-1", "token-123");
+
+    assert.equal(result.total_suggestions, 2);
+    assert.equal(result.suggestions[0]?.platform, "tiktok");
+    assert.equal(result.suggestions[0]?.hashtags[0], "#PodcastClips");
+    assert.equal(calls[0]?.init?.method, "GET");
+  } finally {
+    restore();
+  }
+}
+
+async function testContentCalendarFallbackProducesEstimatedSuggestions(): Promise<void> {
+  const { restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/pod-2/content-calendar")) {
+      return jsonResponse({ detail: "calendar unavailable" }, 503);
+    }
+    if (url.endsWith("/podcasts/pod-2/clips")) {
+      return jsonResponse({
+        podcast_id: "pod-2",
+        total_clips_generated: 2,
+        processing_time_seconds: 0,
+        download_folder_url: "/podcasts/pod-2/clips",
+        clips: [
+          {
+            id: "clip-1",
+            clip_number: 1,
+            clip_start_seconds: 0,
+            clip_end_seconds: 22,
+            duration_seconds: 22,
+            virality_score: 94,
+            video_url: "https://example.com/clip-1.mp4",
+            subtitle_text: "How leaders turn audience trust into consistent growth",
+            status: "ready",
+            published: false,
+          },
+          {
+            id: "clip-2",
+            clip_number: 2,
+            clip_start_seconds: 24,
+            clip_end_seconds: 48,
+            duration_seconds: 24,
+            virality_score: 71,
+            video_url: "https://example.com/clip-2.mp4",
+            subtitle_text: "Processing draft clip",
+            status: "processing",
+            published: false,
+          },
+        ],
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await getContentCalendar("pod-2", "token-123");
+
+    assert.equal(result.estimated, true);
+    assert.equal(result.total_suggestions, 3);
+    assert.equal(result.suggestions[0]?.clip_id, "clip-1");
+    assert.ok(result.suggestions[0]?.hashtags.includes("#PodcastClips"));
   } finally {
     restore();
   }

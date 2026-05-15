@@ -1,5 +1,9 @@
 from app.database import service_supabase
-from app.models.export_settings import ExportSettings, ExportSettingsInput
+from app.models.export_settings import (
+    ExportSettings,
+    ExportSettingsInput,
+    coerce_persisted_export_settings,
+)
 from app.models.profile import (
     ProfileRecord,
     ProfileResponse,
@@ -19,6 +23,12 @@ def _normalize_optional_text(value: str | None) -> str | None:
     return normalized or None
 
 
+def _hydrate_profile_record(row: dict[str, object]) -> ProfileRecord:
+    payload = dict(row)
+    payload["export_settings"] = coerce_persisted_export_settings(row.get("export_settings"))
+    return ProfileRecord.model_validate(payload)
+
+
 def get_profile_by_id(profile_id: str) -> ProfileRecord | None:
     response = (
         service_supabase.table("profiles")
@@ -28,7 +38,7 @@ def get_profile_by_id(profile_id: str) -> ProfileRecord | None:
         .execute()
     )
     rows = response.data or []
-    return ProfileRecord.model_validate(rows[0]) if rows else None
+    return _hydrate_profile_record(rows[0]) if rows else None
 
 
 def get_profile_by_email(email: str) -> ProfileRecord | None:
@@ -40,7 +50,7 @@ def get_profile_by_email(email: str) -> ProfileRecord | None:
         .execute()
     )
     rows = response.data or []
-    return ProfileRecord.model_validate(rows[0]) if rows else None
+    return _hydrate_profile_record(rows[0]) if rows else None
 
 
 def upsert_profile(profile_id: str, email: str, full_name: str | None = None) -> ProfileRecord:
@@ -57,7 +67,7 @@ def upsert_profile(profile_id: str, email: str, full_name: str | None = None) ->
         .execute()
     )
     rows = response.data or []
-    return ProfileRecord.model_validate(rows[0])
+    return _hydrate_profile_record(rows[0])
 
 
 def mark_free_trial_used(profile_id: str) -> None:
@@ -89,7 +99,7 @@ def update_profile(
         .execute()
     )
     rows = response.data or []
-    return ProfileRecord.model_validate(rows[0])
+    return _hydrate_profile_record(rows[0])
 
 
 def get_user_export_settings(profile_id: str) -> UserExportSettingsResponse | None:
@@ -121,7 +131,7 @@ def update_user_export_settings(
         .execute()
     )
     rows = response.data or []
-    profile = ProfileRecord.model_validate(rows[0])
+    profile = _hydrate_profile_record(rows[0])
     return UserExportSettingsResponse(
         user_id=profile.id,
         export_settings=profile.export_settings,

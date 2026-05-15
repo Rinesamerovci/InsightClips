@@ -4,6 +4,7 @@ import {
   applyGenerationTemplate,
   normalizeGenerationSettings,
 } from "../lib/generation-settings";
+import { buildEstimatedContentCalendar, type ClipResult } from "../lib/api";
 import {
   buildDiscoveryItem,
   filterDiscoveryItems,
@@ -151,4 +152,64 @@ export function runClipsTests(): void {
   assert.equal(template.generationSettings.number_of_clips, 3);
   assert.equal(template.exportSettings.export_mode, "portrait");
   assert.equal(template.exportSettings.subtitle_style?.preset, "boxed");
+
+  const clipCalendarSeed: ClipResult[] = [
+    {
+      id: "clip-1",
+      clip_number: 1,
+      clip_start_seconds: 0,
+      clip_end_seconds: 30,
+      duration_seconds: 30,
+      virality_score: 82,
+      video_url: "https://example.com/clip-1.mp4",
+      subtitle_text: "How creators turn attention into revenue",
+      status: "ready",
+      published: false,
+    },
+    {
+      id: "clip-2",
+      clip_number: 2,
+      clip_start_seconds: 35,
+      clip_end_seconds: 60,
+      duration_seconds: 25,
+      virality_score: 91,
+      video_url: "https://example.com/clip-2.mp4",
+      subtitle_text: "A published clip with strong retention",
+      status: "ready",
+      published: true,
+    },
+    {
+      id: "clip-3",
+      clip_number: 3,
+      clip_start_seconds: 65,
+      clip_end_seconds: 90,
+      duration_seconds: 25,
+      virality_score: 67,
+      video_url: "https://example.com/clip-3.mp4",
+      subtitle_text: "Processing another experiment for the feed",
+      status: "processing",
+      published: false,
+    },
+  ];
+  const calendar = buildEstimatedContentCalendar("pod-1", clipCalendarSeed);
+  const clipOneTikTok = calendar.suggestions.find(
+    (suggestion) => suggestion.clip_id === "clip-1" && suggestion.platform === "tiktok",
+  );
+
+  assert.equal(calendar.estimated, true);
+  assert.equal(calendar.total_suggestions, 6);
+  assert.equal(
+    calendar.suggestions.every((suggestion) => suggestion.clip_id !== "clip-3"),
+    true,
+  );
+  assert.equal(clipOneTikTok?.best_time_local, "19:30");
+  assert.ok(clipOneTikTok?.hashtags.includes("#PodcastClips"));
+  assert.ok(
+    calendar.suggestions.some(
+      (suggestion) =>
+        suggestion.clip_id === "clip-2" &&
+        suggestion.caption.length > 0 &&
+        suggestion.repurpose_angle.length > 0,
+    ),
+  );
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -38,6 +38,9 @@ EXPORT_PRESET_DEFAULT_TIMING: dict[ExportPresetName, SubtitleTimingProfile] = {
     "instagram_reels": "compact",
     "tiktok_vertical": "compact",
 }
+VALID_EXPORT_MODES = {"landscape", "portrait"}
+VALID_CROP_MODES = {"none", "center_crop", "smart_crop"}
+VALID_SUBTITLE_TIMING_PROFILES = {"compact", "balanced", "extended"}
 
 
 def default_preset_name_for_mode(export_mode: ExportMode) -> ExportPresetName:
@@ -293,3 +296,82 @@ class ExportSettingsInput(BaseModel):
                 else GenerationSettings()
             ),
         )
+
+
+def _coerce_persisted_subtitle_style(value: Any) -> SubtitleStyle:
+    try:
+        return SubtitleStyle.model_validate(value or {})
+    except ValidationError:
+        return SubtitleStyle()
+
+
+def _coerce_persisted_audio_enhancement(value: Any) -> AudioEnhancementSettings:
+    try:
+        return AudioEnhancementSettings.model_validate(value or {})
+    except ValidationError:
+        return AudioEnhancementSettings()
+
+
+def _coerce_persisted_generation_settings(value: Any) -> GenerationSettings:
+    try:
+        return GenerationSettings.model_validate(value or {})
+    except ValidationError:
+        return GenerationSettings()
+
+
+def coerce_persisted_export_settings(value: Any) -> ExportSettings:
+    if isinstance(value, ExportSettings):
+        return value
+
+    raw = value if isinstance(value, dict) else {}
+    raw_preset_name = str(raw.get("preset_name") or "").strip()
+    preset_name = raw_preset_name if raw_preset_name in EXPORT_PRESET_EXPORT_MODE else None
+    raw_export_mode = str(raw.get("export_mode") or "").strip()
+    raw_crop_mode = str(raw.get("crop_mode") or "").strip()
+    face_tracking_enabled = bool(raw.get("face_tracking_enabled") or False)
+    mobile_optimized = bool(raw.get("mobile_optimized") or False)
+
+    if raw_export_mode in VALID_EXPORT_MODES:
+        export_mode = cast(ExportMode, raw_export_mode)
+    elif preset_name is not None:
+        export_mode = EXPORT_PRESET_EXPORT_MODE[cast(ExportPresetName, preset_name)]
+    elif raw_crop_mode in {"center_crop", "smart_crop"} or face_tracking_enabled or mobile_optimized:
+        export_mode = "portrait"
+    else:
+        export_mode = "landscape"
+
+    if preset_name is None or EXPORT_PRESET_EXPORT_MODE[cast(ExportPresetName, preset_name)] != export_mode:
+        preset_name = default_preset_name_for_mode(export_mode)
+
+    if export_mode == "landscape":
+        crop_mode: CropMode = "none"
+        face_tracking_enabled = False
+        mobile_optimized = False
+    else:
+        if raw_crop_mode in {"center_crop", "smart_crop"}:
+            crop_mode = cast(CropMode, raw_crop_mode)
+        else:
+            crop_mode = default_crop_mode_for_preset(export_mode, cast(ExportPresetName, preset_name))
+        if face_tracking_enabled and crop_mode != "smart_crop":
+            crop_mode = "smart_crop"
+
+    raw_timing_profile = str(raw.get("subtitle_timing_profile") or "").strip()
+    if raw_timing_profile in VALID_SUBTITLE_TIMING_PROFILES:
+        subtitle_timing_profile = cast(SubtitleTimingProfile, raw_timing_profile)
+    else:
+        subtitle_timing_profile = default_timing_profile_for_preset(
+            cast(ExportPresetName, preset_name),
+            export_mode,
+        )
+
+    return ExportSettings(
+        preset_name=cast(ExportPresetName, preset_name),
+        export_mode=export_mode,
+        crop_mode=crop_mode,
+        subtitle_timing_profile=subtitle_timing_profile,
+        mobile_optimized=mobile_optimized,
+        face_tracking_enabled=face_tracking_enabled,
+        subtitle_style=_coerce_persisted_subtitle_style(raw.get("subtitle_style")),
+        audio_enhancement=_coerce_persisted_audio_enhancement(raw.get("audio_enhancement")),
+        generation_settings=_coerce_persisted_generation_settings(raw.get("generation_settings")),
+    )

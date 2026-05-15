@@ -13,7 +13,12 @@ if str(BACKEND_ROOT) not in sys.path:
 import app.services.profile_service as profile_service_module  # noqa: E402
 from app.models.export_settings import ExportSettingsInput  # noqa: E402
 from app.models.profile import UserMessageRequest  # noqa: E402
-from app.services.profile_service import submit_user_message, update_profile, update_user_export_settings  # noqa: E402
+from app.services.profile_service import (
+    get_profile_by_id,
+    submit_user_message,
+    update_profile,
+    update_user_export_settings,
+)  # noqa: E402
 
 
 class ProfileServiceTests(unittest.TestCase):
@@ -141,6 +146,46 @@ class ProfileServiceTests(unittest.TestCase):
         self.assertEqual(response.export_settings.export_mode, "portrait")
         update_payload = update_mock.call_args.args[0]
         self.assertEqual(update_payload["export_settings"]["crop_mode"], "center_crop")
+
+    def test_get_profile_by_id_repairs_legacy_export_settings(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "user-123",
+                        "email": "creator@example.com",
+                        "free_trial_used": False,
+                        "full_name": None,
+                        "profile_picture_url": None,
+                        "export_settings": {
+                            "preset_name": "youtube_landscape",
+                            "export_mode": "portrait",
+                            "crop_mode": "smart_crop",
+                            "mobile_optimized": True,
+                            "face_tracking_enabled": True,
+                            "subtitle_style": {},
+                            "audio_enhancement": {},
+                            "generation_settings": {},
+                        },
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                ]
+            )
+        )
+        limit_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        eq_mock = MagicMock(return_value=SimpleNamespace(limit=limit_mock))
+        select_mock = MagicMock(return_value=SimpleNamespace(eq=eq_mock))
+        service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(select=select_mock))
+
+        with patch.object(profile_service_module, "service_supabase", service_supabase_mock):
+            profile = get_profile_by_id("user-123")
+
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.export_settings.preset_name, "youtube_shorts")
+        self.assertEqual(profile.export_settings.export_mode, "portrait")
+        self.assertEqual(profile.export_settings.crop_mode, "smart_crop")
 
     def test_submit_user_message_persists_feedback_request(self) -> None:
         service_supabase_mock = MagicMock()

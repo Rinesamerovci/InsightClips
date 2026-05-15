@@ -18,6 +18,7 @@ from app.models.export_settings import (  # noqa: E402
     GenerationSettings,
     GenerationSettingsInput,
     SubtitleStyle,
+    coerce_persisted_export_settings,
 )
 
 
@@ -159,6 +160,24 @@ class ExportSettingsModelTests(unittest.TestCase):
         self.assertEqual(settings.generation_settings.clip_duration_seconds, 60)
         self.assertEqual(settings.generation_settings.number_of_clips, 4)
         self.assertFalse(settings.generation_settings.subtitles_enabled)
+
+    def test_coerce_persisted_export_settings_repairs_legacy_mode_preset_mismatch(self) -> None:
+        resolved = coerce_persisted_export_settings(
+            {
+                "preset_name": "youtube_landscape",
+                "export_mode": "portrait",
+                "crop_mode": "smart_crop",
+                "mobile_optimized": True,
+                "face_tracking_enabled": True,
+                "subtitle_style": {},
+                "audio_enhancement": {},
+                "generation_settings": {},
+            }
+        )
+
+        self.assertEqual(resolved.preset_name, "youtube_shorts")
+        self.assertEqual(resolved.export_mode, "portrait")
+        self.assertEqual(resolved.crop_mode, "smart_crop")
 
     def test_generation_settings_input_resolves_over_preferred_defaults(self) -> None:
         preferred = GenerationSettings(

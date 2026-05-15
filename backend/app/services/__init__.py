@@ -16,6 +16,7 @@ from app.services.overlay_mapping_service import (
 )
 from app.services.publishing_service import publish_clips, revoke_clip_download
 from app.services.recommendation_service import recommend_clips
+from app.services.recommendation_service import build_clip_planning_insight
 from app.services.search_service import search_clips
 from app.services.transcription_service import transcribe_media
 
@@ -30,6 +31,7 @@ __all__ = [
     "persist_analysis_result",
     "persist_overlay_mappings",
     "publish_clips",
+    "build_clip_planning_insight",
     "recommend_clips",
     "revoke_clip_download",
     "search_clips",

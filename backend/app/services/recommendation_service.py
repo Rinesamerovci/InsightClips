@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from app.models.clip_insights import RankingFactor
+from app.models.clip_insights import (
+    ClipPlanningInsight,
+    HashtagSuggestion,
+    RankingFactor,
+    ReferenceMention,
+)
 from app.models.search import RecommendationItem, RecommendationResult
+from app.services.analysis_service import detect_reference_mentions, extract_topic_labels
 from app.services.search_service import (
     ClipInsightEvaluation,
     ClipDiscoveryContext,
@@ -12,6 +18,19 @@ from app.services.search_service import (
     load_discovery_context,
     tokenize_text,
 )
+
+HASHTAG_TOPIC_MAP: dict[str, tuple[str, str, float]] = {
+    "ai": ("#AI", "Detected an AI or technology angle in the clip.", 0.94),
+    "finance": ("#Finance", "Clip language points to money, revenue, or finance topics.", 0.93),
+    "growth": ("#Growth", "Growth-oriented keywords appear in the transcript.", 0.95),
+    "leadership": ("#Leadership", "Leadership or team-building language is present.", 0.9),
+    "marketing": ("#Marketing", "Marketing and audience-building signals are present.", 0.91),
+    "product": ("#ProductStrategy", "Product strategy language is present in the clip.", 0.89),
+    "productivity": ("#Productivity", "The clip references habits, focus, or productivity ideas.", 0.9),
+    "research": ("#Research", "A study, paper, or source reference was detected.", 0.88),
+    "startup": ("#Startups", "The clip references startup or founder topics.", 0.92),
+    "storytelling": ("#Storytelling", "The clip uses story or hook-driven framing.", 0.86),
+}
 
 
 class RecommendationServiceError(Exception):
@@ -35,6 +54,10 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
     remaining = _dedupe_by_clip_id(contexts)
     insights_by_clip_id = {
         context.clip_id: build_clip_insight(context)
+        for context in remaining
+    }
+    planning_by_clip_id = {
+        context.clip_id: build_clip_planning_insight(context)
         for context in remaining
     }
     selected: list[tuple[ClipDiscoveryContext, float, str]] = []
@@ -80,6 +103,7 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
                 download_url=context.download_url,
                 published_at=context.published_at,
                 overlay=context.overlay,
+                planning_insight=planning_by_clip_id[context.clip_id],
                 insight_score=insights_by_clip_id[context.clip_id].score,
                 insight_summary=insights_by_clip_id[context.clip_id].summary,
                 ranking_factors=_build_recommendation_factors(
@@ -93,6 +117,27 @@ def recommend_clips(podcast_id: str, limit: int = 5) -> RecommendationResult:
             )
             for index, (context, score, reason) in enumerate(selected)
         ],
+    )
+
+
+def build_clip_planning_insight(context: ClipDiscoveryContext) -> ClipPlanningInsight:
+    reference_mentions = detect_reference_mentions(
+        context.transcript_text,
+        segment_start_seconds=context.clip_start_seconds,
+        segment_end_seconds=context.clip_end_seconds,
+        keywords=list(context.keywords),
+    )
+    topic_labels = extract_topic_labels(
+        context.transcript_text,
+        keywords=list(context.keywords),
+        reference_mentions=reference_mentions,
+    )
+    return ClipPlanningInsight(
+        clip_id=context.clip_id,
+        podcast_id=context.podcast_id,
+        topic_labels=topic_labels,
+        reference_mentions=reference_mentions,
+        hashtags=_build_hashtag_suggestions(context, topic_labels, reference_mentions),
     )
 
 
@@ -224,3 +269,97 @@ def _build_recommendation_factors(
         if len(deduped) >= 5:
             break
     return deduped
+
+
+def _build_hashtag_suggestions(
+    context: ClipDiscoveryContext,
+    topic_labels: list[str],
+    reference_mentions: list[ReferenceMention],
+) -> list[HashtagSuggestion]:
+    candidates: dict[str, HashtagSuggestion] = {}
+
+    def add_candidate(tag: str, confidence: float, reason: str) -> None:
+        suggestion = HashtagSuggestion(tag=tag, confidence=confidence, reason=reason)
+        key = suggestion.tag.lower()
+        existing = candidates.get(key)
+        if existing is None or (
+            suggestion.confidence,
+            suggestion.tag.lower(),
+        ) > (
+            existing.confidence,
+            existing.tag.lower(),
+        ):
+            candidates[key] = suggestion
+
+    add_candidate("#InsightClips", 0.99, "Base publishing tag for generated podcast clips.")
+    add_candidate("#PodcastClips", 0.98, "Signals that the clip is a short podcast highlight.")
+
+    for topic in topic_labels:
+        mapped = HASHTAG_TOPIC_MAP.get(topic)
+        if mapped is None:
+            continue
+        tag, reason, confidence = mapped
+        add_candidate(tag, confidence, reason)
+
+    for keyword in context.keywords:
+        if len(keyword) < 4:
+            continue
+        hashtag = _keyword_to_hashtag(keyword)
+        if hashtag is None:
+            continue
+        add_candidate(
+            hashtag,
+            0.82,
+            "Derived from a high-signal keyword already attached to the clip transcript.",
+        )
+
+    for mention in reference_mentions:
+        hashtag = _reference_to_hashtag(mention.label)
+        if hashtag is not None:
+            add_candidate(
+                hashtag,
+                min(0.96, max(0.84, mention.confidence)),
+                f"Derived directly from the detected {mention.mention_type.replace('_', ' ')} mention.",
+            )
+        mention_type_tag = _reference_type_hashtag(mention)
+        if mention_type_tag is not None:
+            add_candidate(
+                mention_type_tag,
+                0.87,
+                "Helps package the clip around the type of reference being discussed.",
+            )
+
+    return sorted(
+        candidates.values(),
+        key=lambda item: (-item.confidence, item.tag.lower()),
+    )[:6]
+
+
+def _keyword_to_hashtag(keyword: str) -> str | None:
+    cleaned = "".join(character for character in keyword.title() if character.isalnum())
+    if len(cleaned) < 4:
+        return None
+    return f"#{cleaned}"
+
+
+def _reference_to_hashtag(label: str) -> str | None:
+    parts = [
+        "".join(character for character in word if character.isalnum())
+        for word in label.split()
+    ]
+    cleaned_parts = [part for part in parts if part]
+    if not cleaned_parts or len(cleaned_parts) > 4:
+        return None
+    combined = "".join(part[:1].upper() + part[1:] for part in cleaned_parts)
+    if len(combined) < 4 or len(combined) > 28:
+        return None
+    return f"#{combined}"
+
+
+def _reference_type_hashtag(mention: ReferenceMention) -> str | None:
+    return {
+        "book": "#BookInsights",
+        "concept": "#BigIdeas",
+        "named_reference": "#ReferencedIdeas",
+        "source": "#SourceBacked",
+    }.get(mention.mention_type)

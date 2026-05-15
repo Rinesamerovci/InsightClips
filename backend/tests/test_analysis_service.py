@@ -16,6 +16,8 @@ from app.services.analysis_service import (  # noqa: E402
     AnalysisError,
     analyze_and_score,
     build_analysis_result,
+    detect_reference_mentions,
+    extract_topic_labels,
     persist_analysis_result,
     score_segments_need_refresh,
 )
@@ -201,6 +203,37 @@ class AnalysisServiceTests(unittest.TestCase):
         ]
 
         self.assertTrue(score_segments_need_refresh(segments))
+
+    def test_detect_reference_mentions_surfaces_books_sources_and_concepts(self) -> None:
+        text = (
+            'In "Atomic Habits" James Clear explains first principles for audience growth, '
+            "and Harvard Business Review has covered the same pattern."
+        )
+
+        mentions = detect_reference_mentions(
+            text,
+            segment_start_seconds=12.0,
+            segment_end_seconds=24.0,
+            keywords=["audience", "growth"],
+        )
+        topic_labels = extract_topic_labels(
+            text,
+            keywords=["audience", "growth"],
+            reference_mentions=mentions,
+        )
+
+        self.assertEqual(
+            {mention.normalized_label for mention in mentions},
+            {"atomic habits", "first principles", "harvard business review"},
+        )
+        mention_types = {mention.normalized_label: mention.mention_type for mention in mentions}
+        self.assertEqual(mention_types["atomic habits"], "book")
+        self.assertEqual(mention_types["first principles"], "concept")
+        self.assertEqual(mention_types["harvard business review"], "source")
+        self.assertTrue(all(12.0 <= (mention.start_seconds or 0.0) <= 24.0 for mention in mentions))
+        self.assertIn("growth", topic_labels)
+        self.assertIn("productivity", topic_labels)
+        self.assertIn("business", topic_labels)
 
     def test_persist_analysis_result_writes_top_segments(self) -> None:
         result = build_analysis_result(

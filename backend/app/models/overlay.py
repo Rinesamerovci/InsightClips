@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.clip_insights import ReferenceMentionType
+
 
 OverlayPosition = Literal[
     "top_left",
@@ -22,10 +24,13 @@ class OverlayDecision(BaseModel):
     clip_id: str
     podcast_id: str
     keyword: str | None = None
+    reference_label: str | None = None
+    reference_type: ReferenceMentionType | None = None
     overlay_category: str | None = None
     overlay_asset: str | None = None
     asset_path: str | None = None
     matched_text: str | None = None
+    topic_labels: list[str] = Field(default_factory=list, max_length=6)
     position: OverlayPosition | None = None
     scale: float | None = Field(default=None, gt=0, le=1)
     opacity: float | None = Field(default=None, ge=0, le=1)
@@ -48,6 +53,7 @@ class OverlayDecision(BaseModel):
 
     @field_validator(
         "keyword",
+        "reference_label",
         "overlay_category",
         "overlay_asset",
         "asset_path",
@@ -60,6 +66,18 @@ class OverlayDecision(BaseModel):
             return None
         cleaned = " ".join(value.split()).strip()
         return cleaned or None
+
+    @field_validator("topic_labels")
+    @classmethod
+    def normalize_topic_labels(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            cleaned = " ".join(item.split()).strip().lower()
+            if cleaned and cleaned not in seen:
+                normalized.append(cleaned)
+                seen.add(cleaned)
+        return normalized[:6]
 
     @model_validator(mode="after")
     def validate_render_window(self) -> "OverlayDecision":

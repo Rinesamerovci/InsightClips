@@ -115,6 +115,29 @@ class OverlayMappingServiceTests(unittest.TestCase):
         self.assertIsNone(result.overlay_decisions[0].keyword)
         self.assertEqual(result.overlay_decisions[0].confidence, 0.0)
 
+    def test_build_overlay_mappings_detects_reference_mentions_and_times_overlay(self) -> None:
+        clip = self._build_clip()
+        segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=15.0,
+            duration_seconds=15.0,
+            virality_score=84.0,
+            transcript_snippet="In Atomic Habits, James Clear explains why small habits compound into audience growth.",
+            sentiment="positive",
+            keywords=["audience", "growth", "habits"],
+        )
+
+        result = build_overlay_mappings("podcast-1", [(clip, segment)])
+        decision = result.overlay_decisions[0]
+
+        self.assertTrue(decision.applied)
+        self.assertEqual(decision.reference_label, "Atomic Habits")
+        self.assertEqual(decision.reference_type, "book")
+        self.assertEqual(decision.overlay_asset, "marketing_graph")
+        self.assertIn("growth", decision.topic_labels)
+        self.assertLess(decision.render_start_seconds or 0.0, 4.0)
+        self.assertGreater((decision.render_end_seconds or 0.0), (decision.render_start_seconds or 0.0))
+
     def test_overlay_selection_is_deterministic_for_category_keywords(self) -> None:
         clip = self._build_clip()
         segment = ScoreSegment(

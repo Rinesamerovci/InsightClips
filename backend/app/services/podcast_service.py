@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from app.database import UnconfiguredSupabaseClient, service_supabase
-from app.models.export_settings import ExportSettings
+from app.models.export_settings import ExportSettings, coerce_persisted_export_settings
 from app.models.podcast import (
     PodcastAnalyticsSummary,
     PodcastRecord,
@@ -46,18 +46,7 @@ def _mock_podcasts(user_id: str) -> list[PodcastRecord]:
 
 
 def _build_export_settings(row: dict[str, object]) -> ExportSettings:
-    export_mode = str(row.get("export_mode") or "landscape").strip() or "landscape"
-    crop_mode = str(row.get("crop_mode") or ("center_crop" if export_mode == "portrait" else "none")).strip()
-    mobile_optimized = bool(row.get("mobile_optimized") or False)
-    face_tracking_enabled = bool(row.get("face_tracking_enabled") or False)
-    return ExportSettings(
-        export_mode=export_mode,  # type: ignore[arg-type]
-        crop_mode=crop_mode,  # type: ignore[arg-type]
-        mobile_optimized=mobile_optimized,
-        face_tracking_enabled=face_tracking_enabled,
-        subtitle_style=row.get("subtitle_style") or {},
-        audio_enhancement=row.get("audio_enhancement") or {},
-    )
+    return coerce_persisted_export_settings(row)
 
 
 def _serialize_podcast_row(row: dict[str, object]) -> dict[str, object]:

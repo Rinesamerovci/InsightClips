@@ -34,6 +34,7 @@ export type ExportMode = "landscape" | "portrait";
 export type CropMode = "none" | "center_crop" | "smart_crop";
 export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
 export type SubtitlePosition = "top" | "center" | "bottom";
+export type GenerationTemplateId = "hook_spotlight" | "story_arc" | "expert_take";
 
 export type SubtitleStyle = {
   preset: SubtitleStylePreset;
@@ -63,6 +64,21 @@ export type ExportSettings = {
   face_tracking_enabled?: boolean;
   subtitle_style?: SubtitleStyle;
   audio_enhancement?: AudioEnhancementSettings;
+  generation_settings?: GenerationSettings;
+};
+
+export type GenerationSettings = {
+  clip_duration_seconds: number;
+  number_of_clips: number;
+  topic_focus: string;
+  subtitles_enabled: boolean;
+};
+
+export type GenerateClipsPayload = {
+  generation_settings?: GenerationSettings;
+  export_settings?: ExportSettings;
+  save_generation_settings?: boolean;
+  use_preferred_generation_settings?: boolean;
 };
 
 export type ProfileResponse = {
@@ -247,6 +263,7 @@ export type ClipResult = {
   published_at?: string | null;
   overlay?: ClipOverlay | null;
   export_settings?: ExportSettings | null;
+  generation_settings?: GenerationSettings | null;
 };
 
 export type ClipGenerationResult = {
@@ -256,6 +273,7 @@ export type ClipGenerationResult = {
   processing_time_seconds: number;
   download_folder_url: string;
   export_settings?: ExportSettings | null;
+  generation_settings?: GenerationSettings | null;
 };
 
 export type ClipPublicationStatus = {
@@ -639,9 +657,53 @@ export async function getPodcastAnalysis(
 
 export async function generateClips(
   podcastId: string,
-  token?: string | null,
+  payloadOrToken?: GenerateClipsPayload | string | null,
+  maybeToken?: string | null,
 ): Promise<ClipGenerationResult> {
-  return postJson<ClipGenerationResult>(`/podcasts/${podcastId}/generate-clips`, {}, token);
+  const payload =
+    payloadOrToken && typeof payloadOrToken === "object" && !Array.isArray(payloadOrToken)
+      ? payloadOrToken
+      : undefined;
+  const token =
+    typeof payloadOrToken === "string" || payloadOrToken == null
+      ? payloadOrToken ?? maybeToken
+      : maybeToken;
+
+  const requestBody: JsonRecord = {};
+  if (payload?.generation_settings) {
+    requestBody.generation_settings = payload.generation_settings;
+  }
+  if (payload?.export_settings) {
+    requestBody.export_settings = payload.export_settings;
+  }
+  if (typeof payload?.save_generation_settings === "boolean") {
+    requestBody.save_generation_settings = payload.save_generation_settings;
+  }
+  if (typeof payload?.use_preferred_generation_settings === "boolean") {
+    requestBody.use_preferred_generation_settings = payload.use_preferred_generation_settings;
+  }
+
+  try {
+    return await postJson<ClipGenerationResult>(
+      `/podcasts/${podcastId}/generate-clips`,
+      requestBody,
+      token,
+    );
+  } catch (error) {
+    if (!payload?.generation_settings) {
+      throw error;
+    }
+
+    const legacyBody = payload.export_settings
+      ? ({ export_settings: payload.export_settings } as JsonRecord)
+      : {};
+
+    return postJson<ClipGenerationResult>(
+      `/podcasts/${podcastId}/generate-clips`,
+      legacyBody,
+      token,
+    );
+  }
 }
 
 export async function getClips(

@@ -528,6 +528,7 @@ async function testGenerateClipsPostsGenerationSettingsPayload(): Promise<void> 
           topic_focus: "Prioritize strong opening hooks.",
           subtitles_enabled: true,
         },
+        visual_output_mode: "stylized_animated",
         save_generation_settings: true,
         use_preferred_generation_settings: true,
         export_settings: {
@@ -563,6 +564,7 @@ async function testGenerateClipsPostsGenerationSettingsPayload(): Promise<void> 
           topic_focus: "Prioritize strong opening hooks.",
           subtitles_enabled: true,
         },
+        visual_output_mode: "stylized_animated",
         save_generation_settings: true,
         use_preferred_generation_settings: true,
         export_settings: {

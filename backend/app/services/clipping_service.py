@@ -372,6 +372,10 @@ def generate_clips(
                     "face_tracking_enabled": clip_export_settings.face_tracking_enabled,
                     "subtitle_style": clip_export_settings.subtitle_style.model_dump(mode="json"),
                     "audio_enhancement": clip_export_settings.audio_enhancement.model_dump(mode="json"),
+                    "generation_settings": resolved_generation_settings.model_dump(mode="json"),
+                    "visual_output_mode": visual_output_mode,
+                    "effective_visual_output_mode": render_contract.effective_visual_output_mode,
+                    "render_fallback_reason": render_contract.render_fallback_reason,
                 }
             )
         except ClippingError as exc:
@@ -448,6 +452,12 @@ def get_clips_for_podcast(podcast_id: str) -> ClipGenerationResult | None:
             published_at=row.get("published_at"),
             overlay=overlays_by_clip_id.get(str(row["id"])),
             export_settings=_build_export_settings_from_row(row),
+            generation_settings=GenerationSettings.model_validate(
+                row.get("generation_settings") or {}
+            ),
+            visual_output_mode=str(row.get("visual_output_mode") or "original_people"),  # type: ignore[arg-type]
+            effective_visual_output_mode=str(row.get("effective_visual_output_mode") or row.get("visual_output_mode") or "original_people"),  # type: ignore[arg-type]
+            render_fallback_reason=str(row.get("render_fallback_reason") or "").strip() or None,
         )
         for row in rows
     ]
@@ -1404,6 +1414,7 @@ def _build_export_settings_from_row(row: dict[str, Any]) -> ExportSettings:
         face_tracking_enabled=bool(row.get("face_tracking_enabled") or False),
         subtitle_style=row.get("subtitle_style") or SubtitleStyle(),
         audio_enhancement=row.get("audio_enhancement") or {},
+        generation_settings=row.get("generation_settings") or {},
     )
 
 
@@ -1437,7 +1448,7 @@ def _select_clip_rows_for_podcast(podcast_id: str) -> Any:
         return (
             service_supabase.table("clips")
             .select(
-                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,preset_name,export_mode,crop_mode,subtitle_timing_profile,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement"
+                "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,storage_path,storage_url,subtitle_text,status,published,download_url,published_at,preset_name,export_mode,crop_mode,subtitle_timing_profile,mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement,generation_settings,visual_output_mode,effective_visual_output_mode,render_fallback_reason"
             )
             .eq("podcast_id", podcast_id)
             .order("clip_number")
@@ -1494,6 +1505,10 @@ def _clip_optional_columns_missing(exc: Exception) -> bool:
             "face_tracking_enabled",
             "subtitle_style",
             "audio_enhancement",
+            "generation_settings",
+            "visual_output_mode",
+            "effective_visual_output_mode",
+            "render_fallback_reason",
             "42703",
         )
     )

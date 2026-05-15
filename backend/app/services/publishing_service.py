@@ -12,6 +12,8 @@ from app.models.publishing import (
     ClipPublicationStatus,
     ClipPublicationStatusResponse,
     ClipRevocationResult,
+    ContentCalendarResponse,
+    ContentCalendarSuggestion,
     PublicationDestination,
 )
 from app.services.clipping_service import CLIP_STORAGE_BUCKET, _upload_with_overwrite
@@ -311,6 +313,57 @@ def get_clip_metrics(clip_id: str) -> ClipMetricResponse | None:
     )
 
 
+def build_content_calendar(
+    podcast_id: str,
+    *,
+    days: int = 7,
+    max_clips: int = 5,
+) -> ContentCalendarResponse:
+    cleaned_podcast_id = podcast_id.strip()
+    if not cleaned_podcast_id:
+        raise PublishingError("podcast_id is required.", status_code=400)
+    if days < 1 or days > 14:
+        raise PublishingError("days must be between 1 and 14.", status_code=400)
+    if max_clips < 1 or max_clips > 10:
+        raise PublishingError("max_clips must be between 1 and 10.", status_code=400)
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        raise PublishingError("Supabase must be configured before content calendars can be generated.", status_code=503)
+
+    rows = _get_calendar_clip_rows(cleaned_podcast_id)
+    ready_rows = [
+        row
+        for row in rows
+        if str(row.get("status") or "ready").strip().lower() in {"ready", "done", "completed"}
+    ]
+    ranked_rows = sorted(
+        ready_rows,
+        key=lambda row: (
+            -float(row.get("virality_score") or 0.0),
+            int(row.get("clip_number") or 0),
+            str(row.get("id") or ""),
+        ),
+    )[:max_clips]
+
+    suggestions: list[ContentCalendarSuggestion] = []
+    platforms = ("tiktok", "linkedin", "youtube")
+    for clip_index, row in enumerate(ranked_rows):
+        for platform_index, platform in enumerate(platforms):
+            scheduled_day = ((clip_index + platform_index) % days) + 1
+            suggestions.append(
+                _build_calendar_suggestion(
+                    row,
+                    platform=platform,
+                    scheduled_day=scheduled_day,
+                )
+            )
+
+    return ContentCalendarResponse(
+        podcast_id=cleaned_podcast_id,
+        total_suggestions=len(suggestions),
+        suggestions=suggestions,
+    )
+
+
 def _normalize_clip_ids(clip_ids: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -342,6 +395,133 @@ def _select_clip_rows():
     return service_supabase.table("clips").select(
         "id,podcast_id,clip_number,storage_path,storage_url,status,published,download_url,published_at"
     )
+
+
+def _get_calendar_clip_rows(podcast_id: str) -> list[dict[str, Any]]:
+    return (
+        service_supabase.table("clips")
+        .select("id,podcast_id,clip_number,subtitle_text,virality_score,status,published,published_at")
+        .eq("podcast_id", podcast_id)
+        .execute()
+        .data
+        or []
+    )
+
+
+def _build_calendar_suggestion(
+    row: dict[str, Any],
+    *,
+    platform: str,
+    scheduled_day: int,
+) -> ContentCalendarSuggestion:
+    clip_number = int(row.get("clip_number") or 0)
+    subtitle = _normalize_calendar_text(str(row.get("subtitle_text") or ""))
+    title_seed = subtitle or f"Clip {clip_number}"
+    title = _truncate_words(title_seed, 9)
+    angle = _platform_angle(platform, subtitle)
+    return ContentCalendarSuggestion(
+        clip_id=str(row.get("id") or ""),
+        clip_number=clip_number,
+        platform=platform,  # type: ignore[arg-type]
+        scheduled_day=scheduled_day,
+        best_time_local=_platform_best_time(platform),
+        title=_platform_title(platform, title),
+        caption=_platform_caption(platform, title_seed),
+        hashtags=_platform_hashtags(platform, subtitle),
+        call_to_action=_platform_cta(platform),
+        repurpose_angle=angle,
+    )
+
+
+def _normalize_calendar_text(value: str) -> str:
+    return " ".join(value.split()).strip()
+
+
+def _truncate_words(value: str, limit: int) -> str:
+    words = _normalize_calendar_text(value).split()
+    if not words:
+        return "Generated clip"
+    shortened = " ".join(words[:limit])
+    return shortened if len(words) <= limit else f"{shortened}..."
+
+
+def _platform_best_time(platform: str) -> str:
+    return {
+        "tiktok": "19:30",
+        "linkedin": "09:00",
+        "youtube": "17:00",
+    }.get(platform, "12:00")
+
+
+def _platform_title(platform: str, title: str) -> str:
+    if platform == "linkedin":
+        return f"Insight: {title}"
+    if platform == "youtube":
+        return f"{title} | Podcast Clip"
+    return title
+
+
+def _platform_caption(platform: str, subtitle: str) -> str:
+    seed = _truncate_words(subtitle, 18)
+    if platform == "linkedin":
+        return f"{seed}\n\nA concise takeaway from the full conversation."
+    if platform == "youtube":
+        return f"{seed}\n\nWatch this highlight and save the full episode for later."
+    return f"{seed} Watch until the end for the key takeaway."
+
+
+def _platform_cta(platform: str) -> str:
+    return {
+        "tiktok": "Follow for more short podcast takeaways.",
+        "linkedin": "Comment with the takeaway you would apply first.",
+        "youtube": "Subscribe for more clips from this podcast.",
+    }.get(platform, "Save this clip for later.")
+
+
+def _platform_angle(platform: str, subtitle: str) -> str:
+    if platform == "linkedin":
+        return "Frame the clip as a professional lesson or discussion prompt."
+    if platform == "youtube":
+        return "Package the clip as a searchable highlight from the episode."
+    if "?" in subtitle:
+        return "Open with the question and let the answer drive retention."
+    return "Lead with the strongest hook in the first two seconds."
+
+
+def _platform_hashtags(platform: str, subtitle: str) -> list[str]:
+    base = {
+        "tiktok": ["#PodcastClips", "#CreatorTips", "#InsightClips"],
+        "linkedin": ["#Leadership", "#ContentStrategy", "#Podcast"],
+        "youtube": ["#Podcast", "#Shorts", "#Highlights"],
+    }.get(platform, ["#Podcast"])
+    keyword_tags = [
+        f"#{word.title()}"
+        for word in _extract_calendar_keywords(subtitle)
+        if len(word) > 3
+    ]
+    return [*base, *keyword_tags][:6]
+
+
+def _extract_calendar_keywords(subtitle: str) -> list[str]:
+    blocked = {
+        "this",
+        "that",
+        "with",
+        "from",
+        "your",
+        "have",
+        "will",
+        "about",
+        "into",
+        "they",
+        "them",
+    }
+    words: list[str] = []
+    for raw_word in subtitle.lower().replace("?", " ").replace(".", " ").replace(",", " ").split():
+        cleaned = "".join(character for character in raw_word if character.isalnum())
+        if cleaned and cleaned not in blocked and cleaned not in words:
+            words.append(cleaned)
+    return words[:3]
 
 
 def _persist_publication_record(

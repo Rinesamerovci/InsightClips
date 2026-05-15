@@ -1,6 +1,12 @@
 from app.database import service_supabase
 from app.models.export_settings import ExportSettings, ExportSettingsInput
-from app.models.profile import ProfileRecord, ProfileResponse, UserExportSettingsResponse
+from app.models.profile import (
+    ProfileRecord,
+    ProfileResponse,
+    UserExportSettingsResponse,
+    UserMessageRequest,
+    UserMessageResponse,
+)
 
 PROFILE_COLUMNS = "id,email,free_trial_used,full_name,profile_picture_url,export_settings,created_at,updated_at"
 
@@ -119,6 +125,39 @@ def update_user_export_settings(
     return UserExportSettingsResponse(
         user_id=profile.id,
         export_settings=profile.export_settings,
+    )
+
+
+def submit_user_message(profile_id: str, payload: UserMessageRequest) -> UserMessageResponse:
+    cleaned_profile_id = profile_id.strip()
+    if not cleaned_profile_id:
+        raise ValueError("Profile id is required.")
+
+    record = {
+        "user_id": cleaned_profile_id,
+        "message_type": payload.message_type,
+        "category": payload.category,
+        "subject": payload.subject,
+        "message": payload.message,
+        "contact_email": str(payload.contact_email) if payload.contact_email else None,
+        "status": "received",
+    }
+    response = service_supabase.table("user_messages").insert(record).execute()
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Unable to submit message.")
+
+    row = rows[0]
+    return UserMessageResponse(
+        id=str(row.get("id") or ""),
+        user_id=str(row.get("user_id") or cleaned_profile_id),
+        message_type=row.get("message_type") or payload.message_type,
+        category=row.get("category") or payload.category,
+        subject=row.get("subject"),
+        message=str(row.get("message") or payload.message),
+        contact_email=row.get("contact_email"),
+        status=row.get("status") or "received",
+        created_at=row.get("created_at"),
     )
 
 

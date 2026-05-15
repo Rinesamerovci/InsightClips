@@ -71,7 +71,11 @@ const EXPORT_MODE_DETAILS: Record<
   },
 };
 
-function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyle): ExportSettings {
+function buildExportSettings(
+  exportMode: ExportMode,
+  subtitleStyle: SubtitleStyle,
+  generationSettings?: GenerationSettings,
+): ExportSettings {
   if (exportMode === "portrait") {
     return {
       export_mode: "portrait",
@@ -79,6 +83,7 @@ function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyl
       mobile_optimized: true,
       face_tracking_enabled: true,
       subtitle_style: subtitleStyle,
+      generation_settings: generationSettings,
       audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
     };
   }
@@ -89,6 +94,7 @@ function buildExportSettings(exportMode: ExportMode, subtitleStyle: SubtitleStyl
     mobile_optimized: false,
     face_tracking_enabled: false,
     subtitle_style: subtitleStyle,
+    generation_settings: generationSettings,
     audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
   };
 }
@@ -257,8 +263,8 @@ export default function UploadPage() {
   const hi2     = "#7ab55c";
   const exportDetails = EXPORT_MODE_DETAILS[exportMode];
   const exportSettings = useMemo(
-    () => buildExportSettings(exportMode, subtitleStyle),
-    [exportMode, subtitleStyle],
+    () => buildExportSettings(exportMode, subtitleStyle, generationSettings),
+    [exportMode, subtitleStyle, generationSettings],
   );
   const activeSubtitlePreset = SUBTITLE_PRESET_DETAILS[subtitleStyle.preset];
   const subtitleHasManualOverrides = hasSubtitleManualOverrides(subtitleStyle);
@@ -375,7 +381,7 @@ export default function UploadPage() {
   const selectGenerationTemplate = (templateId: GenerationTemplateId) => {
     const next = applyGenerationTemplate(
       templateId,
-      buildExportSettings(exportMode, subtitleStyle),
+      buildExportSettings(exportMode, subtitleStyle, generationSettings),
     );
     setGenerationTemplateId(templateId);
     setGenerationSettings(next.generationSettings);

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PublicationStatus = Literal["pending", "published", "failed"]
 PublicationDestination = Literal["download", "tiktok", "instagram", "youtube", "other"]
+ContentCalendarPlatform = Literal["tiktok", "linkedin", "youtube"]
 
 
 class ClipPublicationStatus(BaseModel):
@@ -141,3 +142,60 @@ class PublishClipRequest(BaseModel):
         if len(value) > 25:
             raise ValueError("metadata cannot contain more than 25 fields.")
         return value
+
+
+class ContentCalendarSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_id: str
+    clip_number: int = Field(ge=1)
+    platform: ContentCalendarPlatform
+    scheduled_day: int = Field(ge=1, le=14)
+    best_time_local: str
+    title: str
+    caption: str
+    hashtags: list[str] = Field(default_factory=list, max_length=8)
+    call_to_action: str
+    repurpose_angle: str
+
+    @field_validator("clip_id", "best_time_local", "title", "caption", "call_to_action", "repurpose_angle")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        cleaned = " ".join(value.split()) if value.strip() else value.strip()
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+    @field_validator("hashtags")
+    @classmethod
+    def normalize_hashtags(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for tag in value:
+            cleaned = tag.strip()
+            if not cleaned:
+                continue
+            if not cleaned.startswith("#"):
+                cleaned = f"#{cleaned}"
+            cleaned = cleaned.replace(" ", "")
+            lowered = cleaned.lower()
+            if lowered not in seen:
+                normalized.append(cleaned)
+                seen.add(lowered)
+        return normalized[:8]
+
+
+class ContentCalendarResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    podcast_id: str
+    total_suggestions: int = Field(ge=0)
+    suggestions: list[ContentCalendarSuggestion] = Field(default_factory=list)
+
+    @field_validator("podcast_id")
+    @classmethod
+    def validate_podcast_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("podcast_id cannot be empty.")
+        return cleaned

@@ -284,13 +284,19 @@ def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: Scor
         )
         render_contract = build_render_contract(
             clip.export_settings,
+            visual_output_mode=clip.visual_output_mode or "original_people",
+            subtitles_available=bool(clip.subtitle_text),
             clip_duration_seconds=clip.duration_seconds,
+        )
+        overlay_position, overlay_scale, overlay_opacity = _adapt_overlay_for_render_context(
+            rule,
+            clip,
+            render_contract,
         )
         trigger_phrase = matched_reference.label if matched_reference is not None else matched_keyword
         render_start_seconds, render_end_seconds = _estimate_render_window(clip, segment, trigger_phrase)
         asset_path = _build_asset_path(rule)
         asset_exists = asset_path in asset_inventory
-        is_portrait = render_contract.export_mode == "portrait"
         return OverlayDecision(
             clip_id=clip.id,
             podcast_id=podcast_id,
@@ -302,9 +308,9 @@ def _detect_overlay_decision(*, podcast_id: str, clip: ClipResult, segment: Scor
             asset_path=asset_path,
             matched_text=segment.transcript_snippet,
             topic_labels=matched_reference.topic_labels if matched_reference is not None else topic_labels,
-            position=rule.portrait_position if is_portrait else rule.landscape_position,
-            scale=rule.portrait_scale if is_portrait else rule.landscape_scale,
-            opacity=rule.opacity,
+            position=overlay_position,
+            scale=overlay_scale,
+            opacity=overlay_opacity,
             margin_x=render_contract.overlay_safe_margin_x,
             margin_y=render_contract.overlay_safe_margin_y,
             render_start_seconds=render_start_seconds,
@@ -332,8 +338,8 @@ def _build_search_candidates(
     reference_mentions: list[ReferenceMention],
     topic_labels: list[str],
 ) -> set[str]:
-    values = {segment.transcript_snippet.lower()}
-    values.update(keyword.lower() for keyword in segment.keywords)
+    values = {_normalize_search_text(segment.transcript_snippet)}
+    values.update(_normalize_search_text(keyword) for keyword in segment.keywords)
     values.update(mention.normalized_label for mention in reference_mentions)
     values.update(topic_labels)
     return values
@@ -344,15 +350,78 @@ def _find_matching_keyword(
     segment: ScoreSegment,
     rule_keywords: tuple[str, ...],
 ) -> str | None:
-    segment_keywords = set(segment.keywords)
+    segment_keywords = {_normalize_search_text(keyword) for keyword in segment.keywords}
+    searchable_tokens = {
+        token
+        for value in searchable_values
+        for token in re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", value.lower())
+    }
     for candidate in rule_keywords:
-        lowered = candidate.lower()
+        lowered = _normalize_search_text(candidate)
         if lowered in segment_keywords:
             return lowered
-        for value in searchable_values:
-            if lowered in value:
+        if " " in lowered:
+            if any(lowered in _normalize_search_text(value) for value in searchable_values):
                 return lowered
+            continue
+        if lowered in searchable_tokens:
+            return lowered
     return None
+
+
+def _adapt_overlay_for_render_context(
+    rule: _OverlayRule,
+    clip: ClipResult,
+    render_contract,
+) -> tuple[str, float, float]:
+    is_portrait = render_contract.export_mode == "portrait"
+    position = rule.portrait_position if is_portrait else rule.landscape_position
+    scale = rule.portrait_scale if is_portrait else rule.landscape_scale
+    opacity = rule.opacity
+    subtitle_position = clip.export_settings.subtitle_style.position if clip.export_settings is not None else "bottom"
+
+    position = _avoid_subtitle_lane(
+        position,
+        subtitle_position,
+        export_mode=render_contract.export_mode,
+        subtitle_policy=render_contract.subtitle_policy,
+    )
+    if render_contract.overlay_policy == "limited":
+        scale = min(scale, 0.14 if is_portrait else 0.16)
+        opacity = min(opacity, 0.58)
+        if position == "center":
+            position = "top_center" if is_portrait else "top_right"
+
+    return position, round(scale, 3), round(opacity, 3)
+
+
+def _avoid_subtitle_lane(
+    position: str,
+    subtitle_position: str,
+    *,
+    export_mode: str,
+    subtitle_policy: str,
+) -> str:
+    if subtitle_position == "top" and position.startswith("top_"):
+        return _swap_vertical_overlay_lane(position, "bottom")
+    if subtitle_position == "bottom" and position.startswith("bottom_"):
+        return _swap_vertical_overlay_lane(position, "top")
+    if position == "center" and (
+        subtitle_position == "center" or subtitle_policy in {"narrative_cards", "stylized_captions"}
+    ):
+        return "top_center" if export_mode == "portrait" else "top_right"
+    return position
+
+
+def _swap_vertical_overlay_lane(position: str, target_lane: str) -> str:
+    lane_suffix = position.split("_", maxsplit=1)[1] if "_" in position else "right"
+    return f"{target_lane}_{lane_suffix}"
+
+
+def _normalize_search_text(value: str) -> str:
+    cleaned = " ".join(value.split()).strip().lower()
+    cleaned = re.sub(r"[^a-z0-9\s'-]+", " ", cleaned)
+    return " ".join(cleaned.split())
 
 
 def _score_rule_match(

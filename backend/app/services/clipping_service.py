@@ -251,6 +251,7 @@ def generate_clips(
         raise ClippingError("No scored segments are available for clip generation.", status_code=404)
 
     resolved_export_settings = _resolve_export_settings(export_settings, podcast_row=podcast_row)
+    persisted_export_settings = resolved_export_settings.model_copy(deep=True)
     output_dir = _prepare_output_directory(podcast_id)
     overlay_mapping_service_module.service_supabase = service_supabase
     generated_results: list[ClipResult] = []
@@ -338,6 +339,10 @@ def generate_clips(
                 visual_output_mode=visual_output_mode,
                 overlay=overlay_decision,
             )
+            persisted_export_settings = _merge_runtime_export_settings(
+                persisted_export_settings,
+                clip_export_settings,
+            )
             # Keep generation responsive by returning locally rendered clips immediately.
             # Uploading generated assets to remote storage is deferred to the publish flow.
             storage_url = None
@@ -397,10 +402,10 @@ def generate_clips(
         raise ClippingError("No clips could be generated from the selected segments.")
 
     _persist_generated_clips(podcast_id, rows_to_persist)
-    _persist_podcast_export_settings(podcast_id, resolved_export_settings)
+    _persist_podcast_export_settings(podcast_id, persisted_export_settings)
     overlay_result = OverlayMappingResult(
         podcast_id=podcast_id,
-        total_segments_checked=len(overlay_decisions),
+        total_segments_checked=len(selected_segments),
         overlay_decisions=overlay_decisions,
     )
     overlay_mapping_service_module.persist_overlay_mappings(overlay_result)
@@ -1257,6 +1262,18 @@ def _build_failed_audio_export_settings(export_settings: ExportSettings) -> Expo
         }
     )
     return export_settings.model_copy(update={"audio_enhancement": failed_audio}, deep=True)
+
+
+def _merge_runtime_export_settings(
+    persisted_export_settings: ExportSettings,
+    runtime_export_settings: ExportSettings,
+) -> ExportSettings:
+    return persisted_export_settings.model_copy(
+        update={
+            "audio_enhancement": runtime_export_settings.audio_enhancement.model_copy(deep=True),
+        },
+        deep=True,
+    )
 
 
 def _prepare_output_directory(podcast_id: str) -> Path:

@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.export_settings import ExportSettings
@@ -14,6 +16,10 @@ class PodcastRecord(BaseModel):
     duration: int
     status: str
     storage_path: str | None = None
+    source_type: str = "upload"
+    source_url: str | None = None
+    external_source_id: str | None = None
+    import_metadata: dict[str, Any] = Field(default_factory=dict)
     export_settings: ExportSettings | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -26,6 +32,10 @@ class PodcastResponse(BaseModel):
     duration: int
     status: str
     storage_path: str | None = None
+    source_type: str = "upload"
+    source_url: str | None = None
+    external_source_id: str | None = None
+    import_metadata: dict[str, Any] = Field(default_factory=dict)
     export_settings: ExportSettings | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

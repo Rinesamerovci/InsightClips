@@ -30,6 +30,7 @@ export type UploadState =
   | "error";
 
 export type UploadPreflightStatus = "free_ready" | "awaiting_payment" | "blocked";
+export type PodcastSourceType = "upload" | "youtube";
 export type ExportMode = "landscape" | "portrait";
 export type CropMode = "none" | "center_crop" | "smart_crop";
 export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
@@ -191,6 +192,26 @@ export type PrepareUploadResponse = {
   is_mock?: boolean;
 };
 
+export type YouTubeImportPayload = {
+  url: string;
+  title?: string;
+  export_settings?: ExportSettings;
+};
+
+export type YouTubeImportResponse = {
+  podcast_id: string;
+  status: "draft" | "free_ready" | "awaiting_payment" | "ready_for_processing" | "processing" | "done" | "blocked";
+  source_type: "youtube";
+  source_url: string;
+  video_id: string;
+  title: string;
+  storage_path: string;
+  duration_seconds: number;
+  metadata: Record<string, unknown>;
+  export_settings?: ExportSettings | null;
+  is_mock?: boolean;
+};
+
 type UploadRequestOptions = {
   token?: string | null;
   useMock?: boolean;
@@ -247,6 +268,10 @@ export type Podcast = {
   duration: number;
   status: string;
   storage_path?: string | null;
+  source_type?: PodcastSourceType;
+  source_url?: string | null;
+  external_source_id?: string | null;
+  import_metadata?: Record<string, unknown> | null;
   export_settings?: ExportSettings | null;
   created_at: string | null;
   updated_at: string | null;
@@ -558,6 +583,35 @@ function buildMockPrepareResponse(payload: PrepareUploadRequest): PrepareUploadR
   };
 }
 
+function buildMockYouTubeImportResponse(
+  payload: YouTubeImportPayload,
+): YouTubeImportResponse {
+  const trimmedUrl = payload.url.trim();
+  const matchedVideoId =
+    trimmedUrl.match(
+      /(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/i,
+    )?.[1] ?? "mockvideo01";
+  const normalizedUrl = `https://www.youtube.com/watch?v=${matchedVideoId}`;
+
+  return {
+    podcast_id: "mock-youtube-import",
+    status: "ready_for_processing",
+    source_type: "youtube",
+    source_url: normalizedUrl,
+    video_id: matchedVideoId,
+    title: payload.title?.trim() || "Mock YouTube import",
+    storage_path: `.generated/youtube-imports/mock-user/${matchedVideoId}.mp4`,
+    duration_seconds: 1680,
+    metadata: {
+      channel: "Mock Creator",
+      normalized_url: normalizedUrl,
+      original_url: trimmedUrl || normalizedUrl,
+    },
+    export_settings: payload.export_settings ?? null,
+    is_mock: true,
+  };
+}
+
 export function getStoredBackendToken(): string | null {
   if (typeof window === "undefined") {
     return null;
@@ -732,6 +786,17 @@ export async function prepareUpload(
   }
 
   return postJson<PrepareUploadResponse>("/upload/prepare", payload, options.token);
+}
+
+export async function importYouTubePodcast(
+  payload: YouTubeImportPayload,
+  options: UploadRequestOptions = {},
+): Promise<YouTubeImportResponse> {
+  if (options.useMock ?? uploadPreflightMode === "mock") {
+    return buildMockYouTubeImportResponse(payload);
+  }
+
+  return postJson<YouTubeImportResponse>("/upload/youtube", payload as JsonRecord, options.token);
 }
 
 export async function analyzePodcast(

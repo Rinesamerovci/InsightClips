@@ -8,6 +8,7 @@ import {
   getPodcastAnalytics,
   getUserExportSettings,
   getUserProfile,
+  importYouTubePodcast,
   getRecommendations,
   prepareUpload,
   publishClips,
@@ -59,6 +60,7 @@ export async function runApiTests(): Promise<void> {
   await testUpdateUserExportSettingsPersistsPreferences();
   await testSubmitFeedbackPostsProtectedMessage();
   await testPrepareUploadPostsExportSettings();
+  await testImportYouTubePodcastPostsSourcePayload();
   await testGenerateClipsPostsGenerationSettingsPayload();
   await testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFields();
   await testGetContentCalendarUsesBackendRoute();
@@ -530,6 +532,71 @@ async function testPrepareUploadPostsExportSettings(): Promise<void> {
             true_peak_db: -1,
             status: "enabled",
           },
+        },
+      }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testImportYouTubePodcastPostsSourcePayload(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url, init) => {
+    if (url.endsWith("/upload/youtube")) {
+      return jsonResponse({
+        podcast_id: "pod-youtube",
+        status: "ready_for_processing",
+        source_type: "youtube",
+        source_url: "https://www.youtube.com/watch?v=abcDEF123_4",
+        video_id: "abcDEF123_4",
+        title: "Founder interview",
+        storage_path: ".generated/youtube-imports/user-1/abcDEF123_4.mp4",
+        duration_seconds: 1824,
+        metadata: {
+          channel: "Insight Lab",
+          normalized_url: "https://www.youtube.com/watch?v=abcDEF123_4",
+        },
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
+        },
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url} (${init?.method ?? "GET"})`);
+  });
+
+  try {
+    const result = await importYouTubePodcast(
+      {
+        url: "https://youtu.be/abcDEF123_4",
+        title: "Founder interview",
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
+        },
+      },
+      { token: "token-123" },
+    );
+
+    assert.equal(result.podcast_id, "pod-youtube");
+    assert.equal(result.source_type, "youtube");
+    assert.equal(result.video_id, "abcDEF123_4");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        url: "https://youtu.be/abcDEF123_4",
+        title: "Founder interview",
+        export_settings: {
+          export_mode: "landscape",
+          crop_mode: "none",
+          mobile_optimized: false,
+          face_tracking_enabled: false,
         },
       }),
     );

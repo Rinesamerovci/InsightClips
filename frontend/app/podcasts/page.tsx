@@ -170,6 +170,8 @@ export default function PodcastsPage() {
       const analysis = analysisByPodcast[podcast.id];
       const searchFields = [
         podcast.title,
+        podcast.source_type === "youtube" ? "youtube import" : "uploaded file",
+        podcast.source_url ?? "",
         podcast.status.replaceAll("_", " "),
         getEffectivePodcastStatus(
           podcast,
@@ -304,24 +306,44 @@ export default function PodcastsPage() {
             </button>
           </div>
 
-          <Link
-            href="/upload"
-            style={{
-              borderRadius: 999,
-              background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-              color: "#fff",
-              padding: "12px 18px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontWeight: 700,
-              textDecoration: "none",
-              boxShadow: `0 14px 34px ${t.accentGlow}`,
-            }}
-          >
-            <Sparkles size={16} />
-            Upload episode
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Link
+              href="/upload"
+              style={{
+                borderRadius: 999,
+                background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                color: "#fff",
+                padding: "12px 18px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: 700,
+                textDecoration: "none",
+                boxShadow: `0 14px 34px ${t.accentGlow}`,
+              }}
+            >
+              <Sparkles size={16} />
+              Upload file
+            </Link>
+            <Link
+              href="/upload/youtube"
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${t.border}`,
+                background: t.card,
+                color: t.textSub,
+                padding: "12px 16px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              <Radio size={16} />
+              YouTube import
+            </Link>
+          </div>
         </div>
 
         <section style={{ borderRadius: 30, border: `1px solid ${t.border}`, background: t.shell, backdropFilter: "blur(24px)", padding: isMobile ? "24px 20px" : "30px 32px", animation: "slideUp .5s cubic-bezier(.22,1,.36,1) both" }}>
@@ -335,7 +357,7 @@ export default function PodcastsPage() {
                 Every episode in one calm, searchable space.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
-                Browse uploads, rerun analysis, and jump straight into clips without hunting through the dashboard.
+                Browse uploads and YouTube imports, rerun analysis, and jump straight into clips without hunting through the dashboard.
               </p>
             </div>
 

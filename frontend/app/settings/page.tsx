@@ -5,44 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  CheckCircle2,
   Loader2,
   Mail,
   MessageSquare,
-  Monitor,
-  Send,
-  ShieldAlert,
   Moon,
+  Send,
   Settings2,
-  Smartphone,
-  Sparkles,
+  ShieldAlert,
   SunMedium,
-  Volume2,
 } from "lucide-react";
 
-import SubtitleStylePanel from "@/components/SubtitleStylePanel";
 import { useAuth } from "@/context/AuthContext";
 import {
-  getUserExportSettings,
   submitContactMessage,
   submitFeedback,
   submitSupportRequest,
-  type AudioEnhancementSettings,
-  type ExportMode,
-  type ExportSettings,
   type UserMessageCategory,
   type UserMessageType,
-  updateUserExportSettings,
 } from "@/lib/api";
-import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
-import {
-  buildDefaultAudioEnhancementSettings,
-  buildDefaultExportSettings,
-  buildSubtitleStyleFromPreset,
-  formatCropMode,
-  formatExportMode,
-  normalizeExportSettings,
-} from "@/lib/subtitle-style";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
@@ -52,197 +32,6 @@ const CSS = `
   .a-up{animation:fadeUp .55s cubic-bezier(.22,1,.36,1) both}
   .glass{backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
 `;
-
-function areSettingsEqual(left: ExportSettings | null, right: ExportSettings | null): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function buildAudioState(
-  current: AudioEnhancementSettings,
-  changes: Partial<AudioEnhancementSettings>,
-): AudioEnhancementSettings {
-  const nextEnabled = changes.enabled ?? current.enabled;
-  const nextNormalize =
-    nextEnabled ? changes.normalize_loudness ?? current.normalize_loudness : false;
-
-  return {
-    ...current,
-    ...changes,
-    enabled: nextEnabled,
-    normalize_loudness: nextNormalize,
-    status: nextEnabled && nextNormalize ? "enabled" : "disabled",
-  };
-}
-
-function ModeCard({
-  active,
-  icon: Icon,
-  label,
-  title,
-  text,
-  onClick,
-  accent,
-  border,
-  subBorder,
-  dark,
-}: {
-  active: boolean;
-  icon: React.ElementType;
-  label: string;
-  title: string;
-  text: string;
-  onClick: () => void;
-  accent: string;
-  border: string;
-  subBorder: string;
-  dark: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        textAlign: "left",
-        borderRadius: 22,
-        border: `1px solid ${active ? accent : subBorder}`,
-        background: active
-          ? dark
-            ? "rgba(90,158,58,.16)"
-            : "rgba(90,158,58,.1)"
-          : dark
-            ? "rgba(13,20,11,.88)"
-            : "rgba(255,255,255,.88)",
-        padding: 18,
-        color: "inherit",
-        cursor: "pointer",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 14,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: `1px solid ${active ? accent : border}`,
-            background: active ? "rgba(255,255,255,.1)" : "transparent",
-          }}
-        >
-          <Icon size={18} color={accent} />
-        </div>
-        <span
-          style={{
-            borderRadius: 999,
-            border: `1px solid ${active ? accent : subBorder}`,
-            padding: "6px 10px",
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: ".16em",
-            textTransform: "uppercase",
-            color: active ? accent : "inherit",
-          }}
-        >
-          {label}
-        </span>
-      </div>
-      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 26, marginBottom: 8 }}>
-        {title}
-      </div>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, opacity: 0.76 }}>{text}</p>
-    </button>
-  );
-}
-
-function ToggleRow({
-  title,
-  text,
-  checked,
-  disabled,
-  onToggle,
-  accent,
-  border,
-  subBorder,
-  dark,
-}: {
-  title: string;
-  text: string;
-  checked: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-  accent: string;
-  border: string;
-  subBorder: string;
-  dark: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        borderRadius: 18,
-        border: `1px solid ${checked ? accent : subBorder}`,
-        background: checked
-          ? dark
-            ? "rgba(90,158,58,.12)"
-            : "rgba(90,158,58,.08)"
-          : dark
-            ? "rgba(255,255,255,.03)"
-            : "rgba(255,255,255,.7)",
-        padding: "14px 16px",
-        color: "inherit",
-        cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.65 : 1,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 6,
-        }}
-      >
-        <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
-        <div
-          style={{
-            width: 44,
-            height: 24,
-            borderRadius: 999,
-            background: checked ? accent : dark ? "rgba(255,255,255,.08)" : "rgba(20,34,16,.12)",
-            border: `1px solid ${checked ? accent : border}`,
-            padding: 2,
-          }}
-        >
-          <div
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: "#fff",
-              transform: checked ? "translateX(20px)" : "translateX(0)",
-              transition: "transform .2s ease",
-            }}
-          />
-        </div>
-      </div>
-      <div style={{ fontSize: 13, lineHeight: 1.65, opacity: 0.74 }}>{text}</div>
-    </button>
-  );
-}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -255,16 +44,6 @@ export default function SettingsPage() {
     }
     return window.localStorage.getItem("insightclips-theme") === "dark";
   });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [settingsForm, setSettingsForm] = useState<ExportSettings>(() =>
-    buildDefaultExportSettings(),
-  );
-  const [savedSettings, setSavedSettings] = useState<ExportSettings | null>(null);
-  const [feedback, setFeedback] = useState<{
-    tone: "success" | "error" | "info";
-    message: string;
-  } | null>(null);
   const [messageType, setMessageType] = useState<UserMessageType>("feedback");
   const [messageCategory, setMessageCategory] =
     useState<UserMessageCategory>("feature_request");
@@ -278,7 +57,11 @@ export default function SettingsPage() {
   } | null>(null);
 
   const isMobile = viewportWidth < 900;
-  const isTablet = viewportWidth < 1180;
+  const messageCategories: Record<UserMessageType, UserMessageCategory[]> = {
+    feedback: ["feature_request", "bug", "general"],
+    support: ["technical_support", "billing", "bug", "general"],
+    contact: ["general", "feature_request", "billing"],
+  };
 
   useEffect(() => {
     window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
@@ -296,34 +79,18 @@ export default function SettingsPage() {
       return;
     }
 
-    const load = async () => {
-      setLoading(true);
-      try {
-        const token = backendToken ?? (await syncBackendSession());
-        if (!token) {
-          router.replace("/login");
-          return;
-        }
-
-        const response = await getUserExportSettings(token);
-        const normalized = normalizeExportSettings(response.export_settings);
-        setSettingsForm(normalized);
-        setSavedSettings(normalized);
-        setFeedback(null);
-      } catch (error) {
-        setFeedback({
-          tone: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Unable to load export settings.",
-        });
-      } finally {
-        setLoading(false);
+    let active = true;
+    const ensureSession = async () => {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token && active) {
+        router.replace("/login");
       }
     };
 
-    void load();
+    void ensureSession();
+    return () => {
+      active = false;
+    };
   }, [authLoading, backendToken, router, syncBackendSession]);
 
   const palette = useMemo(
@@ -347,109 +114,25 @@ export default function SettingsPage() {
     }),
     [dark],
   );
-  const hasChanges = !areSettingsEqual(settingsForm, savedSettings);
-  const subtitleStyle =
-    settingsForm.subtitle_style ?? buildSubtitleStyleFromPreset("classic");
-  const audioSettings =
-    settingsForm.audio_enhancement ?? buildDefaultAudioEnhancementSettings();
-  const audioFeedback = getAudioEnhancementFeedback({
-    audioEnhancement: audioSettings,
-    context: savedSettings ? "saved" : "setup",
-  });
 
-  const updateSettings = (updater: (current: ExportSettings) => ExportSettings) => {
-    setSettingsForm((current) => normalizeExportSettings(updater(current)));
-    if (feedback?.tone === "success") {
-      setFeedback(null);
-    }
-  };
-
-  const handleModeChange = (mode: ExportMode) => {
-    updateSettings((current) => {
-      if (mode === "landscape") {
-        return {
-          ...current,
-          export_mode: "landscape",
-          crop_mode: "none",
-          mobile_optimized: false,
-          face_tracking_enabled: false,
-        };
-      }
-
-      return {
-        ...current,
-        export_mode: "portrait",
-        crop_mode: current.crop_mode === "none" ? "smart_crop" : current.crop_mode,
-        mobile_optimized: true,
-      };
-    });
-  };
-
-  const handleCropModeChange = (mode: "center_crop" | "smart_crop") => {
-    updateSettings((current) => ({
-      ...current,
-      crop_mode: current.export_mode === "landscape" ? "none" : mode,
-      face_tracking_enabled:
-        current.export_mode === "portrait" && mode === "smart_crop"
-          ? current.face_tracking_enabled
-          : false,
-    }));
-  };
-
-  const handleAudioChange = (changes: Partial<AudioEnhancementSettings>) => {
-    updateSettings((current) => ({
-      ...current,
-      audio_enhancement: buildAudioState(
-        current.audio_enhancement ?? buildDefaultAudioEnhancementSettings(),
-        changes,
-      ),
-    }));
-  };
-
-  const handleSave = async () => {
-    if (saving || !hasChanges) {
-      return;
-    }
-
-    setSaving(true);
-    setFeedback({
-      tone: "info",
-      message: "Saving your export and subtitle preferences...",
-    });
-
-    try {
-      const token = backendToken ?? (await syncBackendSession());
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
-
-      const response = await updateUserExportSettings(settingsForm, token);
-      const normalized = normalizeExportSettings(response.export_settings);
-      setSettingsForm(normalized);
-      setSavedSettings(normalized);
-      setFeedback({
-        tone: "success",
-        message: "Settings saved. New uploads will use these export preferences.",
-      });
-    } catch (error) {
-      setFeedback({
-        tone: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to save export settings.",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const messageCategories: Record<UserMessageType, UserMessageCategory[]> = {
-    feedback: ["feature_request", "bug", "general"],
-    support: ["technical_support", "billing", "bug", "general"],
-    contact: ["general", "feature_request", "billing"],
-  };
+  const messageFeedbackStyles =
+    messageFeedback?.tone === "success"
+      ? {
+          background: palette.successBg,
+          border: palette.successBorder,
+          color: palette.successText,
+        }
+      : messageFeedback?.tone === "error"
+        ? {
+            background: palette.errorBg,
+            border: palette.errorBorder,
+            color: palette.errorText,
+          }
+        : {
+            background: palette.chip,
+            border: palette.subBorder,
+            color: palette.text,
+          };
 
   const handleMessageTypeChange = (nextType: UserMessageType) => {
     setMessageType(nextType);
@@ -495,8 +178,8 @@ export default function SettingsPage() {
         await submitFeedback(payload, token);
       }
 
-      setMessageBody("");
       setMessageSubject("");
+      setMessageBody("");
       setContactEmail("");
       setMessageFeedback({
         tone: "success",
@@ -520,7 +203,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading || authLoading) {
+  if (authLoading) {
     return (
       <div
         style={{
@@ -539,43 +222,6 @@ export default function SettingsPage() {
     );
   }
 
-  const feedbackStyles =
-    feedback?.tone === "success"
-      ? {
-          background: palette.successBg,
-          border: palette.successBorder,
-          color: palette.successText,
-        }
-      : feedback?.tone === "error"
-        ? {
-            background: palette.errorBg,
-            border: palette.errorBorder,
-            color: palette.errorText,
-          }
-        : {
-            background: palette.chip,
-            border: palette.subBorder,
-            color: palette.text,
-          };
-  const messageFeedbackStyles =
-    messageFeedback?.tone === "success"
-      ? {
-          background: palette.successBg,
-          border: palette.successBorder,
-          color: palette.successText,
-        }
-      : messageFeedback?.tone === "error"
-        ? {
-            background: palette.errorBg,
-            border: palette.errorBorder,
-            color: palette.errorText,
-          }
-        : {
-            background: palette.chip,
-            border: palette.subBorder,
-            color: palette.text,
-          };
-
   return (
     <div
       style={{
@@ -587,7 +233,7 @@ export default function SettingsPage() {
     >
       <style>{CSS}</style>
 
-      <div style={{ maxWidth: 1240, margin: "0 auto", padding: isMobile ? "24px 16px 36px" : "40px 24px 56px" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: isMobile ? "24px 16px 36px" : "40px 24px 56px" }}>
         <header
           className="a-up"
           style={{
@@ -617,6 +263,23 @@ export default function SettingsPage() {
               <ArrowLeft size={16} />
               Dashboard
             </Link>
+            <Link
+              href="/settings/export"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "none",
+                color: "inherit",
+                border: `1px solid ${palette.border}`,
+                borderRadius: 999,
+                padding: "10px 16px",
+                background: palette.card,
+              }}
+            >
+              <Settings2 size={16} />
+              Export settings
+            </Link>
             <button
               type="button"
               onClick={() => setDark((value) => !value)}
@@ -636,47 +299,44 @@ export default function SettingsPage() {
               {dark ? "Light mode" : "Dark mode"}
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving || !hasChanges}
-            style={{
-              border: "none",
-              borderRadius: 999,
-              background: `linear-gradient(135deg, ${palette.accent}, ${palette.accentLight})`,
-              color: "#fff",
-              padding: "12px 18px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontWeight: 700,
-              cursor: saving || !hasChanges ? "default" : "pointer",
-              opacity: saving || !hasChanges ? 0.72 : 1,
-            }}
-          >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {saving ? "Saving..." : hasChanges ? "Save settings" : "Saved"}
-          </button>
         </header>
 
         <section
           className="a-up glass"
           style={{
-            borderRadius: 30,
+            borderRadius: 32,
             border: `1px solid ${palette.border}`,
-            background: palette.shell,
-            padding: isMobile ? "24px 20px" : "30px 32px",
+            background: dark
+              ? "linear-gradient(180deg, rgba(9,14,8,.94), rgba(13,20,11,.9))"
+              : "linear-gradient(180deg, rgba(244,249,239,.97), rgba(255,255,255,.95))",
+            padding: isMobile ? "24px 20px" : "34px 36px",
+            marginBottom: 24,
+            boxShadow: dark
+              ? "0 22px 60px rgba(0,0,0,.18)"
+              : "0 24px 64px rgba(90,158,58,.08)",
           }}
         >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isTablet ? "1fr" : "minmax(0,1.35fr) 320px",
-              gap: 22,
+              gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1.15fr) minmax(280px,.85fr)",
+              gap: isMobile ? 18 : 24,
+              alignItems: "stretch",
             }}
           >
-            <div>
+            <div
+              style={{
+                borderRadius: 24,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.72)",
+                padding: isMobile ? "18px" : "20px 22px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                minHeight: "100%",
+              }}
+            >
+              <div>
               <div
                 style={{
                   display: "inline-flex",
@@ -692,55 +352,88 @@ export default function SettingsPage() {
                   textTransform: "uppercase",
                 }}
               >
-                <Settings2 size={14} />
-                Creator Settings
+                <MessageSquare size={14} />
+                Creator Inbox
               </div>
               <h1
                 style={{
                   marginTop: 16,
                   marginBottom: 12,
                   fontFamily: "'DM Serif Display', serif",
-                  fontSize: "clamp(34px, 4vw, 58px)",
-                  lineHeight: 1.02,
+                  fontSize: "clamp(32px, 4vw, 52px)",
+                  lineHeight: 1.06,
                   letterSpacing: "-.04em",
                 }}
               >
-                Shape how every export leaves the dashboard.
+                Keep feedback and support in one calm place.
               </h1>
-              <p style={{ fontSize: 15, lineHeight: 1.8, color: palette.muted, maxWidth: 720 }}>
-                Save a default export profile for new uploads, keep subtitle styling consistent,
-                and tune audio cleanup before your clips get published.
+              <p style={{ fontSize: 15, lineHeight: 1.8, color: palette.muted, maxWidth: 680 }}>
+                Send feedback, ask for help, or leave a contact note without extra generator settings crowding the page.
               </p>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+                {["Fast product notes", "Support follow-up", "Separate export controls"].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      borderRadius: 999,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: palette.card,
+                      padding: "9px 12px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: palette.text,
+                    }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div
               style={{
                 borderRadius: 24,
                 border: `1px solid ${palette.subBorder}`,
-                background: palette.card,
+                background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.86)",
                 padding: "20px 22px",
                 display: "grid",
-                gap: 14,
+                gap: 12,
+                minHeight: "100%",
+                alignContent: "start",
               }}
             >
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: palette.muted }}>
+                Inbox Summary
+              </div>
               {[
-                { label: "Export mode", value: formatExportMode(settingsForm.export_mode) },
-                { label: "Crop mode", value: formatCropMode(settingsForm.crop_mode) },
                 {
-                  label: "Subtitle preset",
-                  value: settingsForm.subtitle_style?.preset ?? "classic",
+                  title: "Feedback / Support / Contact",
+                  text: "Switch the lane you need without leaving this page.",
                 },
                 {
-                  label: "Audio",
-                  value: settingsForm.audio_enhancement?.enabled ? "Enhanced" : "Original",
+                  title: "Reply-ready",
+                  text: "Leave an email only if you want a follow-up from the team.",
+                },
+                {
+                  title: "Export settings moved out",
+                  text: "Advanced subtitle, framing, and audio controls now live in their own page.",
                 },
               ].map((item) => (
-                <div key={item.label}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: palette.muted, marginBottom: 4 }}>
-                    {item.label}
+                <div
+                  key={item.title}
+                  style={{
+                    borderRadius: 18,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(90,158,58,.06)" : "rgba(90,158,58,.04)",
+                    padding: "14px 15px",
+                  }}
+                >
+                  <div style={{ fontSize: 15, fontWeight: 700, color: palette.text, marginBottom: 5 }}>
+                    {item.title}
                   </div>
-                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, fontStyle: "italic", lineHeight: 1 }}>
-                    {item.value}
+                  <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
+                    {item.text}
                   </div>
                 </div>
               ))}
@@ -748,574 +441,334 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {feedback ? (
-          <div
-            style={{
-              marginTop: 18,
-              borderRadius: 18,
-              padding: "14px 18px",
-              background: feedbackStyles.background,
-              border: `1px solid ${feedbackStyles.border}`,
-              color: feedbackStyles.color,
-            }}
-          >
-            {feedback.message}
-          </div>
-        ) : null}
-
-        <div
+        <section
+          className="a-up"
           style={{
             display: "grid",
-            gridTemplateColumns: isTablet ? "1fr" : "minmax(0,1fr) 340px",
-            gap: 20,
-            marginTop: 22,
-            alignItems: "start",
+            gridTemplateColumns: isMobile ? "1fr" : "minmax(250px,.78fr) minmax(0,1.22fr)",
+            gap: 18,
+            alignItems: "stretch",
           }}
         >
-          <main style={{ display: "grid", gap: 18 }}>
-            <section
-              className="glass a-up"
-              style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 14 }}>
-                Export Layout
+          <aside
+            className="glass"
+            style={{
+              borderRadius: 24,
+              background: dark ? "rgba(13,20,11,.84)" : "rgba(255,255,255,.9)",
+              border: `1px solid ${palette.border}`,
+              padding: isMobile ? 18 : 20,
+              display: "grid",
+              gap: 14,
+              height: "100%",
+              alignContent: "start",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: palette.muted, marginBottom: 8 }}>
+                Message guide
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-                <ModeCard
-                  active={settingsForm.export_mode === "portrait"}
-                  icon={Smartphone}
-                  label="9:16"
-                  title="Portrait"
-                  text="Default for Shorts, Reels, and TikTok. Keeps mobile framing and subtitle scale optimized for short-form feeds."
-                  onClick={() => handleModeChange("portrait")}
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
-                <ModeCard
-                  active={settingsForm.export_mode === "landscape"}
-                  icon={Monitor}
-                  label="16:9"
-                  title="Landscape"
-                  text="Use the original widescreen frame for YouTube, desktop playback, and clips that need more horizontal context."
-                  onClick={() => handleModeChange("landscape")}
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 30, lineHeight: 1.08 }}>
+                Better notes,
+                <br />
+                faster replies.
               </div>
-            </section>
+            </div>
 
-            <section
-              className="glass a-up"
-              style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 14 }}>
-                Framing Controls
-              </div>
-
-              <div style={{ display: "grid", gap: 12, marginBottom: 14 }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-                    gap: 12,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handleCropModeChange("center_crop")}
-                    disabled={settingsForm.export_mode === "landscape"}
-                    style={{
-                      borderRadius: 18,
-                      border: `1px solid ${settingsForm.crop_mode === "center_crop" ? palette.accent : palette.subBorder}`,
-                      background:
-                        settingsForm.crop_mode === "center_crop"
-                          ? palette.chip
-                          : dark
-                            ? "rgba(255,255,255,.03)"
-                            : "rgba(255,255,255,.76)",
-                      padding: 16,
-                      textAlign: "left",
-                      color: "inherit",
-                      cursor: settingsForm.export_mode === "landscape" ? "default" : "pointer",
-                      opacity: settingsForm.export_mode === "landscape" ? 0.55 : 1,
-                    }}
-                  >
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Center crop</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                      Uses a stable portrait crop without speaker tracking.
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCropModeChange("smart_crop")}
-                    disabled={settingsForm.export_mode === "landscape"}
-                    style={{
-                      borderRadius: 18,
-                      border: `1px solid ${settingsForm.crop_mode === "smart_crop" ? palette.accent : palette.subBorder}`,
-                      background:
-                        settingsForm.crop_mode === "smart_crop"
-                          ? palette.chip
-                          : dark
-                            ? "rgba(255,255,255,.03)"
-                            : "rgba(255,255,255,.76)",
-                      padding: 16,
-                      textAlign: "left",
-                      color: "inherit",
-                      cursor: settingsForm.export_mode === "landscape" ? "default" : "pointer",
-                      opacity: settingsForm.export_mode === "landscape" ? 0.55 : 1,
-                    }}
-                  >
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Smart crop</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                      Follows speakers more aggressively and unlocks face tracking.
-                    </div>
-                  </button>
+            {[
+              {
+                title: "Feedback",
+                text: "Use this for product ideas, rough edges, or workflow improvements you want the team to review.",
+              },
+              {
+                title: "Support",
+                text: "Best for blockers, bugs, account problems, or anything stopping you from finishing work.",
+              },
+              {
+                title: "Contact",
+                text: "Use this when you want a more general conversation, intro, or direct follow-up.",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                style={{
+                  borderRadius: 18,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: dark ? "rgba(90,158,58,.05)" : "rgba(90,158,58,.04)",
+                  padding: "14px 15px",
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 700, color: palette.text, marginBottom: 5 }}>
+                  {item.title}
                 </div>
-
-                <ToggleRow
-                  title="Mobile optimized framing"
-                  text="Keeps exports tuned for short-form vertical playback and faster scanability."
-                  checked={Boolean(settingsForm.mobile_optimized)}
-                  disabled={settingsForm.export_mode === "landscape"}
-                  onToggle={() =>
-                    updateSettings((current) => ({
-                      ...current,
-                      mobile_optimized: !Boolean(current.mobile_optimized),
-                    }))
-                  }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
-                <ToggleRow
-                  title="Face tracking"
-                  text="Keeps the frame centered on speakers when portrait exports use smart crop."
-                  checked={Boolean(settingsForm.face_tracking_enabled)}
-                  disabled={
-                    settingsForm.export_mode === "landscape" ||
-                    settingsForm.crop_mode !== "smart_crop"
-                  }
-                  onToggle={() =>
-                    updateSettings((current) => ({
-                      ...current,
-                      crop_mode: current.export_mode === "portrait" ? "smart_crop" : "none",
-                      face_tracking_enabled: !Boolean(current.face_tracking_enabled),
-                    }))
-                  }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
-              </div>
-            </section>
-
-              <SubtitleStylePanel
-              dark={dark}
-              exportMode={settingsForm.export_mode}
-              styleValue={subtitleStyle}
-              onPresetChange={(preset) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: buildSubtitleStyleFromPreset(preset),
-                }))
-              }
-              onFontFamilyChange={(fontFamily) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    font_family: fontFamily,
-                  },
-                }))
-              }
-              onColorChange={(color) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    primary_color: color,
-                  },
-                }))
-              }
-              onFontSizeChange={(size) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    font_size: size,
-                  },
-                }))
-              }
-              onPositionChange={(position) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    position,
-                  },
-                }))
-              }
-              palette={{
-                border: palette.border,
-                subBorder: palette.subBorder,
-                muted: palette.muted,
-                hi: palette.accent,
-                hi2: palette.accentLight,
-              }}
-            />
-
-            <section
-              className="glass a-up"
-              style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <Volume2 size={18} color={palette.accent} />
-                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
-                  Audio Enhancement
+                <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
+                  {item.text}
                 </div>
               </div>
+            ))}
 
-              <div style={{ display: "grid", gap: 12 }}>
-                <ToggleRow
-                  title="Audio leveling"
-                  text="Smooths volume differences before final export."
-                  checked={audioSettings.enabled}
-                  onToggle={() =>
-                    handleAudioChange({
-                      enabled: !audioSettings.enabled,
-                    })
-                  }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
-                <ToggleRow
-                  title="Normalize loudness"
-                  text="Targets a more consistent perceived volume across clips."
-                  checked={audioSettings.normalize_loudness}
-                  disabled={!audioSettings.enabled}
-                  onToggle={() =>
-                    handleAudioChange({
-                      normalize_loudness: !audioSettings.normalize_loudness,
-                    })
-                  }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
-                />
+            <div
+              style={{
+                borderRadius: 18,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.78)",
+                padding: "14px 15px",
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
+                Quick checklist
+              </div>
+              {[
+                "Say what happened.",
+                "Say what you expected.",
+                "Add enough context for a reply.",
+              ].map((item) => (
                 <div
+                  key={item}
                   style={{
-                    borderRadius: 18,
+                    borderRadius: 12,
                     border: `1px solid ${palette.subBorder}`,
-                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
-                    padding: "16px 18px",
+                    background: dark ? "rgba(90,158,58,.05)" : "rgba(90,158,58,.04)",
+                    padding: "9px 11px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: palette.text,
                   }}
                 >
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-                    <label>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                        Target loudness
-                      </div>
-                      <input
-                        type="range"
-                        min={-24}
-                        max={-8}
-                        step={1}
-                        value={audioSettings.target_lufs}
-                        onChange={(event) =>
-                          handleAudioChange({ target_lufs: Number(event.target.value) })
-                        }
-                        style={{ width: "100%", accentColor: palette.accent }}
-                      />
-                      <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                        {audioSettings.target_lufs} LUFS
-                      </div>
-                    </label>
-                    <label>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                        True peak ceiling
-                      </div>
-                      <input
-                        type="range"
-                        min={-6}
-                        max={0}
-                        step={0.5}
-                        value={audioSettings.true_peak_db}
-                        onChange={(event) =>
-                          handleAudioChange({ true_peak_db: Number(event.target.value) })
-                        }
-                        style={{ width: "100%", accentColor: palette.accent }}
-                      />
-                      <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                        {audioSettings.true_peak_db} dB
-                      </div>
-                    </label>
-                  </div>
+                  {item}
                 </div>
-              </div>
-            </section>
-          </main>
+              ))}
+            </div>
 
-          <aside style={{ display: "grid", gap: 18 }}>
-            <section
-              className="glass a-up"
+            <Link
+              href="/settings/export"
               style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "none",
+                color: palette.accent,
+                fontSize: 13,
+                fontWeight: 700,
               }}
             >
-              <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 14 }}>
-                Save Summary
+              <Settings2 size={15} />
+              Open export settings separately
+            </Link>
+          </aside>
+
+          <div
+            className="glass"
+            style={{
+              borderRadius: 26,
+              background: dark
+                ? "linear-gradient(180deg, rgba(13,20,11,.9), rgba(10,18,8,.88))"
+                : "linear-gradient(180deg, rgba(255,255,255,.96), rgba(249,252,246,.95))",
+              border: `1px solid ${palette.border}`,
+              padding: isMobile ? 18 : 24,
+              boxShadow: dark
+                ? "0 18px 48px rgba(0,0,0,.16)"
+                : "0 18px 50px rgba(90,158,58,.08)",
+              height: "100%",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <MessageSquare size={18} color={palette.accent} />
+              <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
+                Feedback & Support
               </div>
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ borderRadius: 18, border: `1px solid ${palette.subBorder}`, background: palette.chip, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                    Current profile
-                  </div>
-                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, lineHeight: 1.05 }}>
-                    {formatExportMode(settingsForm.export_mode)}
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                    {formatCropMode(settingsForm.crop_mode)} with {subtitleStyle.preset} subtitles.
-                  </div>
-                </div>
+            </div>
 
-                <div style={{ borderRadius: 18, border: `1px solid ${palette.subBorder}`, padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <Sparkles size={16} color={palette.accent} />
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{audioFeedback.title}</div>
-                  </div>
-                  <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                    {audioFeedback.description}
-                  </div>
-                </div>
+            <div style={{ fontSize: 14, lineHeight: 1.7, color: palette.muted, marginBottom: 18, maxWidth: 620 }}>
+              Send one clear message to the team. Pick the right lane below, then add enough context so we can act on it quickly.
+            </div>
 
-                <div style={{ borderRadius: 18, border: `1px solid ${palette.subBorder}`, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 8 }}>
-                    Save state
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
-                    {hasChanges ? "Unsaved changes" : "Everything is saved"}
-                  </div>
-                  <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                    {hasChanges
-                      ? "Your next uploads will not use these changes until you save them."
-                      : "The dashboard, clips flow, and future uploads are aligned to this export profile."}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section
-              className="glass a-up"
-              style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <MessageSquare size={18} color={palette.accent} />
-                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
-                  Feedback & Support
-                </div>
-              </div>
-
-              <div style={{ fontSize: 13, lineHeight: 1.7, color: palette.muted, marginBottom: 14 }}>
-                Send product feedback, ask for help, or leave a contact note without leaving the creator workspace.
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 14 }}>
-                {[
-                  { id: "feedback" as const, label: "Feedback", icon: MessageSquare },
-                  { id: "support" as const, label: "Support", icon: ShieldAlert },
-                  { id: "contact" as const, label: "Contact", icon: Mail },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const active = messageType === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleMessageTypeChange(item.id)}
-                      style={{
-                        borderRadius: 16,
-                        border: `1px solid ${active ? palette.accent : palette.subBorder}`,
-                        background: active ? palette.chip : dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.78)",
-                        padding: "12px 10px",
-                        color: active ? palette.accent : palette.text,
-                        display: "grid",
-                        justifyItems: "center",
-                        gap: 6,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <Icon size={16} />
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div style={{ display: "grid", gap: 12 }}>
-                <label>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                    Category
-                  </div>
-                  <select
-                    value={messageCategory}
-                    onChange={(event) => setMessageCategory(event.target.value as UserMessageCategory)}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 18 }}>
+              {[
+                { id: "feedback" as const, label: "Feedback", icon: MessageSquare, hint: "Ideas and product notes" },
+                { id: "support" as const, label: "Support", icon: ShieldAlert, hint: "Need help or blocked" },
+                { id: "contact" as const, label: "Contact", icon: Mail, hint: "General message" },
+              ].map((item) => {
+                const Icon = item.icon;
+                const active = messageType === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleMessageTypeChange(item.id)}
                     style={{
-                      width: "100%",
-                      borderRadius: 14,
-                      border: `1px solid ${palette.subBorder}`,
-                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
-                      color: palette.text,
-                      padding: "12px 14px",
+                      borderRadius: 18,
+                      border: `1px solid ${active ? palette.accent : palette.subBorder}`,
+                      background: active
+                        ? dark
+                          ? "rgba(90,158,58,.14)"
+                          : "rgba(90,158,58,.09)"
+                        : dark
+                          ? "rgba(255,255,255,.03)"
+                          : "rgba(255,255,255,.82)",
+                      padding: "14px 12px",
+                      color: active ? palette.accent : palette.text,
+                      display: "grid",
+                      justifyItems: "center",
+                      gap: 6,
+                      cursor: "pointer",
+                      textAlign: "center",
                     }}
                   >
-                    {messageCategories[messageType].map((category) => (
-                      <option key={category} value={category}>
-                        {category.replaceAll("_", " ")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <Icon size={16} />
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>{item.label}</span>
+                    <span style={{ fontSize: 11, color: active ? palette.accent : palette.muted }}>{item.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-                <label>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                    Subject
-                  </div>
-                  <input
-                    value={messageSubject}
-                    onChange={(event) => setMessageSubject(event.target.value)}
-                    placeholder="Add a short summary"
-                    style={{
-                      width: "100%",
-                      borderRadius: 14,
-                      border: `1px solid ${palette.subBorder}`,
-                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
-                      color: palette.text,
-                      padding: "12px 14px",
-                    }}
-                  />
-                </label>
-
-                <label>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                    Message
-                  </div>
-                  <textarea
-                    value={messageBody}
-                    onChange={(event) => setMessageBody(event.target.value)}
-                    placeholder={
-                      messageType === "support"
-                        ? "Describe the issue, what you expected, and what happened."
-                        : messageType === "contact"
-                          ? "Tell us why you want to get in touch."
-                          : "Share the workflow improvement or idea you want to see."
-                    }
-                    rows={5}
-                    style={{
-                      width: "100%",
-                      borderRadius: 16,
-                      border: `1px solid ${palette.subBorder}`,
-                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
-                      color: palette.text,
-                      padding: "12px 14px",
-                      resize: "vertical",
-                    }}
-                  />
-                </label>
-
-                <label>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                    Contact email
-                  </div>
-                  <input
-                    value={contactEmail}
-                    onChange={(event) => setContactEmail(event.target.value)}
-                    placeholder="Optional if we should reply"
-                    style={{
-                      width: "100%",
-                      borderRadius: 14,
-                      border: `1px solid ${palette.subBorder}`,
-                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.82)",
-                      color: palette.text,
-                      padding: "12px 14px",
-                    }}
-                  />
-                </label>
-              </div>
-
-              {messageFeedback ? (
-                <div
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,.9fr) minmax(0,1.1fr)", gap: 12, marginBottom: 12 }}>
+              <label>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                  Category
+                </div>
+                <select
+                  value={messageCategory}
+                  onChange={(event) => setMessageCategory(event.target.value as UserMessageCategory)}
                   style={{
-                    marginTop: 14,
-                    borderRadius: 16,
-                    padding: "12px 14px",
-                    background: messageFeedbackStyles.background,
-                    border: `1px solid ${messageFeedbackStyles.border}`,
-                    color: messageFeedbackStyles.color,
-                    fontSize: 13,
-                    lineHeight: 1.65,
+                    width: "100%",
+                    borderRadius: 14,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.88)",
+                    color: palette.text,
+                    padding: "13px 14px",
                   }}
                 >
-                  {messageFeedback.message}
-                </div>
-              ) : null}
+                  {messageCategories[messageType].map((category) => (
+                    <option key={category} value={category}>
+                      {category.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
+              <label>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                  Subject
+                </div>
+                <input
+                  value={messageSubject}
+                  onChange={(event) => setMessageSubject(event.target.value)}
+                  placeholder="Add a short summary"
+                  style={{
+                    width: "100%",
+                    borderRadius: 14,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.88)",
+                    color: palette.text,
+                    padding: "13px 14px",
+                  }}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <label>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                  Message
+                </div>
+                <textarea
+                  value={messageBody}
+                  onChange={(event) => setMessageBody(event.target.value)}
+                  placeholder={
+                    messageType === "support"
+                      ? "Describe the issue, what you expected, what happened, and anything you already tried."
+                      : messageType === "contact"
+                        ? "Tell us why you want to get in touch and what kind of reply would help."
+                        : "Share the workflow improvement, friction point, or idea you want to see next."
+                  }
+                  rows={7}
+                  style={{
+                    width: "100%",
+                    borderRadius: 16,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.88)",
+                    color: palette.text,
+                    padding: "14px 15px",
+                    resize: "vertical",
+                    lineHeight: 1.6,
+                  }}
+                />
+              </label>
+
+              <label>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                  Contact email
+                </div>
+                <input
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder="Optional if we should reply"
+                  style={{
+                    width: "100%",
+                    borderRadius: 14,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.88)",
+                    color: palette.text,
+                    padding: "13px 14px",
+                  }}
+                />
+              </label>
+            </div>
+
+            {messageFeedback ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  borderRadius: 16,
+                  padding: "12px 14px",
+                  background: messageFeedbackStyles.background,
+                  border: `1px solid ${messageFeedbackStyles.border}`,
+                  color: messageFeedbackStyles.color,
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                }}
+              >
+                {messageFeedback.message}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: 12, flexDirection: isMobile ? "column" : "row", marginTop: 16 }}>
+              <div style={{ fontSize: 12, lineHeight: 1.65, color: palette.muted }}>
+                {messageType === "support"
+                  ? "Support requests work best when you include what happened, what you expected, and any error you saw."
+                  : messageType === "contact"
+                    ? "Leave your email if you want a direct reply from the team."
+                    : "Feature feedback works best when you describe the exact workflow friction."}
+              </div>
               <button
                 type="button"
                 onClick={() => void handleSubmitMessage()}
                 disabled={messageSending || messageBody.trim().length < 10}
                 style={{
-                  marginTop: 14,
                   border: "none",
                   borderRadius: 999,
                   background: `linear-gradient(135deg, ${palette.accent}, ${palette.accentLight})`,
                   color: "#fff",
-                  padding: "12px 18px",
+                  padding: "13px 20px",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 8,
                   fontWeight: 700,
                   cursor: messageSending || messageBody.trim().length < 10 ? "default" : "pointer",
                   opacity: messageSending || messageBody.trim().length < 10 ? 0.72 : 1,
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 14px 32px rgba(90,158,58,.22)",
                 }}
               >
                 {messageSending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                 {messageSending ? "Sending..." : "Submit message"}
               </button>
-            </section>
-          </aside>
-        </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

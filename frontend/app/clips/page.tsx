@@ -52,6 +52,7 @@ import {
   applyGenerationTemplate,
   buildGenerationRequestPayload,
   buildDefaultGenerationSettings,
+  describeGenerationSettings,
   loadSavedGenerationPreferences,
   normalizeGenerationSettings,
   saveGenerationPreferences,
@@ -418,6 +419,17 @@ function ClipsPageContent() {
   }, [calendarSuggestions]);
   const calendarPreview = calendarSuggestions.slice(0, 6);
   const plannedClipCount = contentCalendarByClipId.size;
+  const planningHashtagPreview = useMemo(
+    () => collectPlanningHashtags(calendarSuggestions).slice(0, 6),
+    [calendarSuggestions],
+  );
+  const generationSummary = useMemo(
+    () => describeGenerationSettings(generationSettings),
+    [generationSettings],
+  );
+  const topicFocusSummary = generationSettings.topic_focus.trim();
+  const selectedVisualModeSummary =
+    VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode) ?? VISUAL_OUTPUT_MODES[0];
 
   const publishedCount = clips.filter((clip) => clip.published).length;
   const overlayEnabledCount = clips.filter(
@@ -1769,6 +1781,82 @@ function ClipsPageContent() {
                         : "Using structured planning data from the backend calendar endpoint."}
                     </div>
                   </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gap: 10,
+                    marginBottom: 16,
+                  }}
+                >
+                  {[
+                    {
+                      label: "Generation setup",
+                      value: generationSummary,
+                      detail: "Shared with the upload flow so your clip defaults stay consistent.",
+                    },
+                    {
+                      label: "Topic focus",
+                      value: topicFocusSummary || "No topic focus yet",
+                      detail: topicFocusSummary
+                        ? "This guidance shapes what moments the generator should prioritize."
+                        : "Add topic focus above if you want planning suggestions to follow a clearer angle.",
+                    },
+                    {
+                      label: "Hashtag pool",
+                      value:
+                        planningHashtagPreview.length > 0
+                          ? planningHashtagPreview.join(" ")
+                          : "Waiting for hashtags",
+                      detail:
+                        planningHashtagPreview.length > 0
+                          ? "Shared tags collected from the current planning suggestions."
+                          : "Hashtags appear here once the content calendar has enough clip data.",
+                    },
+                    {
+                      label: "Visual mode",
+                      value: selectedVisualModeSummary.label,
+                      detail: selectedVisualModeSummary.title,
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      style={{
+                        borderRadius: 16,
+                        border: `1px solid ${t.borderSub}`,
+                        background: t.cardAlt,
+                        padding: "14px 15px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10,
+                          letterSpacing: ".18em",
+                          textTransform: "uppercase",
+                          color: t.textFaint,
+                          marginBottom: 6,
+                        }}
+                      >
+                        {item.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: t.text,
+                          lineHeight: 1.5,
+                          marginBottom: 6,
+                        }}
+                      >
+                        {item.value}
+                      </div>
+                      <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                        {item.detail}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {loadingCalendar ? (

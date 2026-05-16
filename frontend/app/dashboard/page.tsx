@@ -372,7 +372,7 @@ export default function DashboardPage() {
         description: "Upload or analyze an episode and your recent activity will appear here.",
         tone: "info",
         ctaHref: "/upload",
-        ctaLabel: "Upload episode",
+        ctaLabel: "Upload or import",
       });
     }
 
@@ -1107,7 +1107,7 @@ export default function DashboardPage() {
                     Quick actions
                   </div>
                   {[
-                    { id:"upload",    icon:Plus,      label:"Upload episode",  sub:"Add new content",      href:"/upload" },
+                    { id:"upload",    icon:Plus,      label:"Upload or import",  sub:"File upload or YouTube link",      href:"/upload" },
                     { id:"podcasts",  icon:Library,   label:"Browse podcasts", sub:"Search your library",  href:"/podcasts" },
                     { id:"clips",     icon:Play,      label:"View clips",      sub:"Open discovery flow",  href:"/clips" },
                     { id:"analytics", icon:BarChart2, label:"View analytics",  sub:"Performance summary",  href:"/analytics" },
@@ -1164,7 +1164,8 @@ export default function DashboardPage() {
                       </p>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, width:isMobile ? "100%" : "auto", justifyContent:isMobile ? "space-between" : "flex-end" }}>
-                      <button onClick={() => router.push("/upload")} className="upload-btn" style={{
+                      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:isMobile ? "space-between" : "flex-end" }}>
+                        <button onClick={() => router.push("/upload")} className="upload-btn" style={{
                         display:"flex", alignItems:"center", gap:6,
                         padding:"8px 18px", borderRadius:100, border:"none",
                         background:`linear-gradient(135deg,${dark?"#3d6e24":"#4a8e2a"},${t.accent})`,
@@ -1172,8 +1173,20 @@ export default function DashboardPage() {
                         cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
                         boxShadow:`0 4px 16px ${t.accentGlow}`,
                       }}>
-                        <Plus size={13} strokeWidth={2.5}/> Upload
-                      </button>
+                          <Plus size={13} strokeWidth={2.5}/> Upload file
+                        </button>
+                        <Link href="/upload/youtube" style={{
+                          display:"inline-flex", alignItems:"center", gap:6,
+                          padding:"8px 14px", borderRadius:100,
+                          border:`1px solid ${t.border}`,
+                          background:t.cardAlt,
+                          color:t.textSub, fontSize:12, fontWeight:600,
+                          textDecoration:"none",
+                        }}>
+                          <Radio size={13} strokeWidth={2}/>
+                          YouTube
+                        </Link>
+                      </div>
                       <button className="icon-btn" style={{
                         width:34, height:34, borderRadius:9,
                         border:`1px solid ${t.border}`,
@@ -1249,7 +1262,7 @@ export default function DashboardPage() {
                           cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
                           boxShadow:`0 8px 24px ${t.accentGlow}`,
                         }}>
-                          <Plus size={14}/> Upload first episode
+                          <Plus size={14}/> Upload or import first episode
                         </button>
                       )}
                     </div>
@@ -1290,10 +1303,10 @@ export default function DashboardPage() {
                 onMouseLeave={e=>(e.currentTarget.style.transform="translateY(0)")}
               >
                 <Zap size={22} color={t.accent} style={{ marginBottom:12 }} strokeWidth={1.8}/>
-                <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:20, fontStyle:"italic", color:t.text, marginBottom:6 }}>Quick upload</div>
-                <p style={{ fontSize:13, color:t.textSub, lineHeight:1.65, marginBottom:16 }}>Drag in a video and get clips in under 60 seconds.</p>
+                <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:20, fontStyle:"italic", color:t.text, marginBottom:6 }}>Upload or import</div>
+                <p style={{ fontSize:13, color:t.textSub, lineHeight:1.65, marginBottom:16 }}>Start from a local video or paste a YouTube link and keep the same clip setup.</p>
                 <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, fontWeight:600, color:t.accent }}>
-                  Start now <ArrowUpRight size={14}/>
+                  Open upload workspace <ArrowUpRight size={14}/>
                 </div>
               </div>
 

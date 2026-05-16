@@ -6,8 +6,15 @@ from app.models.upload import (
     UploadCalculatePriceResponse,
     UploadPrepareRequest,
     UploadPrepareResponse,
+    YouTubeImportRequest,
+    YouTubeImportResponse,
 )
-from app.services.upload_service import UploadWorkflowError, calculate_upload_price, prepare_upload
+from app.services.upload_service import (
+    UploadWorkflowError,
+    calculate_upload_price,
+    import_youtube_podcast,
+    prepare_upload,
+)
 from app.utils.media import MediaInspectionError
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -35,5 +42,16 @@ async def prepare_upload_route(
         return prepare_upload(payload, current_user)
     except MediaInspectionError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except UploadWorkflowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/youtube", response_model=YouTubeImportResponse)
+async def import_youtube_route(
+    payload: YouTubeImportRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> YouTubeImportResponse:
+    try:
+        return import_youtube_podcast(payload, current_user)
     except UploadWorkflowError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   applyGenerationTemplate,
+  describeGenerationSettings,
   normalizeGenerationSettings,
 } from "../lib/generation-settings";
 import { buildEstimatedContentCalendar, type ClipResult } from "../lib/api";
@@ -145,6 +146,10 @@ export function runClipsTests(): void {
   assert.equal(normalizedGeneration.number_of_clips, 4);
   assert.equal(normalizedGeneration.topic_focus, "audience retention moments");
   assert.equal(normalizedGeneration.subtitles_enabled, false);
+  assert.equal(
+    describeGenerationSettings(normalizedGeneration),
+    "4 clips | 30s | Subtitles off",
+  );
 
   const template = applyGenerationTemplate("story_arc", discoveryItems[0]?.export_settings);
 

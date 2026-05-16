@@ -129,6 +129,15 @@ export function buildGenerationRequestPayload(
   return normalizeGenerationSettings(settings);
 }
 
+export function describeGenerationSettings(
+  settings: GenerationSettings,
+): string {
+  const normalized = normalizeGenerationSettings(settings);
+  return `${normalized.number_of_clips} clips | ${normalized.clip_duration_seconds}s | ${
+    normalized.subtitles_enabled ? "Subtitles on" : "Subtitles off"
+  }`;
+}
+
 export function getGenerationTemplate(
   templateId: GenerationTemplateId,
 ): GenerationTemplateDefinition {

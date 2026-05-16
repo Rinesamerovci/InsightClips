@@ -12,7 +12,8 @@ from app.models.podcast import (
 
 PODCAST_COLUMNS = (
     "id,user_id,title,duration,status,storage_path,export_mode,crop_mode,"
-    "mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement,created_at,updated_at"
+    "mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement,"
+    "source_type,source_url,external_source_id,import_metadata,created_at,updated_at"
 )
 CLIP_ANALYTICS_COLUMNS_WITH_METRICS = (
     "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,status,"
@@ -51,8 +52,40 @@ def _build_export_settings(row: dict[str, object]) -> ExportSettings:
 
 def _serialize_podcast_row(row: dict[str, object]) -> dict[str, object]:
     payload = dict(row)
+    payload.setdefault("source_type", "upload")
+    payload.setdefault("import_metadata", {})
     payload["export_settings"] = _build_export_settings(payload)
     return payload
+
+
+def create_imported_podcast_record(payload: dict[str, object]) -> str:
+    try:
+        response = service_supabase.table("podcasts").insert(payload).execute()
+    except Exception as exc:
+        if not _optional_podcast_columns_missing(exc):
+            raise
+        fallback_payload = dict(payload)
+        for key in (
+            "preset_name",
+            "export_mode",
+            "crop_mode",
+            "subtitle_timing_profile",
+            "mobile_optimized",
+            "face_tracking_enabled",
+            "subtitle_style",
+            "audio_enhancement",
+            "source_type",
+            "source_url",
+            "external_source_id",
+            "import_metadata",
+        ):
+            fallback_payload.pop(key, None)
+        response = service_supabase.table("podcasts").insert(fallback_payload).execute()
+
+    rows = response.data or []
+    if not rows:
+        raise RuntimeError("Podcast record could not be created.")
+    return str(rows[0]["id"])
 
 
 def get_podcasts_for_user(user_id: str) -> tuple[list[PodcastResponse], bool]:
@@ -161,7 +194,7 @@ def _select_podcast_rows_for_user(user_id: str):
             .execute()
         )
     except Exception as exc:
-        if not _podcast_export_columns_missing(exc):
+        if not _optional_podcast_columns_missing(exc):
             raise
         return (
             service_supabase.table("podcasts")
@@ -183,7 +216,7 @@ def _select_podcast_row_for_user(podcast_id: str, user_id: str):
             .execute()
         )
     except Exception as exc:
-        if not _podcast_export_columns_missing(exc):
+        if not _optional_podcast_columns_missing(exc):
             raise
         return (
             service_supabase.table("podcasts")
@@ -312,3 +345,25 @@ def _podcast_export_columns_missing(exc: Exception) -> bool:
             "42703",
         )
     )
+
+
+def _podcast_source_columns_missing(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "source_type",
+            "source_url",
+            "external_source_id",
+            "import_metadata",
+            "column podcasts.source_type does not exist",
+            "column podcasts.source_url does not exist",
+            "column podcasts.external_source_id does not exist",
+            "column podcasts.import_metadata does not exist",
+            "42703",
+        )
+    )
+
+
+def _optional_podcast_columns_missing(exc: Exception) -> bool:
+    return _podcast_export_columns_missing(exc) or _podcast_source_columns_missing(exc)

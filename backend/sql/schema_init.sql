@@ -27,7 +27,11 @@ alter table if exists public.podcasts
   add column if not exists storage_path text,
   add column if not exists source_filename text,
   add column if not exists mime_type text,
-  add column if not exists detected_format text;
+  add column if not exists detected_format text,
+  add column if not exists source_type text not null default 'upload',
+  add column if not exists source_url text,
+  add column if not exists external_source_id text,
+  add column if not exists import_metadata jsonb not null default '{}'::jsonb;
 
 alter table if exists public.podcasts
   drop constraint if exists podcasts_price_check;
@@ -49,6 +53,14 @@ alter table if exists public.podcasts
 alter table if exists public.podcasts
   add constraint podcasts_payment_status_check check (
     payment_status in ('pending', 'paid', 'not_required', 'failed')
+  );
+
+alter table if exists public.podcasts
+  drop constraint if exists podcasts_source_type_check;
+
+alter table if exists public.podcasts
+  add constraint podcasts_source_type_check check (
+    source_type in ('upload', 'youtube')
   );
 
 alter table public.profiles enable row level security;

@@ -13,6 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 import app.services.podcast_service as podcast_service_module  # noqa: E402
 from app.database import UnconfiguredSupabaseClient  # noqa: E402
 from app.services.podcast_service import (  # noqa: E402
+    create_imported_podcast_record,
     get_podcasts_for_user,
     get_user_podcast_analytics,
     update_podcast_status_for_user,
@@ -98,6 +99,65 @@ class PodcastServiceTests(unittest.TestCase):
 
         self.assertTrue(is_mock)
         self.assertGreaterEqual(len(podcasts), 1)
+
+    def test_create_imported_podcast_record_persists_source_metadata(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(return_value=SimpleNamespace(data=[{"id": "pod-youtube"}]))
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        table_mock = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
+        service_supabase_mock.table = table_mock
+
+        payload = {
+            "user_id": "user-123",
+            "title": "Imported Episode",
+            "duration": 120,
+            "status": "ready_for_processing",
+            "price": 0.0,
+            "payment_status": "not_required",
+            "storage_path": ".generated/youtube-imports/user-123/video.mp4",
+            "source_type": "youtube",
+            "source_url": "https://www.youtube.com/watch?v=abcDEF123_4",
+            "external_source_id": "abcDEF123_4",
+            "import_metadata": {"channel": "Insight Lab"},
+        }
+
+        with patch.object(podcast_service_module, "service_supabase", service_supabase_mock):
+            podcast_id = create_imported_podcast_record(payload)
+
+        self.assertEqual(podcast_id, "pod-youtube")
+        insert_payload = insert_mock.call_args.args[0]
+        self.assertEqual(insert_payload["source_type"], "youtube")
+        self.assertEqual(insert_payload["external_source_id"], "abcDEF123_4")
+
+    def test_create_imported_podcast_record_falls_back_when_source_columns_are_missing(self) -> None:
+        service_supabase_mock = MagicMock()
+        first_execute = MagicMock(side_effect=RuntimeError("column podcasts.source_type does not exist"))
+        second_execute = MagicMock(return_value=SimpleNamespace(data=[{"id": "pod-fallback"}]))
+        first_insert = MagicMock(return_value=SimpleNamespace(execute=first_execute))
+        second_insert = MagicMock(return_value=SimpleNamespace(execute=second_execute))
+        table_mock = MagicMock()
+        table_mock.return_value.insert.side_effect = [first_insert.return_value, second_insert.return_value]
+        service_supabase_mock.table = table_mock
+
+        payload = {
+            "user_id": "user-123",
+            "title": "Imported Episode",
+            "duration": 120,
+            "status": "ready_for_processing",
+            "storage_path": ".generated/youtube-imports/user-123/video.mp4",
+            "source_type": "youtube",
+            "source_url": "https://www.youtube.com/watch?v=abcDEF123_4",
+            "external_source_id": "abcDEF123_4",
+            "import_metadata": {"channel": "Insight Lab"},
+        }
+
+        with patch.object(podcast_service_module, "service_supabase", service_supabase_mock):
+            podcast_id = create_imported_podcast_record(payload)
+
+        self.assertEqual(podcast_id, "pod-fallback")
+        fallback_payload = table_mock.return_value.insert.call_args_list[1].args[0]
+        self.assertNotIn("source_type", fallback_payload)
+        self.assertNotIn("import_metadata", fallback_payload)
 
     def test_update_podcast_status_for_user_returns_none_when_update_raises(self) -> None:
         service_supabase_mock = MagicMock()

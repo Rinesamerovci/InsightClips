@@ -6,6 +6,7 @@ import { Play, Clock, Calendar, Zap, ChevronRight, Loader2, ChevronDown } from "
 type Podcast = {
   id: string; title: string; duration: number;
   status: string; created_at: string | null;
+  source_type?: "upload" | "youtube";
 };
 type AnalysisSummary = {
   total_scored_segments: number; highest_score: number;
@@ -68,6 +69,14 @@ export function PodcastCard({
   const needsPayment = podcast.status === "awaiting_payment";
   const b            = badge(podcast.status);
   const stages       = STAGES(podcast.duration);
+  const sourceBadge =
+    podcast.source_type === "youtube"
+      ? {
+          label: "YouTube",
+          bg: "rgba(214, 64, 64, .1)",
+          fg: "#8a2020",
+        }
+      : null;
 
   const [idx,      setIdx]      = useState(0);
   const [prog,     setProg]     = useState(20);
@@ -119,16 +128,35 @@ export function PodcastCard({
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".22em", textTransform: "uppercase", color: "#9abb80" }}>
               Podcast
             </span>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              padding: "2px 8px", borderRadius: 100,
-              background: b.bg, fontSize: 9, fontWeight: 700,
-              letterSpacing: ".1em", textTransform: "uppercase",
-              color: b.fg, whiteSpace: "nowrap",
-            }}>
-              <span style={{ width: 4, height: 4, borderRadius: "50%", background: b.dot, flexShrink: 0 }}/>
-              {b.label}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {sourceBadge ? (
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 8px",
+                  borderRadius: 100,
+                  background: sourceBadge.bg,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: ".1em",
+                  textTransform: "uppercase",
+                  color: sourceBadge.fg,
+                  whiteSpace: "nowrap",
+                }}>
+                  {sourceBadge.label}
+                </span>
+              ) : null}
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 8px", borderRadius: 100,
+                background: b.bg, fontSize: 9, fontWeight: 700,
+                letterSpacing: ".1em", textTransform: "uppercase",
+                color: b.fg, whiteSpace: "nowrap",
+              }}>
+                <span style={{ width: 4, height: 4, borderRadius: "50%", background: b.dot, flexShrink: 0 }}/>
+                {b.label}
+              </span>
+            </div>
           </div>
 
           <h3 style={{

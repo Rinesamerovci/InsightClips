@@ -264,10 +264,14 @@ export default function UploadWorkspace({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
 
-  const [dark, setDark] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("insightclips-theme") === "dark";
-  });
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("insightclips-theme");
+      setDark(saved === "dark");
+    } catch {}
+  }, []);
   const sourceMode = initialSourceMode;
   const [exportMode, setExportMode] = useState<ExportMode>("portrait");
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(() =>
@@ -715,10 +719,15 @@ export default function UploadWorkspace({
 
             <button
               type="button"
-              onClick={() => {
-                setDark((value) => !value);
-                window.localStorage.setItem("insightclips-theme", dark ? "light" : "dark");
-              }}
+              onClick={() =>
+                setDark((value) => {
+                  const next = !value;
+                  try {
+                    window.localStorage.setItem("insightclips-theme", next ? "dark" : "light");
+                  } catch {}
+                  return next;
+                })
+              }
               style={{
                 display: "inline-flex",
                 alignItems: "center",

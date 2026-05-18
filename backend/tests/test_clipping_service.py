@@ -440,6 +440,45 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertTrue(podcasts_update_payload["face_tracking_enabled"])
         self.assertEqual(podcasts_update_payload["audio_enhancement"]["true_peak_db"], -1.0)
 
+    def test_generate_clips_persists_runtime_audio_fallback_state(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-persist-audio-fallback")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        podcasts_eq_mock = MagicMock(return_value=SimpleNamespace(execute=MagicMock()))
+        podcasts_table = SimpleNamespace(update=MagicMock(return_value=SimpleNamespace(eq=podcasts_eq_mock)))
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: clips_table if name == "clips" else podcasts_table if name == "podcasts" else MagicMock()
+        )
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+            runtime_settings = kwargs["export_settings"]
+            failed_audio = runtime_settings.audio_enhancement.model_copy(
+                update={"enabled": True, "normalize_loudness": False, "status": "failed"}
+            )
+            return runtime_settings.model_copy(update={"audio_enhancement": failed_audio}, deep=True)
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            clips = generate_clips("podcast-123", self.score_segments, self.transcription)
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].export_settings.audio_enhancement.status, "failed")
+        insert_payload = clips_table.insert.call_args.args[0]
+        self.assertEqual(insert_payload[0]["audio_enhancement"]["status"], "failed")
+        podcasts_update_payload = podcasts_table.update.call_args.args[0]
+        self.assertEqual(podcasts_update_payload["audio_enhancement"]["status"], "failed")
+        self.assertFalse(podcasts_update_payload["audio_enhancement"]["normalize_loudness"])
+
     def test_generate_clips_resolves_portrait_crop_window_for_smart_crop_exports(self) -> None:
         case_dir = self._workspace_case_dir("clipping-smart-crop")
         clips_table = SimpleNamespace(
@@ -906,6 +945,53 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIsNotNone(clips[0].overlay)
         self.assertEqual(clips[0].overlay.render_status, "mode_disabled")
         self.assertFalse(clips[0].overlay.rendered)
+
+    def test_generate_clips_keeps_stylized_overlay_out_of_center_subtitle_lane(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-stylized-overlay-lane")
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock())))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=MagicMock())),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+        stylized_segment = ScoreSegment(
+            segment_start_seconds=2.0,
+            segment_end_seconds=6.2,
+            duration_seconds=4.2,
+            virality_score=93.0,
+            transcript_snippet="This startup founder shares a venture pitch for viral growth.",
+            sentiment="positive",
+            keywords=["startup", "founder", "venture", "pitch"],
+        )
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+            return kwargs["export_settings"]
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            clips = generate_clips(
+                                "podcast-123",
+                                [stylized_segment],
+                                self.transcription,
+                                export_settings=ExportSettingsInput(
+                                    export_mode="portrait",
+                                    crop_mode="smart_crop",
+                                ),
+                                visual_output_mode="stylized_animated",
+                            )
+
+        self.assertEqual(len(clips), 1)
+        self.assertIsNotNone(clips[0].overlay)
+        self.assertEqual(clips[0].effective_visual_output_mode, "stylized_animated")
+        self.assertEqual(clips[0].overlay.render_status, "mode_limited")
+        self.assertEqual(clips[0].overlay.position, "top_center")
+        self.assertLessEqual(clips[0].overlay.scale or 0.0, 0.14)
+        self.assertLessEqual(clips[0].overlay.opacity or 0.0, 0.58)
 
     def test_generate_clips_raises_when_segment_has_no_overlapping_words(self) -> None:
         invalid_segment = ScoreSegment(

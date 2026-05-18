@@ -99,21 +99,28 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const { syncBackendSession, user } = useAuth();
 
-  const [email, setEmail] = useState(
-    () =>
-      searchParams.get("email") ??
-      (typeof window !== "undefined" ? window.localStorage.getItem("rememberedEmail") ?? "" : ""),
-  );
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(
-    () => typeof window !== "undefined" && Boolean(window.localStorage.getItem("rememberedEmail")),
-  );
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [dark, setDark] = useState(
-    () => typeof window !== "undefined" && window.localStorage.getItem("insightclips-theme") === "dark",
-  );
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("insightclips-theme");
+      setDark(saved === "dark");
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      const remembered = window.localStorage.getItem("rememberedEmail");
+      if (!email && remembered) setEmail(remembered);
+      setRememberMe(Boolean(remembered));
+    } catch {}
+  }, []);
   const [viewportWidth, setViewportWidth] = useState(1280);
 
   const t = dark ? tk.dark : tk.light;
@@ -128,7 +135,9 @@ function LoginPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    try {
+      window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    } catch {}
   }, [dark]);
 
   useEffect(() => {
@@ -158,7 +167,7 @@ function LoginPageContent() {
       });
 
       if (supaErr) {
-        throw new Error("Invalid email or password.");
+        throw new Error(supaErr.message || "Invalid email or password.");
       }
 
       const backendAuth = await postJson<LoginResponse>("/auth/login", {

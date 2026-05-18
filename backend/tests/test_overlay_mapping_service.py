@@ -15,6 +15,7 @@ from app.models.clipping import ClipResult  # noqa: E402
 from app.models.export_settings import ExportSettingsInput  # noqa: E402
 from app.services.overlay_mapping_service import (  # noqa: E402
     build_overlay_mappings,
+    detect_overlay_decision,
     get_overlay_decisions_for_podcast,
     persist_overlay_mappings,
     validate_overlay_assets,
@@ -61,7 +62,14 @@ class FakeSupabase:
 
 
 class OverlayMappingServiceTests(unittest.TestCase):
-    def _build_clip(self, clip_id: str = "clip-1") -> ClipResult:
+    def _build_clip(
+        self,
+        clip_id: str = "clip-1",
+        *,
+        export_settings=None,
+        subtitle_text: str = "AI can completely change startup growth.",
+        visual_output_mode: str = "original_people",
+    ) -> ClipResult:
         return ClipResult(
             id=clip_id,
             clip_number=1,
@@ -70,9 +78,10 @@ class OverlayMappingServiceTests(unittest.TestCase):
             duration_seconds=15.0,
             virality_score=82.5,
             video_url="https://example.com/clip.mp4",
-            subtitle_text="AI can completely change startup growth.",
+            subtitle_text=subtitle_text,
             status="ready",
-            export_settings=ExportSettingsInput(export_mode="portrait").resolve(),
+            export_settings=export_settings or ExportSettingsInput(export_mode="portrait").resolve(),
+            visual_output_mode=visual_output_mode,
         )
 
     def test_build_overlay_mappings_detects_known_keyword(self) -> None:
@@ -158,6 +167,57 @@ class OverlayMappingServiceTests(unittest.TestCase):
         self.assertEqual(first.keyword, "bitcoin")
         self.assertEqual(first.asset_path, second.asset_path)
         self.assertEqual(first.position, second.position)
+
+    def test_detect_overlay_decision_moves_center_overlay_away_from_center_subtitles(self) -> None:
+        clip = self._build_clip(
+            export_settings=ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+                subtitle_style={"preset": "bold", "position": "center"},
+            ).resolve(),
+        )
+        segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=15.0,
+            duration_seconds=15.0,
+            virality_score=86.0,
+            transcript_snippet="A startup founder explains the pitch and venture story.",
+            sentiment="positive",
+            keywords=["startup", "founder", "pitch"],
+        )
+
+        decision = detect_overlay_decision("podcast-1", clip, segment)
+
+        self.assertTrue(decision.applied)
+        self.assertEqual(decision.overlay_asset, "startup_rocket")
+        self.assertNotEqual(decision.position, "center")
+        self.assertEqual(decision.position, "top_center")
+
+    def test_detect_overlay_decision_limits_scale_for_stylized_portrait_renders(self) -> None:
+        clip = self._build_clip(
+            export_settings=ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+            ).resolve(),
+            subtitle_text="Styled captions stay visible.",
+            visual_output_mode="stylized_animated",
+        )
+        segment = ScoreSegment(
+            segment_start_seconds=0.0,
+            segment_end_seconds=15.0,
+            duration_seconds=15.0,
+            virality_score=91.0,
+            transcript_snippet="A startup founder explains the pitch and venture story.",
+            sentiment="positive",
+            keywords=["startup", "founder", "pitch"],
+        )
+
+        decision = detect_overlay_decision("podcast-1", clip, segment)
+
+        self.assertTrue(decision.applied)
+        self.assertEqual(decision.position, "top_center")
+        self.assertLessEqual(decision.scale or 0.0, 0.14)
+        self.assertLessEqual(decision.opacity or 0.0, 0.58)
 
     def test_persist_overlay_mappings_writes_overlay_rows(self) -> None:
         clip = self._build_clip()

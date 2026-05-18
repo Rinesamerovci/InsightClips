@@ -126,6 +126,22 @@ class MediaUtilsTests(unittest.TestCase):
             "stylized_animated_requires_portrait_export",
         )
 
+    def test_build_render_contract_expands_overlay_safe_margins_for_stylized_centered_subtitles(self) -> None:
+        contract = build_render_contract(
+            ExportSettingsInput(
+                export_mode="portrait",
+                crop_mode="smart_crop",
+            ),
+            visual_output_mode="stylized_animated",
+            subtitles_available=True,
+            clip_duration_seconds=24.0,
+        )
+
+        self.assertEqual(contract.effective_visual_output_mode, "stylized_animated")
+        self.assertEqual(contract.subtitle_policy, "stylized_captions")
+        self.assertGreaterEqual(contract.overlay_safe_margin_x, 50)
+        self.assertGreaterEqual(contract.overlay_safe_margin_y, 150)
+
     def test_resolve_export_settings_for_render_tunes_short_portrait_subtitles(self) -> None:
         resolved = resolve_export_settings_for_render(
             ExportSettingsInput(

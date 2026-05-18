@@ -164,14 +164,12 @@ def build_render_contract(
         subtitles_available=subtitles_available,
         clip_duration_seconds=clip_duration_seconds,
     )
-    overlay_margin_x = preset.overlay_safe_margin_x
-    overlay_margin_y = preset.overlay_safe_margin_y
-    if mode_behavior["effective_visual_output_mode"] == "book_like":
-        overlay_margin_x += 10
-        overlay_margin_y += 18
-    elif mode_behavior["effective_visual_output_mode"] == "stylized_animated":
-        overlay_margin_x += 14
-        overlay_margin_y += 26
+    overlay_margin_x, overlay_margin_y = _compute_overlay_safe_margins(
+        preset,
+        resolved_settings,
+        effective_visual_output_mode=mode_behavior["effective_visual_output_mode"],
+        subtitle_policy=mode_behavior["subtitle_policy"],
+    )
     return MediaRenderContract(
         preset_name=resolved_settings.preset_name,
         export_mode=resolved_settings.export_mode,
@@ -264,6 +262,42 @@ def _coerce_export_settings(
     if isinstance(export_settings, ExportSettingsInput):
         return export_settings.resolve()
     return ExportSettings()
+
+
+def _compute_overlay_safe_margins(
+    preset: _PresetSpec,
+    export_settings: ExportSettings,
+    *,
+    effective_visual_output_mode: VisualOutputMode,
+    subtitle_policy: str,
+) -> tuple[int, int]:
+    overlay_margin_x = preset.overlay_safe_margin_x
+    overlay_margin_y = preset.overlay_safe_margin_y
+
+    if export_settings.export_mode == "portrait":
+        overlay_margin_x += 6
+
+    subtitle_position = export_settings.subtitle_style.position
+    if subtitle_position == "center":
+        overlay_margin_y += 40 if export_settings.export_mode == "portrait" else 28
+    elif subtitle_position in {"top", "bottom"}:
+        overlay_margin_y += 18 if export_settings.export_mode == "portrait" else 12
+
+    if subtitle_policy == "narrative_cards":
+        overlay_margin_x += 4
+        overlay_margin_y += 18
+    elif subtitle_policy == "stylized_captions":
+        overlay_margin_x += 6
+        overlay_margin_y += 24
+
+    if effective_visual_output_mode == "book_like":
+        overlay_margin_x += 10
+        overlay_margin_y += 18
+    elif effective_visual_output_mode == "stylized_animated":
+        overlay_margin_x += 14
+        overlay_margin_y += 26
+
+    return overlay_margin_x, overlay_margin_y
 
 
 def _tune_subtitle_style(

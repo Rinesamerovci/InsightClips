@@ -33,6 +33,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def add_common_middleware(app: FastAPI) -> None:
+    app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.frontend_origins,
@@ -40,7 +41,6 @@ def add_common_middleware(app: FastAPI) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(RequestLoggingMiddleware)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

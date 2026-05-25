@@ -346,6 +346,8 @@ export default function UploadWorkspace({
 
   const youtubeChannel =
     typeof youtubeImport?.metadata.channel === "string" ? youtubeImport.metadata.channel : null;
+  const youtubeNeedsPayment = Boolean(youtubeImport?.checkout_required || youtubeImport?.status === "awaiting_payment");
+  const youtubeReadyForProcessing = Boolean(youtubeImport?.storage_ready && !youtubeNeedsPayment);
   const normalizedYouTubeCandidate = useMemo(() => {
     if (!youtubeUrl.trim()) return null;
     const normalized = normalizeYouTubeImportUrl(youtubeUrl);
@@ -594,6 +596,10 @@ export default function UploadWorkspace({
 
   const analyzeImportedPodcast = async () => {
     if (!youtubeImport) return;
+    if (!youtubeReadyForProcessing) {
+      setErr("Payment is required before this YouTube import can be analyzed or used to generate clips.");
+      return;
+    }
 
     setYoutubeAnalyzing(true);
     setErr("");
@@ -1994,7 +2000,7 @@ export default function UploadWorkspace({
                       </div>
                       <div>
                         <div style={{ fontSize: 10, letterSpacing: ".24em", textTransform: "uppercase", opacity: 0.72, marginBottom: 3 }}>
-                          Imported and ready
+                          {youtubeNeedsPayment ? "Imported - payment needed" : "Imported and ready"}
                         </div>
                         <div style={{ fontSize: 22, fontWeight: 800 }}>{youtubeImport.title}</div>
                       </div>
@@ -2017,6 +2023,7 @@ export default function UploadWorkspace({
                     {[
                       { label: "Duration", value: formatDurationLabel(youtubeImport.duration_seconds) },
                       { label: "Source", value: "YouTube import" },
+                      { label: "Price", value: youtubeImport.checkout_required ? `$${youtubeImport.price.toFixed(2)} ${youtubeImport.currency}` : "No payment needed" },
                       { label: "Channel", value: youtubeChannel ?? "Unknown channel" },
                     ].map((item) => (
                       <div key={item.label} style={{ borderRadius: 14, background: "rgba(255,255,255,.14)", padding: "14px 16px" }}>
@@ -2039,7 +2046,7 @@ export default function UploadWorkspace({
                     <button
                       type="button"
                       onClick={() => void analyzeImportedPodcast()}
-                      disabled={youtubeAnalyzing}
+                      disabled={youtubeAnalyzing || !youtubeReadyForProcessing}
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
@@ -2051,12 +2058,12 @@ export default function UploadWorkspace({
                         color: "#fff",
                         fontSize: 13,
                         fontWeight: 700,
-                        cursor: "pointer",
-                        opacity: youtubeAnalyzing ? 0.7 : 1,
+                        cursor: youtubeReadyForProcessing ? "pointer" : "not-allowed",
+                        opacity: youtubeAnalyzing || !youtubeReadyForProcessing ? 0.7 : 1,
                       }}
                     >
                       {youtubeAnalyzing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-                      {youtubeAnalyzing ? "Analyzing..." : "Analyze and open clips"}
+                      {youtubeAnalyzing ? "Analyzing..." : youtubeNeedsPayment ? "Payment required" : "Analyze and open clips"}
                     </button>
                     <Link
                       href="/podcasts"

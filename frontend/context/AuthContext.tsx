@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'next/navigation'
 
 import {
+  ApiRequestError,
   clearBackendToken,
   getStoredBackendToken,
   postJson,
@@ -66,6 +67,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         supabase_token: session.access_token,
       })
     } catch (error) {
+      if (error instanceof ApiRequestError && [401, 403].includes(error.status)) {
+        clearBackendToken()
+        setBackendToken(null)
+        return null
+      }
       if (cachedToken) {
         setBackendToken(cachedToken)
         return cachedToken

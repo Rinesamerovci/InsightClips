@@ -245,9 +245,29 @@ def import_youtube_podcast(
     current_user: AuthenticatedUser,
 ) -> YouTubeImportResponse:
     source = parse_youtube_source(payload.url)
+    existing = _get_existing_youtube_import(current_user.id, source.video_id)
+    if existing is not None:
+        raise UploadWorkflowError(
+            f"This YouTube video has already been imported as \"{existing.get('title') or 'an existing podcast'}\".",
+            status_code=409,
+            code="youtube_already_imported",
+        )
     resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else ExportSettings()
     download_result = _download_youtube_media(source, current_user.id)
     title = payload.title or download_result.title
+    duration_minutes = round(download_result.duration_seconds / 60, 2)
+    free_trial_used = _get_latest_free_trial_state(current_user)
+    price_decision = determine_upload_price(duration_minutes, free_trial_used)
+    if price_decision.status == "blocked":
+        raise UploadWorkflowError(
+            price_decision.message,
+            status_code=413,
+            code="youtube_duration_blocked",
+        )
+    persisted_status: UploadStatus = (
+        "ready_for_processing" if price_decision.status == "free_ready" else price_decision.status
+    )
+    payment_status = _derive_payment_status(price_decision.status)
 
     insert_payload = _build_youtube_podcast_insert_payload(
         current_user,
@@ -255,24 +275,51 @@ def import_youtube_podcast(
         download_result,
         title=title,
         export_settings=resolved_export_settings,
+        status=persisted_status,
+        price=price_decision.price,
+        payment_status=payment_status,
     )
 
     try:
         podcast_id = create_imported_podcast_record(insert_payload)
     except Exception as exc:
         raise UploadWorkflowError("YouTube import could not be saved.", status_code=500) from exc
+    if price_decision.status == "free_ready" and not _get_latest_free_trial_state(current_user):
+        mark_free_trial_used(current_user.id)
 
     return YouTubeImportResponse(
         podcast_id=podcast_id,
-        status="ready_for_processing",
+        status=persisted_status,
         source_url=source.normalized_url,
         video_id=source.video_id,
         title=title,
         storage_path=download_result.storage_path,
         duration_seconds=download_result.duration_seconds,
         metadata=download_result.metadata,
+        storage_ready=persisted_status == "ready_for_processing",
+        checkout_required=persisted_status == "awaiting_payment",
+        payment_status=payment_status,
+        price=price_decision.price,
         export_settings=resolved_export_settings,
     )
+
+
+def _get_existing_youtube_import(user_id: str, video_id: str) -> dict[str, Any] | None:
+    try:
+        rows = (
+            service_supabase.table("podcasts")
+            .select("id,title")
+            .eq("user_id", user_id)
+            .eq("source_type", "youtube")
+            .eq("external_source_id", video_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return None
+    return rows[0] if rows else None
 
 
 def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownloadResult:
@@ -362,14 +409,17 @@ def _build_youtube_podcast_insert_payload(
     *,
     title: str,
     export_settings: ExportSettings,
+    status: UploadStatus,
+    price: float,
+    payment_status: str,
 ) -> dict[str, Any]:
     return {
         "user_id": current_user.id,
         "title": title,
         "duration": round(download_result.duration_seconds),
-        "status": "ready_for_processing",
-        "price": 0.0,
-        "payment_status": "not_required",
+        "status": status,
+        "price": price,
+        "payment_status": payment_status,
         "source_filename": download_result.filename,
         "storage_path": download_result.storage_path,
         "mime_type": download_result.mime_type,

@@ -207,6 +207,11 @@ export type YouTubeImportResponse = {
   title: string;
   storage_path: string;
   duration_seconds: number;
+  storage_ready: boolean;
+  checkout_required: boolean;
+  payment_status: string;
+  price: number;
+  currency: "USD";
   metadata: Record<string, unknown>;
   export_settings?: ExportSettings | null;
   is_mock?: boolean;
@@ -445,6 +450,18 @@ type RequestOptions = {
   token?: string | null;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 function buildBackendCandidates(): string[] {
   const candidates = [configuredBackendUrl];
 
@@ -487,12 +504,15 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
       const payload = (await response.json().catch(() => ({}))) as JsonRecord;
       if (!response.ok) {
         const detail = typeof payload.detail === "string" ? payload.detail : "Request failed.";
-        throw new Error(detail);
+        throw new ApiRequestError(response.status, detail);
       }
 
       return payload as T;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Request failed.");
+      if (error instanceof ApiRequestError) {
+        throw error;
+      }
     }
   }
 
@@ -512,12 +532,15 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as JsonRecord;
         const detail = typeof payload.detail === "string" ? payload.detail : "Download failed.";
-        throw new Error(detail);
+        throw new ApiRequestError(response.status, detail);
       }
 
       return await response.blob();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Download failed.");
+      if (error instanceof ApiRequestError) {
+        throw error;
+      }
     }
   }
 
@@ -602,6 +625,11 @@ function buildMockYouTubeImportResponse(
     title: payload.title?.trim() || "Mock YouTube import",
     storage_path: `.generated/youtube-imports/mock-user/${matchedVideoId}.mp4`,
     duration_seconds: 1680,
+    storage_ready: true,
+    checkout_required: false,
+    payment_status: "not_required",
+    price: 0,
+    currency: "USD",
     metadata: {
       channel: "Mock Creator",
       normalized_url: normalizedUrl,

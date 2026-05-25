@@ -1,10 +1,32 @@
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  free_trial_used boolean not null default false,
+  full_name text,
+  profile_picture_url text,
+  export_settings jsonb not null default '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 alter table public.profiles
-  add column if not exists export_settings jsonb not null default '{"export_mode":"landscape","crop_mode":"none","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb;
+  add column if not exists email text,
+  add column if not exists free_trial_used boolean not null default false,
+  add column if not exists full_name text,
+  add column if not exists profile_picture_url text,
+  add column if not exists created_at timestamptz not null default timezone('utc', now()),
+  add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+drop index if exists public.profiles_email_unique_idx;
+create index if not exists profiles_email_idx on public.profiles (email);
+
+alter table public.profiles
+  add column if not exists export_settings jsonb not null default '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb;
 
 update public.profiles
 set export_settings =
   (
-    '{"export_mode":"landscape","crop_mode":"none","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb
+    '{"preset_name":"youtube_landscape","export_mode":"landscape","crop_mode":"none","subtitle_timing_profile":"extended","mobile_optimized":false,"face_tracking_enabled":false,"subtitle_style":{"preset":"classic","font_family":"Arial","font_size":18,"primary_color":"#FFFFFF","outline_color":"#000000","background_color":"#000000","background_opacity":0.2,"position":"bottom","bold":false,"italic":false},"audio_enhancement":{"enabled":true,"normalize_loudness":true,"target_lufs":-16.0,"true_peak_db":-1.5,"status":"enabled"},"generation_settings":{"clip_duration_seconds":30,"number_of_clips":5,"topic_focus":null,"subtitles_enabled":true}}'::jsonb
     || coalesce(export_settings, '{}'::jsonb)
   )
   || jsonb_build_object(
@@ -20,10 +42,14 @@ alter table public.profiles
 alter table public.profiles
   add constraint profiles_export_settings_check check (
     jsonb_typeof(export_settings) = 'object'
+    and export_settings ? 'preset_name'
+    and export_settings ->> 'preset_name' in ('youtube_landscape', 'youtube_shorts', 'instagram_reels', 'tiktok_vertical')
     and export_settings ? 'export_mode'
     and export_settings ->> 'export_mode' in ('landscape', 'portrait')
     and export_settings ? 'crop_mode'
     and export_settings ->> 'crop_mode' in ('none', 'center_crop', 'smart_crop')
+    and export_settings ? 'subtitle_timing_profile'
+    and export_settings ->> 'subtitle_timing_profile' in ('compact', 'balanced', 'extended')
     and export_settings ? 'mobile_optimized'
     and jsonb_typeof(export_settings -> 'mobile_optimized') = 'boolean'
     and export_settings ? 'face_tracking_enabled'
@@ -35,6 +61,9 @@ alter table public.profiles
     and export_settings ? 'generation_settings'
     and jsonb_typeof(export_settings -> 'generation_settings') = 'object'
   );
+
+drop trigger if exists on_auth_user_created_profile on auth.users;
+drop function if exists public.handle_new_user_profile();
 
 create table if not exists public.user_messages (
   id uuid primary key default gen_random_uuid(),

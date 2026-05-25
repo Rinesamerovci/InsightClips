@@ -19,6 +19,16 @@ class VerifyRequest(BaseModel):
     supabase_token: str = Field(min_length=1)
 
 
+class EmailAvailabilityRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailAvailabilityResponse(BaseModel):
+    email: EmailStr
+    exists: bool
+    message: str
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

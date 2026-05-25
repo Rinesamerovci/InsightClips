@@ -54,6 +54,7 @@ def get_profile_by_email(email: str) -> ProfileRecord | None:
 
 
 def upsert_profile(profile_id: str, email: str, full_name: str | None = None) -> ProfileRecord:
+    default_export_settings = ExportSettings().model_dump(mode="json")
     response = (
         service_supabase.table("profiles")
         .upsert(
@@ -62,6 +63,7 @@ def upsert_profile(profile_id: str, email: str, full_name: str | None = None) ->
                 "email": email.lower(),
                 "free_trial_used": False,
                 "full_name": full_name,
+                "export_settings": default_export_settings,
             }
         )
         .execute()

@@ -232,9 +232,10 @@ export default function DashboardPage() {
           getJson<PodcastsResponse>("/podcasts", token),
           getPodcastAnalytics(token),
         ]);
-        setProfile(p); setPodcasts(pod.podcasts); setIsMock(pod.is_mock); setAnalytics(overview);
+        const loadedPodcasts = Array.isArray(pod?.podcasts) ? pod.podcasts : [];
+        setProfile(p); setPodcasts(loadedPodcasts); setIsMock(Boolean(pod?.is_mock)); setAnalytics(overview);
         const analysisEntries = await Promise.all(
-          pod.podcasts.map(async (podcast) => {
+          loadedPodcasts.map(async (podcast) => {
             try {
               const summary = await getPodcastAnalysis(podcast.id, token);
               return [podcast.id, summary] as const;
@@ -250,7 +251,9 @@ export default function DashboardPage() {
     void load();
   }, [authLoading, backendToken, router, syncBackendSession]);
 
-  const podcastsWithEffectiveStatus = podcasts.map((podcast) => ({
+  const safePodcasts = Array.isArray(podcasts) ? podcasts : [];
+
+  const podcastsWithEffectiveStatus = safePodcasts.map((podcast) => ({
     ...podcast,
     status: getEffectivePodcastStatus(
       podcast,
@@ -276,7 +279,7 @@ export default function DashboardPage() {
   const visibilityTotal = (analytics?.total_views ?? 0) + (analytics?.total_downloads ?? 0);
   const comparisonPodcasts = useMemo(() => {
     const summaries =
-      analytics?.podcasts.map((podcast) => ({
+      (Array.isArray(analytics?.podcasts) ? analytics.podcasts : []).map((podcast) => ({
         podcastId: podcast.podcast_id,
         title: podcast.title,
         totalClips: podcast.total_clips,
@@ -310,7 +313,7 @@ export default function DashboardPage() {
     ...comparisonPodcasts.map((podcast) => podcast.visibility || podcast.totalClips || 1),
   );
   const leadingPodcast = comparisonPodcasts[0] ?? null;
-  const leadingClip = analytics?.top_clips[0] ?? null;
+  const leadingClip = (Array.isArray(analytics?.top_clips) ? analytics.top_clips : [])[0] ?? null;
   const generatedClipsByPodcastId = useMemo(
     () =>
       Object.fromEntries(
@@ -923,10 +926,10 @@ export default function DashboardPage() {
                 )}
               </h1>
               <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.6, fontWeight: 400 }}>
-                {podcasts.length > 0
+                {safePodcasts.length > 0
                   ? analytics && analytics.total_clips > 0
                     ? `${analytics.total_clips} clip${analytics.total_clips !== 1 ? "s" : ""} across ${analytics.total_podcasts} episode${analytics.total_podcasts !== 1 ? "s" : ""} · ${analytics.published_clips} published · ${visibilityTotal} total reach`
-                    : `${podcasts.length} episode${podcasts.length>1?"s":""} in your library${
+                    : `${safePodcasts.length} episode${safePodcasts.length>1?"s":""} in your library${
                         processing > 0
                           ? ` · ${processing} processing`
                           : payments > 0
@@ -946,7 +949,7 @@ export default function DashboardPage() {
               gap: 16, marginBottom: 28,
             }}>
               <div className="stat-card">
-                <StatCard icon={Mic2}       label="Podcasts"   value={analytics?.total_podcasts ?? podcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
+                <StatCard icon={Mic2}       label="Podcasts"   value={analytics?.total_podcasts ?? safePodcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
               </div>
               <div className="stat-card">
                 <StatCard icon={Play}       label="Total clips" value={analytics?.total_clips ?? 0} sub="generated across the workspace"  accent="#3a9e88"  t={t} delay={.16}/>
@@ -1160,7 +1163,7 @@ export default function DashboardPage() {
                         color:t.text,
                       }}>Podcast Library</h2>
                       <p style={{ fontSize:12, color:t.textSub, marginTop:3 }}>
-                        {isMock ? "Showing demo content" : `${podcasts.length} episode${podcasts.length!==1?"s":""} total`}
+                        {isMock ? "Showing demo content" : `${safePodcasts.length} episode${safePodcasts.length!==1?"s":""} total`}
                       </p>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, width:isMobile ? "100%" : "auto", justifyContent:isMobile ? "space-between" : "flex-end" }}>

@@ -20,7 +20,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { ApiRequestError, postJson } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+
+type EmailAvailabilityResponse = {
+  email: string;
+  exists: boolean;
+  message: string;
+};
 
 const tk = {
   dark: {
@@ -126,6 +133,14 @@ export default function RegisterPage() {
     }
 
     try {
+      const availability = await postJson<EmailAvailabilityResponse>("/auth/check-email", {
+        email: normalizedEmail,
+      });
+      if (availability.exists) {
+        setError(availability.message || "An account already exists for this email. Please sign in instead.");
+        return;
+      }
+
       const { error: signUpError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password: formData.password,
@@ -144,7 +159,11 @@ export default function RegisterPage() {
       setInfo(`We sent a 6-digit verification code to ${normalizedEmail}.`);
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create account.");
+      if (err instanceof ApiRequestError && err.status === 409) {
+        setError(err.detail || "An account already exists for this email. Please sign in instead.");
+      } else {
+        setError(err instanceof Error ? err.message : "Unable to create account.");
+      }
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,18 @@ class Settings(BaseSettings):
             "http://localhost:3001",
         ]
     )
+
+    @field_validator("frontend_origins", mode="before")
+    @classmethod
+    def parse_frontend_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return []
+            if cleaned.startswith("["):
+                return value
+            return [origin.strip() for origin in cleaned.split(",") if origin.strip()]
+        return value
 
     supabase_url: str = Field(
         default="",

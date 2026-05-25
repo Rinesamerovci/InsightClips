@@ -47,12 +47,44 @@ from app.services.recommendation_service import RecommendationServiceError, reco
 from app.services.profile_service import get_profile_for_analytics
 from app.services.profile_service import get_user_export_settings, update_user_export_settings
 from app.services.podcast_service import (
+    get_podcast_for_user,
     get_podcasts_for_user,
     get_user_podcast_analytics,
     update_podcast_status_for_user,
 )
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
+
+
+def _get_owned_podcast_or_404(podcast_id: str, user_id: str):
+    podcast = get_podcast_for_user(podcast_id, user_id)
+    if podcast is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    return podcast
+
+
+def _assert_podcast_can_process(podcast_id: str, user_id: str):
+    podcast = _get_owned_podcast_or_404(podcast_id, user_id)
+    payment_status = podcast.payment_status
+    if podcast.status == "awaiting_payment" or payment_status == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Payment is required before this podcast can be analyzed or used to generate clips.",
+        )
+    if podcast.status == "blocked" or payment_status == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is blocked and cannot be processed.",
+        )
+    if podcast.status not in {"ready_for_processing", "processing", "done"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is not ready for processing yet.",
+        )
+    return podcast
 
 
 def _is_unsatisfiable_byte_range(range_header: str | None, *, file_size: int) -> bool:
@@ -151,11 +183,7 @@ async def analyze_podcast(
     background_tasks: BackgroundTasks,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> AnalysisResult:
-    if not podcast_belongs_to_user(podcast_id, current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Podcast not found for the current user.",
-        )
+    _assert_podcast_can_process(podcast_id, current_user.id)
     started_at = time.perf_counter()
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
     try:
@@ -208,10 +236,13 @@ async def generate_podcast_clips(
     payload: GenerateClipsRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ClipGenerationResult:
-    if not podcast_belongs_to_user(podcast_id, current_user.id):
+    _assert_podcast_can_process(podcast_id, current_user.id)
+
+    existing_result = get_clips_for_podcast(podcast_id)
+    if existing_result is not None and existing_result.clips:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Podcast not found for the current user.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Clips have already been generated for this podcast. Review the existing clips instead of generating them again.",
         )
 
     preferred_export_settings = (

@@ -145,5 +145,10 @@ class YouTubeImportResponse(BaseModel):
     title: str
     storage_path: str
     duration_seconds: float
+    storage_ready: bool
+    checkout_required: bool
+    payment_status: str
+    price: float
+    currency: str = "USD"
     metadata: dict[str, Any] = Field(default_factory=dict)
     export_settings: ExportSettings | None = None

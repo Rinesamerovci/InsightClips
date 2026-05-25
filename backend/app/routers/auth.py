@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user
-from app.models.auth import AuthResponse, LoginRequest, RegisterRequest, VerifyRequest
-from app.services.auth_service import login_user, register_user, verify_session
+from app.models.auth import (
+    AuthResponse,
+    EmailAvailabilityRequest,
+    EmailAvailabilityResponse,
+    LoginRequest,
+    RegisterRequest,
+    VerifyRequest,
+)
+from app.services.auth_service import check_email_availability, login_user, register_user, verify_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -10,6 +17,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=AuthResponse, status_code=201)
 async def register(payload: RegisterRequest) -> AuthResponse:
     return register_user(payload)
+
+
+@router.post("/check-email", response_model=EmailAvailabilityResponse)
+async def check_email(payload: EmailAvailabilityRequest) -> EmailAvailabilityResponse:
+    return check_email_availability(str(payload.email))
 
 
 @router.post("/login", response_model=AuthResponse)

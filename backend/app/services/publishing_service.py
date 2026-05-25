@@ -62,6 +62,17 @@ def publish_clips(
 
     for row in ordered_rows:
         clip_id = str(row["id"])
+        if bool(row.get("published")):
+            raise PublishingError(
+                f"Clip {clip_id} is already published. Revoke it before publishing it again.",
+                status_code=409,
+            )
+        existing_publication = get_clip_publication_status(clip_id, destination=destination)
+        if existing_publication is not None and existing_publication.published:
+            raise PublishingError(
+                f"Clip {clip_id} is already published to {destination}. Revoke it before publishing it again.",
+                status_code=409,
+            )
         if str(row.get("status") or "").strip().lower() not in {"ready", "done", "completed"}:
             _persist_publication_record(
                 clip_id=clip_id,

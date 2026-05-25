@@ -15,6 +15,8 @@ class PodcastRecord(BaseModel):
     title: str
     duration: int
     status: str
+    price: float = 0.0
+    payment_status: str = "pending"
     storage_path: str | None = None
     source_type: str = "upload"
     source_url: str | None = None
@@ -31,6 +33,8 @@ class PodcastResponse(BaseModel):
     title: str
     duration: int
     status: str
+    price: float = 0.0
+    payment_status: str = "pending"
     storage_path: str | None = None
     source_type: str = "upload"
     source_url: str | None = None

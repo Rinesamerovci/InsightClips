@@ -765,9 +765,9 @@ async function testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFie
     );
 
     assert.equal(result.podcast_id, "pod-legacy");
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 2);
     assert.deepEqual(
-      JSON.parse(String(calls[2]?.init?.body)),
+      JSON.parse(String(calls[1]?.init?.body)),
       {
         export_settings: {
           export_mode: "landscape",

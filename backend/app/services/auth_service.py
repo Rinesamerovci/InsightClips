@@ -1,8 +1,8 @@
 from fastapi import HTTPException, status
 
 from app.database import public_supabase, service_supabase
-from app.models.auth import AuthResponse, LoginRequest, RegisterRequest
-from app.services.profile_service import get_profile_by_id, upsert_profile
+from app.models.auth import AuthResponse, EmailAvailabilityResponse, LoginRequest, RegisterRequest
+from app.services.profile_service import get_profile_by_email, get_profile_by_id, upsert_profile
 from app.utils.security import create_backend_token, validate_password_rules
 
 
@@ -35,6 +35,12 @@ def _issue_auth_response(profile_id: str, email: str | None = None, full_name: s
 def register_user(payload: RegisterRequest) -> AuthResponse:
     validate_password_rules(payload.password)
     email = payload.email.lower()
+    availability = check_email_availability(email)
+    if availability.exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=availability.message,
+        )
 
     try:
         sign_up_response = public_supabase.auth.sign_up(
@@ -61,6 +67,43 @@ def register_user(payload: RegisterRequest) -> AuthResponse:
 
     upsert_profile(user.id, email, payload.full_name)
     return _issue_auth_response(user.id)
+
+
+def check_email_availability(email: str) -> EmailAvailabilityResponse:
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        return EmailAvailabilityResponse(
+            email=email,
+            exists=False,
+            message="Email address is required.",
+        )
+
+    try:
+        if get_profile_by_email(normalized_email):
+            return EmailAvailabilityResponse(
+                email=normalized_email,
+                exists=True,
+                message="An account already exists for this email. Please sign in instead.",
+            )
+    except Exception:
+        pass
+
+    try:
+        users = service_supabase.auth.admin.list_users()
+        if any(str(getattr(user, "email", "") or "").lower() == normalized_email for user in users):
+            return EmailAvailabilityResponse(
+                email=normalized_email,
+                exists=True,
+                message="An account already exists for this email. Please sign in instead.",
+            )
+    except Exception:
+        pass
+
+    return EmailAvailabilityResponse(
+        email=normalized_email,
+        exists=False,
+        message="This email is available.",
+    )
 
 
 def login_user(payload: LoginRequest) -> AuthResponse:

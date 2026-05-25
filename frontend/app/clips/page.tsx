@@ -756,6 +756,17 @@ function ClipsPageContent() {
 
   const handleGenerateClips = async () => {
     if (!selectedPodcastId) {
+      setActionFeedback({
+        tone: "error",
+        message: "Select a podcast before generating clips.",
+      });
+      return;
+    }
+    if (clips.length > 0) {
+      setActionFeedback({
+        tone: "info",
+        message: "Clips already exist for this podcast. Use the existing clips instead of generating them again.",
+      });
       return;
     }
 
@@ -912,6 +923,13 @@ function ClipsPageContent() {
 
   const handlePublish = async (clip: ClipSearchResult | ClipResult) => {
     if (!selectedPodcastId) {
+      return;
+    }
+    if (clip.published) {
+      setActionFeedback({
+        tone: "info",
+        message: `Clip ${clip.clip_number} is already published. Revoke it before publishing again.`,
+      });
       return;
     }
 
@@ -1506,7 +1524,7 @@ function ClipsPageContent() {
                 <button
                   type="button"
                   onClick={() => void handleGenerateClips()}
-                  disabled={!selectedPodcastId || generating || loadingClips}
+                  disabled={!selectedPodcastId || generating || loadingClips || clips.length > 0}
                   style={{
                     border: "none",
                     borderRadius: 18,
@@ -1517,13 +1535,13 @@ function ClipsPageContent() {
                     alignItems: "center",
                     gap: 10,
                     fontWeight: 700,
-                    cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
-                    opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
+                    cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
+                    opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
                     boxShadow: `0 14px 30px ${t.accentGlow}`,
                   }}
                 >
                   {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                  {generating ? "Generating clips..." : "Generate clips"}
+                  {generating ? "Generating clips..." : clips.length > 0 ? "Clips already generated" : "Generate clips"}
                 </button>
               </div>
 

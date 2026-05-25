@@ -11,7 +11,7 @@ from app.models.podcast import (
 )
 
 PODCAST_COLUMNS = (
-    "id,user_id,title,duration,status,storage_path,export_mode,crop_mode,"
+    "id,user_id,title,duration,status,price,payment_status,storage_path,export_mode,crop_mode,"
     "mobile_optimized,face_tracking_enabled,subtitle_style,audio_enhancement,"
     "source_type,source_url,external_source_id,import_metadata,created_at,updated_at"
 )

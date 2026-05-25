@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 from typing import Iterator
 
+import httpx
 from psycopg import connect
 from psycopg_pool import ConnectionPool
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
 from app.config import get_settings
 
@@ -21,7 +22,11 @@ class UnconfiguredSupabaseClient:
 def _create_supabase_client(url: str, key: str) -> Client | UnconfiguredSupabaseClient:
     if not url or not key:
         return UnconfiguredSupabaseClient()
-    return create_client(url, key)
+    return create_client(
+        url,
+        key,
+        ClientOptions(httpx_client=httpx.Client(trust_env=False)),
+    )
 
 service_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(
     settings.supabase_url,

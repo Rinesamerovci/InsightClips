@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import {
   LogOut, Moon, Plus, SunMedium, Mic2, Download,
   Sparkles, Settings, Bell, ChevronRight, Play,
-  Activity, Zap, TrendingUp, MoreHorizontal,
+  Activity, Zap, TrendingUp,
   Radio, LayoutDashboard, Library, BarChart2,
   User, ArrowUpRight,
 } from "lucide-react";
@@ -25,6 +25,7 @@ import {
   type ProfileResponse,
   type UserPodcastAnalytics,
 } from "@/lib/api";
+import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 function isDoneStatus(status: string) {
   return ["done", "completed"].includes(status);
@@ -55,46 +56,8 @@ function getEffectivePodcastStatus(
 }
 
 /* ─────────────────────── design tokens ─────────────────────── */
-const T = {
-  dark: {
-    bg:       "#070d06",
-    sidebar:  "#090e08",
-    topbar:   "rgba(9,14,8,.92)",
-    card:     "rgba(13,20,11,.88)",
-    cardAlt:  "rgba(16,24,13,.94)",
-    cardSolid:"#0d140b",
-    border:   "rgba(60,105,40,.38)",
-    borderSub:"rgba(60,105,40,.18)",
-    text:     "#dff0d8",
-    textSub:  "rgba(163,210,128,.6)",
-    textFaint:"rgba(100,148,72,.38)",
-    accent:   "#5a9e3a",
-    accentLt: "#7ab55c",
-    accentGlow:"rgba(90,158,58,.22)",
-    red:      "#c86060",
-    redBg:    "rgba(120,30,30,.5)",
-    redBord:  "rgba(150,60,60,.4)",
-  },
-  light: {
-    bg:       "#eff7ea",
-    sidebar:  "#e6f2df",
-    topbar:   "rgba(240,248,235,.95)",
-    card:     "rgba(255,255,255,.92)",
-    cardAlt:  "rgba(247,251,242,.95)",
-    cardSolid:"#ffffff",
-    border:   "rgba(140,200,110,.45)",
-    borderSub:"rgba(140,200,110,.22)",
-    text:     "#142210",
-    textSub:  "rgba(55,100,35,.6)",
-    textFaint:"rgba(100,148,72,.5)",
-    accent:   "#4a8e2a",
-    accentLt: "#6aa845",
-    accentGlow:"rgba(90,158,58,.18)",
-    red:      "#9d3a3a",
-    redBg:    "rgba(255,238,238,.8)",
-    redBord:  "rgba(215,165,165,.5)",
-  },
-};
+const T = studioTheme;
+type DashboardTheme = (typeof T)[keyof typeof T];
 
 /* ─────────────────────── helpers ─────────────────────── */
 function formatPercent(value: number) {
@@ -103,7 +66,7 @@ function formatPercent(value: number) {
 
 /* ─────────────────────── nav item ─────────────────────── */
 function NavItem({ icon: Icon, label, href, active, t, collapsed }:
-  { icon: React.ElementType; label: string; href: string; active?: boolean; t: typeof T.dark; collapsed: boolean }) {
+  { icon: React.ElementType; label: string; href: string; active?: boolean; t: DashboardTheme; collapsed: boolean }) {
   return (
     <Link href={href} style={{
       display: "flex", alignItems: "center", gap: 12,
@@ -136,7 +99,7 @@ function NavItem({ icon: Icon, label, href, active, t, collapsed }:
 
 /* ─────────────────────── stat card ─────────────────────── */
 function StatCard({ icon: Icon, label, value, sub, accent, t, delay }:
-  { icon: React.ElementType; label: string; value: string|number; sub: string; accent: string; t: typeof T.dark; delay: number }) {
+  { icon: React.ElementType; label: string; value: string|number; sub: string; accent: string; t: DashboardTheme; delay: number }) {
   return (
     <div style={{
       padding: "22px 24px", borderRadius: 18,
@@ -172,6 +135,40 @@ function StatCard({ icon: Icon, label, value, sub, accent, t, delay }:
   );
 }
 
+function SignalPill({
+  label,
+  value,
+  accent,
+  border,
+  dark,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  border: string;
+  dark: boolean;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 18,
+        border: `1px solid ${border}`,
+        background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.72)",
+        padding: "14px 14px 13px",
+      }}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: accent, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: dark ? "#edf4e4" : "#1e3418" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+
+
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════════════════════════════════ */
@@ -202,7 +199,7 @@ export default function DashboardPage() {
   const isTablet = viewportWidth < 1180;
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (savedTheme) setDark(savedTheme === "dark");
     const handleResize = () => setViewportWidth(window.innerWidth);
     handleResize();
@@ -213,7 +210,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!mounted) return;
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
 
   useEffect(() => {
@@ -276,43 +273,18 @@ export default function DashboardPage() {
   );
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
+  const workspaceEpisodes = safePodcasts.length;
+  const pendingActions = processing + payments;
+  const readinessRate = workspaceEpisodes > 0 ? (done / workspaceEpisodes) * 100 : 0;
+  const workspaceStatus =
+    workspaceEpisodes === 0
+      ? "Ready for first upload"
+      : pendingActions > 0
+        ? "In active production"
+        : done > 0
+          ? "Clips-ready library"
+          : "Library building";
   const visibilityTotal = (analytics?.total_views ?? 0) + (analytics?.total_downloads ?? 0);
-  const comparisonPodcasts = useMemo(() => {
-    const summaries =
-      (Array.isArray(analytics?.podcasts) ? analytics.podcasts : []).map((podcast) => ({
-        podcastId: podcast.podcast_id,
-        title: podcast.title,
-        totalClips: podcast.total_clips,
-        visibility: podcast.total_views + podcast.total_downloads,
-        publishedClips: podcast.published_clips,
-        averageScore: podcast.average_virality_score,
-      })) ??
-      podcastsWithEffectiveStatus.map((podcast) => ({
-        podcastId: podcast.id,
-        title: podcast.title,
-        totalClips: 0,
-        visibility: 0,
-        publishedClips: 0,
-        averageScore: 0,
-      }));
-
-    return [...summaries]
-      .sort((left, right) => {
-        if (right.visibility !== left.visibility) {
-          return right.visibility - left.visibility;
-        }
-        if (right.totalClips !== left.totalClips) {
-          return right.totalClips - left.totalClips;
-        }
-        return left.title.localeCompare(right.title);
-      })
-      .slice(0, 5);
-  }, [analytics?.podcasts, podcastsWithEffectiveStatus]);
-  const comparisonMax = Math.max(
-    1,
-    ...comparisonPodcasts.map((podcast) => podcast.visibility || podcast.totalClips || 1),
-  );
-  const leadingPodcast = comparisonPodcasts[0] ?? null;
   const leadingClip = (Array.isArray(analytics?.top_clips) ? analytics.top_clips : [])[0] ?? null;
   const generatedClipsByPodcastId = useMemo(
     () =>
@@ -711,8 +683,8 @@ export default function DashboardPage() {
                 </svg>
               </button>
               <div>
-                <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform:"uppercase", color: t.textFaint, fontWeight: 700 }}>InsightClips</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: t.text, lineHeight: 1.1 }}>Overview</div>
+                <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform:"uppercase", color: t.textFaint, fontWeight: 700 }}>InsightClips Studio</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: t.text, lineHeight: 1.1 }}>Executive Overview</div>
               </div>
             </div>
 
@@ -909,43 +881,190 @@ export default function DashboardPage() {
           <main style={{ padding: isMobile ? "20px 16px 40px" : "32px 32px 60px", flex:1 }}>
 
             {/* Welcome row */}
-            <div style={{
-              marginBottom: 28,
-              animation: "slideUp .55s .08s cubic-bezier(.22,1,.36,1) both",
-            }}>
-              <h1 style={{
-                fontFamily: "'DM Serif Display', serif",
-                fontSize: "clamp(28px, 3vw, 40px)",
-                fontStyle: "italic", letterSpacing: "-.04em",
-                lineHeight: 1.1, marginBottom: 6,
-              }}>
-                {firstName ? (
-                  <>Good day, <span className="shimmer-name">{firstName}</span> 👋</>
-                ) : (
-                  <span className="shimmer-name">Welcome to InsightClips</span>
-                )}
-              </h1>
-              <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.6, fontWeight: 400 }}>
-                {safePodcasts.length > 0
-                  ? analytics && analytics.total_clips > 0
-                    ? `${analytics.total_clips} clip${analytics.total_clips !== 1 ? "s" : ""} across ${analytics.total_podcasts} episode${analytics.total_podcasts !== 1 ? "s" : ""} · ${analytics.published_clips} published · ${visibilityTotal} total reach`
-                    : `${safePodcasts.length} episode${safePodcasts.length>1?"s":""} in your library${
-                        processing > 0
-                          ? ` · ${processing} processing`
-                          : payments > 0
-                            ? ` · ${payments} awaiting payment`
-                            : done > 0
-                              ? ` · ${done} completed`
-                              : ""
-                      }`
-                  : "Your workspace is ready — upload your first episode to begin."}
-              </p>
-            </div>
+            <section
+              className="ic-premium-card"
+              style={{
+                marginBottom: 28,
+                borderRadius: 28,
+                border: `1px solid ${t.border}`,
+                background: dark
+                  ? "linear-gradient(135deg, rgba(18,30,14,.96), rgba(12,18,10,.92))"
+                  : "linear-gradient(135deg, rgba(255,255,255,.96), rgba(244,248,236,.98))",
+                padding: isMobile ? "22px 18px" : "28px",
+                boxShadow: dark ? "0 28px 70px rgba(0,0,0,.2)" : "0 28px 70px rgba(90,158,58,.08)",
+                animation: "slideUp .55s .08s cubic-bezier(.22,1,.36,1) both",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isTablet ? "1fr" : "minmax(0,1.3fr) minmax(280px,.7fr)",
+                  gap: 20,
+                  alignItems: "stretch",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 18 }}>
+                  <div>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 12px",
+                        borderRadius: 999,
+                        border: `1px solid ${t.borderSub}`,
+                        background: dark ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.06)",
+                        color: t.accentLt,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: ".2em",
+                        textTransform: "uppercase",
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Sparkles size={12} />
+                      Studio Overview
+                    </div>
+                    <h1 style={{
+                      fontFamily: "'DM Serif Display', serif",
+                      fontSize: "clamp(30px, 3.6vw, 46px)",
+                      fontStyle: "italic", letterSpacing: "-.045em",
+                      lineHeight: 1.04, marginBottom: 10,
+                    }}>
+                      {firstName ? (
+                        <>Welcome back, <span className="shimmer-name">{firstName}</span>.</>
+                      ) : (
+                        <span className="shimmer-name">Welcome to InsightClips</span>
+                      )}
+                    </h1>
+                    <p style={{ fontSize: 15, color: t.textSub, lineHeight: 1.75, maxWidth: 680 }}>
+                      {workspaceEpisodes > 0
+                        ? analytics && analytics.total_clips > 0
+                          ? `${analytics.total_clips} generated clip${analytics.total_clips !== 1 ? "s" : ""} across ${analytics.total_podcasts} tracked episode${analytics.total_podcasts !== 1 ? "s" : ""}, with ${analytics.published_clips} already published and ${visibilityTotal} total reach.`
+                          : `${workspaceEpisodes} episode${workspaceEpisodes > 1 ? "s" : ""} are in your workspace. ${pendingActions > 0 ? `${pendingActions} still need attention before the pipeline is fully clear.` : "Your library is in a healthy state and ready for the next clip run."}`
+                        : "Your workspace is ready. Upload the first episode and InsightClips will guide the rest of the clip workflow from analysis to publishing."}
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => router.push("/upload")}
+                      className="upload-btn ic-action"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        padding: "12px 22px", borderRadius: 999, border: "none",
+                        background: `linear-gradient(135deg, ${dark ? "#3d6e24" : "#4a8e2a"}, ${t.accent})`,
+                        color: "#fff", fontSize: 13, fontWeight: 700,
+                        cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
+                        boxShadow: `0 10px 28px ${t.accentGlow}`,
+                      }}
+                    >
+                      <Plus size={15} strokeWidth={2.5} />
+                      Start new upload
+                    </button>
+                    <Link
+                      href="/clips"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        padding: "11px 20px", borderRadius: 999,
+                        border: `1px solid ${t.border}`,
+                        background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.7)",
+                        color: t.text, textDecoration: "none", fontSize: 13, fontWeight: 700,
+                      }}
+                    >
+                      Open clips workspace
+                      <ArrowUpRight size={14} />
+                    </Link>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  <SignalPill
+                    label="Workspace status"
+                    value={workspaceStatus}
+                    accent={t.accent}
+                    border={t.border}
+                    dark={dark}
+                  />
+                  <SignalPill
+                    label="Pipeline"
+                    value={`${done} ready · ${processing} processing${payments ? ` · ${payments} payment hold` : ""}`}
+                    accent={t.accent}
+                    border={t.border}
+                    dark={dark}
+                  />
+                  <SignalPill
+                    label="Readiness"
+                    value={workspaceEpisodes > 0 ? `${formatPercent(readinessRate)} of episodes are clips-ready` : "No episodes uploaded yet"}
+                    accent={t.accent}
+                    border={t.border}
+                    dark={dark}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section
+              className="ic-premium-card"
+              style={{
+                marginBottom: 28,
+                borderRadius: 22,
+                border: `1px solid ${t.border}`,
+                background: dark ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.76)",
+                padding: isMobile ? "16px" : "18px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                <div>
+                  <div className="ic-kicker" style={{ color: t.accent, borderColor: t.borderSub, background: dark ? "rgba(90,158,58,.1)" : "rgba(90,158,58,.08)" }}>
+                    Studio path
+                  </div>
+                  <div style={{ marginTop: 10, fontFamily: "'DM Serif Display',serif", fontSize: 22, lineHeight: 1.1, color: t.text }}>
+                    From upload to publish in four clear steps.
+                  </div>
+                </div>
+                <Link
+                  href="/upload"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    borderRadius: 999,
+                    border: `1px solid ${t.border}`,
+                    background: t.cardAlt,
+                    color: t.textSub,
+                    padding: "9px 13px",
+                    textDecoration: "none",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  Start flow
+                  <ArrowUpRight size={13} />
+                </Link>
+              </div>
+              <div className="ic-studio-steps ic-mobile-scroll">
+                {[
+                  ["Upload", "Add a file or YouTube link."],
+                  ["Tune", "Pick format, captions, and clip goals."],
+                  ["Generate", "Let InsightClips rank the best moments."],
+                  ["Publish", "Review, export, and track performance."],
+                ].map(([title, copy], index) => (
+                  <div key={title} className="ic-studio-step" style={{ borderColor: t.borderSub, background: dark ? "rgba(255,255,255,.025)" : "rgba(255,255,255,.68)" }}>
+                    <span className="ic-studio-step-index" style={{ background: t.chip, color: t.accent }}>
+                      {index + 1}
+                    </span>
+                    <div className="ic-studio-step-title" style={{ color: t.text }}>{title}</div>
+                    <div className="ic-studio-step-copy" style={{ color: t.textSub, opacity: 1 }}>{copy}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {/* ── STATS GRID ── */}
             <div style={{
               display:"grid",
-              gridTemplateColumns: isMobile ? "1fr" : (isTablet ? "repeat(2,1fr)" : "repeat(4,1fr)"),
+              gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,190px),1fr))",
               gap: 16, marginBottom: 28,
             }}>
               <div className="stat-card">
@@ -965,77 +1084,17 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ── MAIN GRID: chart + library ── */}
-            <div style={{ display:"grid", gridTemplateColumns:isTablet ? "1fr" : "280px 1fr", gap: 20, alignItems:"start" }}>
+            {/* ── MAIN GRID: summary + library ── */}
+            <div style={{ display:"grid", gridTemplateColumns:isTablet ? "1fr" : "320px 1fr", gap: 20, alignItems:"start" }}>
 
               {/* Left col */}
               <div style={{ display:"flex", flexDirection:"column", gap: 16 }}>
 
-                {/* Activity chart card */}
-                <div
-                  id="analytics"
-                  style={{
-                  padding: "22px", borderRadius: 18,
-                  border: `1px solid ${t.border}`,
-                  background: t.card,
-                  backdropFilter: "blur(20px)",
-                  animation: "slideUp .55s .3s cubic-bezier(.22,1,.36,1) both",
-                }}
-                >
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom: 20 }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:6 }}>Podcast reach</div>
-                      <div style={{ fontFamily:"'DM Serif Display',serif", fontSize: 26, fontStyle:"italic", color:t.accent, lineHeight:1 }}>
-                        {visibilityTotal || analytics?.total_clips || 0}
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <TrendingUp size={14} color={t.accentLt} strokeWidth={2}/>
-                      <span style={{ fontSize:11, fontWeight:600, color:t.accentLt }}>
-                        {leadingPodcast ? leadingPodcast.title : "Workspace"}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:60, marginBottom:10 }}>
-                    {comparisonPodcasts.length > 0 ? comparisonPodcasts.map((podcast, i) => {
-                      const metricValue = podcast.visibility || podcast.totalClips || 1;
-                      return (
-                        <div key={podcast.podcastId} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
-                          <div className="bar" style={{
-                            width:"100%",
-                            borderRadius: "3px 3px 0 0",
-                            height:`${Math.max(16, Math.round((metricValue / comparisonMax) * 100))}%`,
-                            background: i===0
-                              ? `linear-gradient(180deg,${t.accent},${t.accentLt})`
-                              : dark?"rgba(90,158,58,.2)":"rgba(90,158,58,.16)",
-                            "--i":i,
-                          } as React.CSSProperties}/>
-                          <span style={{ fontSize:10, color:i===0 ? t.accent : t.textFaint }}>
-                            {podcast.title.slice(0, 6)}
-                          </span>
-                        </div>
-                      );
-                    }) : (
-                      <div style={{ color:t.textSub, fontSize:12, lineHeight:1.6 }}>
-                        Upload an episode to see podcast comparisons here.
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <span style={{ fontSize:10, color:t.textFaint }}>
-                      {visibilityTotal > 0 ? "Views + downloads by podcast" : "Clip totals by podcast"}
-                    </span>
-                    <span style={{ fontSize:11, fontWeight:600, color:t.accent }}>
-                      {analytics?.estimated ? "Estimated fallback" : "Live backend metrics"}
-                    </span>
-                  </div>
-                </div>
-
                 {/* Performance summary */}
                 <div style={{
-                  padding: "20px", borderRadius: 18,
+                  padding: "20px", borderRadius: 22,
                   border: `1px solid ${t.border}`,
-                  background: t.card,
+                  background: `linear-gradient(180deg, ${t.card}, ${t.cardAlt})`,
                   backdropFilter:"blur(20px)",
                   animation: "slideUp .55s .36s cubic-bezier(.22,1,.36,1) both",
                 }}>
@@ -1101,14 +1160,15 @@ export default function DashboardPage() {
 
                 {/* Quick actions */}
                 <div style={{
-                  padding:"18px", borderRadius:18,
+                  padding:"18px", borderRadius:22,
                   border:`1px solid ${t.border}`,
-                  background:t.card, backdropFilter:"blur(20px)",
+                  background:`linear-gradient(180deg, ${t.card}, ${t.cardAlt})`, backdropFilter:"blur(20px)",
                   animation:"slideUp .55s .42s cubic-bezier(.22,1,.36,1) both",
                 }}>
                   <div style={{ fontSize:10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint, marginBottom:12, paddingLeft:4 }}>
                     Quick actions
                   </div>
+                    <div style={{ display:"grid", gridTemplateColumns:isTablet ? "1fr" : "1fr 1fr", gap:8 }}>
                   {[
                     { id:"upload",    icon:Plus,      label:"Upload or import",  sub:"File upload or YouTube link",      href:"/upload" },
                     { id:"podcasts",  icon:Library,   label:"Browse podcasts", sub:"Search your library",  href:"/podcasts" },
@@ -1117,9 +1177,9 @@ export default function DashboardPage() {
                     { id:"planning",  icon:Sparkles,  label:"Open planning",   sub:"Calendar and hashtags", href:"/clips" },
                     { id:"feedback",  icon:Settings,  label:"Share feedback",  sub:"Support and contact",  href:"/settings" },
                   ].map(({ id, icon:Icon, label, sub, href }) => (
-                    <Link key={id} href={href} className="sidebar-link" style={{
+                    <Link key={id} href={href} className="sidebar-link ic-premium-card" style={{
                       display:"flex", alignItems:"center", justifyContent:"space-between",
-                      padding:"10px 10px", borderRadius:10, marginBottom:4,
+                      padding:"12px 12px", borderRadius:14,
                       background:dark?"rgba(90,158,58,.05)":"rgba(90,158,58,.04)",
                       border:`1px solid ${t.borderSub}`,
                       textDecoration:"none",
@@ -1140,6 +1200,7 @@ export default function DashboardPage() {
                       <ChevronRight size={12} color={t.textFaint}/>
                     </Link>
                   ))}
+                  </div>
                 </div>
               </div>
 
@@ -1147,8 +1208,8 @@ export default function DashboardPage() {
               <div
                 id="library"
                 style={{
-                borderRadius:20, border:`1px solid ${t.border}`,
-                background:t.card, backdropFilter:"blur(20px)",
+                borderRadius:24, border:`1px solid ${t.border}`,
+                background:`linear-gradient(180deg, ${t.card}, ${t.cardAlt})`, backdropFilter:"blur(20px)",
                 overflow:"hidden",
                 animation:"slideUp .55s .2s cubic-bezier(.22,1,.36,1) both",
               }}
@@ -1157,13 +1218,27 @@ export default function DashboardPage() {
                 <div style={{ padding:"20px 24px 0", borderBottom:`1px solid ${t.borderSub}` }}>
                   <div style={{ display:"flex", alignItems:isMobile ? "stretch" : "center", justifyContent:"space-between", flexDirection:isMobile ? "column" : "row", gap:12, marginBottom:16 }}>
                     <div>
+                      <div style={{
+                        display:"inline-flex", alignItems:"center", gap:7,
+                        padding:"6px 10px", borderRadius:999,
+                        background:dark?"rgba(90,158,58,.08)":"rgba(90,158,58,.06)",
+                        border:`1px solid ${t.borderSub}`,
+                        color:t.accentLt, fontSize:10, fontWeight:700,
+                        letterSpacing:".18em", textTransform:"uppercase",
+                        marginBottom:10,
+                      }}>
+                        <Library size={12} />
+                        Content Library
+                      </div>
                       <h2 style={{
                         fontFamily:"'DM Serif Display',serif",
-                        fontSize:22, fontStyle:"italic", letterSpacing:"-.03em",
+                        fontSize:26, fontStyle:"italic", letterSpacing:"-.03em",
                         color:t.text,
                       }}>Podcast Library</h2>
-                      <p style={{ fontSize:12, color:t.textSub, marginTop:3 }}>
-                        {isMock ? "Showing demo content" : `${safePodcasts.length} episode${safePodcasts.length!==1?"s":""} total`}
+                      <p style={{ fontSize:13, color:t.textSub, marginTop:5, lineHeight:1.65, maxWidth:460 }}>
+                        {isMock
+                          ? "Showing demo content in the library view."
+                          : `${safePodcasts.length} episode${safePodcasts.length!==1?"s":""} in the library. Filter by status, open clips, or start a fresh upload from here.`}
                       </p>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, width:isMobile ? "100%" : "auto", justifyContent:isMobile ? "space-between" : "flex-end" }}>
@@ -1190,15 +1265,17 @@ export default function DashboardPage() {
                           YouTube
                         </Link>
                       </div>
-                      <button className="icon-btn" style={{
-                        width:34, height:34, borderRadius:9,
+                      <Link href="/podcasts" style={{
+                        display:"inline-flex", alignItems:"center", gap:6,
+                        padding:"8px 12px", borderRadius:100,
                         border:`1px solid ${t.border}`,
                         background:"transparent",
-                        display:"flex", alignItems:"center", justifyContent:"center",
-                        color:t.textSub, cursor:"pointer",
+                        color:t.textSub, fontSize:12, fontWeight:600,
+                        textDecoration:"none",
                       }}>
-                        <MoreHorizontal size={15}/>
-                      </button>
+                        View all
+                        <ArrowUpRight size={13}/>
+                      </Link>
                     </div>
                   </div>
 
@@ -1240,7 +1317,7 @@ export default function DashboardPage() {
                   )}
 
                   {filtered.length === 0 ? (
-                    <div style={{ padding:"52px 20px", textAlign:"center" }}>
+                    <div className="ic-empty-state" style={{ padding:"52px 20px", textAlign:"center" }}>
                       <div style={{
                         width:68, height:68, borderRadius:18, margin:"0 auto 20px",
                         background:dark?"rgba(90,158,58,.1)":"rgba(90,158,58,.07)",
@@ -1270,7 +1347,7 @@ export default function DashboardPage() {
                       )}
                     </div>
                   ) : (
-                    <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(min(100%,220px),1fr))", gap:14 }}>
                       {filtered.map((podcast,i) => (
                         <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
                           <PodcastCard
@@ -1279,6 +1356,7 @@ export default function DashboardPage() {
                             analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
                             onAnalyze={() => void runAnalysis(podcast.id)}
                             generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
+                            dark={dark}
                           />
                         </div>
                       ))}

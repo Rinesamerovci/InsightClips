@@ -256,6 +256,7 @@ export default function ExportSettingsPage() {
     tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
+  const [showFineTune, setShowFineTune] = useState(false);
 
   const isMobile = viewportWidth < 900;
   const isTablet = viewportWidth < 1180;
@@ -565,7 +566,7 @@ export default function ExportSettingsPage() {
         </header>
 
         <section
-          className="a-up glass"
+          className="a-up glass ic-premium-card"
           style={{
             borderRadius: 30,
             border: `1px solid ${palette.border}`,
@@ -679,7 +680,7 @@ export default function ExportSettingsPage() {
         >
           <main style={{ display: "grid", gap: 18 }}>
             <section
-              className="glass a-up"
+              className="glass a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,
@@ -719,7 +720,54 @@ export default function ExportSettingsPage() {
             </section>
 
             <section
-              className="glass a-up"
+              className="glass a-up ic-premium-card"
+              style={{
+                borderRadius: 24,
+                background: palette.card,
+                border: `1px solid ${palette.border}`,
+                padding: 20,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                    Settings scope
+                  </div>
+                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, lineHeight: 1.08, marginBottom: 6 }}>
+                    This page saves your default export profile.
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.72, color: palette.muted, maxWidth: 680 }}>
+                    Keep only the defaults here for future uploads. Clip-specific creative work like generation flow, prompt focus, and final polishing belongs in the Clips page.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFineTune((current) => !current)}
+                  style={{
+                    border: `1px solid ${palette.subBorder}`,
+                    borderRadius: 999,
+                    padding: "11px 16px",
+                    background: showFineTune ? palette.chip : "transparent",
+                    color: showFineTune ? palette.accent : palette.text,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {showFineTune ? "Hide fine-tune" : "Open fine-tune"}
+                </button>
+              </div>
+            </section>
+
+            <section
+              className="glass a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,
@@ -728,7 +776,7 @@ export default function ExportSettingsPage() {
               }}
             >
               <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 14 }}>
-                Framing Controls
+                Core Defaults
               </div>
 
               <div style={{ display: "grid", gap: 12, marginBottom: 14 }}>
@@ -830,163 +878,167 @@ export default function ExportSettingsPage() {
               </div>
             </section>
 
-            <SubtitleStylePanel
-              dark={dark}
-              exportMode={settingsForm.export_mode}
-              styleValue={subtitleStyle}
-              onPresetChange={(preset) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: buildSubtitleStyleFromPreset(preset),
-                }))
-              }
-              onFontFamilyChange={(fontFamily) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    font_family: fontFamily,
-                  },
-                }))
-              }
-              onColorChange={(color) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    primary_color: color,
-                  },
-                }))
-              }
-              onFontSizeChange={(size) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    font_size: size,
-                  },
-                }))
-              }
-              onPositionChange={(position) =>
-                updateSettings((current) => ({
-                  ...current,
-                  subtitle_style: {
-                    ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
-                    position,
-                  },
-                }))
-              }
-              palette={{
-                border: palette.border,
-                subBorder: palette.subBorder,
-                muted: palette.muted,
-                hi: palette.accent,
-                hi2: palette.accentLight,
-              }}
-            />
-
-            <section
-              className="glass a-up"
-              style={{
-                borderRadius: 24,
-                background: palette.card,
-                border: `1px solid ${palette.border}`,
-                padding: 20,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <Volume2 size={18} color={palette.accent} />
-                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
-                  Audio Enhancement
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 12 }}>
-                <ToggleRow
-                  title="Audio leveling"
-                  text="Smooths volume differences before final export."
-                  checked={audioSettings.enabled}
-                  onToggle={() =>
-                    handleAudioChange({
-                      enabled: !audioSettings.enabled,
-                    })
-                  }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
+            {showFineTune ? (
+              <>
+                <SubtitleStylePanel
                   dark={dark}
-                />
-                <ToggleRow
-                  title="Normalize loudness"
-                  text="Targets a more consistent perceived volume across clips."
-                  checked={audioSettings.normalize_loudness}
-                  disabled={!audioSettings.enabled}
-                  onToggle={() =>
-                    handleAudioChange({
-                      normalize_loudness: !audioSettings.normalize_loudness,
-                    })
+                  exportMode={settingsForm.export_mode}
+                  styleValue={subtitleStyle}
+                  onPresetChange={(preset) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      subtitle_style: buildSubtitleStyleFromPreset(preset),
+                    }))
                   }
-                  accent={palette.accent}
-                  border={palette.border}
-                  subBorder={palette.subBorder}
-                  dark={dark}
+                  onFontFamilyChange={(fontFamily) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      subtitle_style: {
+                        ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+                        font_family: fontFamily,
+                      },
+                    }))
+                  }
+                  onColorChange={(color) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      subtitle_style: {
+                        ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+                        primary_color: color,
+                      },
+                    }))
+                  }
+                  onFontSizeChange={(size) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      subtitle_style: {
+                        ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+                        font_size: size,
+                      },
+                    }))
+                  }
+                  onPositionChange={(position) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      subtitle_style: {
+                        ...(current.subtitle_style ?? buildSubtitleStyleFromPreset("classic")),
+                        position,
+                      },
+                    }))
+                  }
+                  palette={{
+                    border: palette.border,
+                    subBorder: palette.subBorder,
+                    muted: palette.muted,
+                    hi: palette.accent,
+                    hi2: palette.accentLight,
+                  }}
                 />
-                <div
+
+                <section
+                  className="glass a-up ic-premium-card"
                   style={{
-                    borderRadius: 18,
-                    border: `1px solid ${palette.subBorder}`,
-                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
-                    padding: "16px 18px",
+                    borderRadius: 24,
+                    background: palette.card,
+                    border: `1px solid ${palette.border}`,
+                    padding: 20,
                   }}
                 >
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-                    <label>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                        Target loudness
-                      </div>
-                      <input
-                        type="range"
-                        min={-24}
-                        max={-8}
-                        step={1}
-                        value={audioSettings.target_lufs}
-                        onChange={(event) =>
-                          handleAudioChange({ target_lufs: Number(event.target.value) })
-                        }
-                        style={{ width: "100%", accentColor: palette.accent }}
-                      />
-                      <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                        {audioSettings.target_lufs} LUFS
-                      </div>
-                    </label>
-                    <label>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                        True peak ceiling
-                      </div>
-                      <input
-                        type="range"
-                        min={-6}
-                        max={0}
-                        step={0.5}
-                        value={audioSettings.true_peak_db}
-                        onChange={(event) =>
-                          handleAudioChange({ true_peak_db: Number(event.target.value) })
-                        }
-                        style={{ width: "100%", accentColor: palette.accent }}
-                      />
-                      <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                        {audioSettings.true_peak_db} dB
-                      </div>
-                    </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <Volume2 size={18} color={palette.accent} />
+                    <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
+                      Audio Enhancement
+                    </div>
                   </div>
-                </div>
-              </div>
-            </section>
+
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <ToggleRow
+                      title="Audio leveling"
+                      text="Smooths volume differences before final export."
+                      checked={audioSettings.enabled}
+                      onToggle={() =>
+                        handleAudioChange({
+                          enabled: !audioSettings.enabled,
+                        })
+                      }
+                      accent={palette.accent}
+                      border={palette.border}
+                      subBorder={palette.subBorder}
+                      dark={dark}
+                    />
+                    <ToggleRow
+                      title="Normalize loudness"
+                      text="Targets a more consistent perceived volume across clips."
+                      checked={audioSettings.normalize_loudness}
+                      disabled={!audioSettings.enabled}
+                      onToggle={() =>
+                        handleAudioChange({
+                          normalize_loudness: !audioSettings.normalize_loudness,
+                        })
+                      }
+                      accent={palette.accent}
+                      border={palette.border}
+                      subBorder={palette.subBorder}
+                      dark={dark}
+                    />
+                    <div
+                      style={{
+                        borderRadius: 18,
+                        border: `1px solid ${palette.subBorder}`,
+                        background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
+                        padding: "16px 18px",
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                        <label>
+                          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                            Target loudness
+                          </div>
+                          <input
+                            type="range"
+                            min={-24}
+                            max={-8}
+                            step={1}
+                            value={audioSettings.target_lufs}
+                            onChange={(event) =>
+                              handleAudioChange({ target_lufs: Number(event.target.value) })
+                            }
+                            style={{ width: "100%", accentColor: palette.accent }}
+                          />
+                          <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
+                            {audioSettings.target_lufs} LUFS
+                          </div>
+                        </label>
+                        <label>
+                          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+                            True peak ceiling
+                          </div>
+                          <input
+                            type="range"
+                            min={-6}
+                            max={0}
+                            step={0.5}
+                            value={audioSettings.true_peak_db}
+                            onChange={(event) =>
+                              handleAudioChange({ true_peak_db: Number(event.target.value) })
+                            }
+                            style={{ width: "100%", accentColor: palette.accent }}
+                          />
+                          <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
+                            {audioSettings.true_peak_db} dB
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </>
+            ) : null}
           </main>
 
           <aside style={{ display: "grid", gap: 18 }}>
             <section
-              className="glass a-up"
+              className="glass a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,

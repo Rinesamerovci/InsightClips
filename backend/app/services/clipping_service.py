@@ -362,33 +362,33 @@ def generate_clips(
                 )
             )
             overlay_decisions.append(final_overlay)
-            rows_to_persist.append(
-                {
-                    "id": clip_id,
-                    "podcast_id": podcast_id,
-                    "clip_number": clip_number,
-                    "clip_start_sec": clip_start,
-                    "clip_end_sec": clip_end,
-                    "virality_score": segment.virality_score,
-                    "storage_path": str(clip_path),
-                    "storage_url": storage_url,
-                    "subtitle_url": subtitle_url or (str(subtitle_path) if srt_content is not None else None),
-                    "subtitle_text": subtitle_text,
-                    "status": "ready",
-                    "preset_name": clip_export_settings.preset_name,
-                    "export_mode": clip_export_settings.export_mode,
-                    "crop_mode": clip_export_settings.crop_mode,
-                    "subtitle_timing_profile": clip_export_settings.subtitle_timing_profile,
-                    "mobile_optimized": clip_export_settings.mobile_optimized,
-                    "face_tracking_enabled": clip_export_settings.face_tracking_enabled,
-                    "subtitle_style": clip_export_settings.subtitle_style.model_dump(mode="json"),
-                    "audio_enhancement": clip_export_settings.audio_enhancement.model_dump(mode="json"),
-                    "generation_settings": resolved_generation_settings.model_dump(mode="json"),
-                    "visual_output_mode": visual_output_mode,
-                    "effective_visual_output_mode": render_contract.effective_visual_output_mode,
-                    "render_fallback_reason": render_contract.render_fallback_reason,
-                }
-            )
+            row_to_persist = {
+                "id": clip_id,
+                "podcast_id": podcast_id,
+                "clip_number": clip_number,
+                "clip_start_sec": clip_start,
+                "clip_end_sec": clip_end,
+                "virality_score": segment.virality_score,
+                "storage_path": str(clip_path),
+                "storage_url": storage_url,
+                "subtitle_url": subtitle_url or (str(subtitle_path) if srt_content is not None else None),
+                "subtitle_text": subtitle_text,
+                "status": "ready",
+                "preset_name": clip_export_settings.preset_name,
+                "export_mode": clip_export_settings.export_mode,
+                "crop_mode": clip_export_settings.crop_mode,
+                "subtitle_timing_profile": clip_export_settings.subtitle_timing_profile,
+                "mobile_optimized": clip_export_settings.mobile_optimized,
+                "face_tracking_enabled": clip_export_settings.face_tracking_enabled,
+                "subtitle_style": clip_export_settings.subtitle_style.model_dump(mode="json"),
+                "audio_enhancement": clip_export_settings.audio_enhancement.model_dump(mode="json"),
+                "generation_settings": resolved_generation_settings.model_dump(mode="json"),
+                "visual_output_mode": visual_output_mode,
+                "effective_visual_output_mode": render_contract.effective_visual_output_mode,
+                "render_fallback_reason": render_contract.render_fallback_reason,
+            }
+            rows_to_persist.append(row_to_persist)
+            _persist_generated_clip_row(row_to_persist)
         except ClippingError as exc:
             last_generation_error = exc
             continue
@@ -1392,6 +1392,31 @@ def _persist_generated_clips(podcast_id: str, rows: list[dict[str, Any]]) -> Non
                 for row in rows
             ]
             service_supabase.table("clips").insert(base_rows).execute()
+
+
+def _persist_generated_clip_row(row: dict[str, Any]) -> None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return
+    try:
+        service_supabase.table("clips").insert(row).execute()
+    except Exception as exc:
+        if not _clip_optional_columns_missing(exc):
+            raise
+        service_supabase.table("clips").insert(
+            {
+                "id": row["id"],
+                "podcast_id": row["podcast_id"],
+                "clip_number": row["clip_number"],
+                "clip_start_sec": row["clip_start_sec"],
+                "clip_end_sec": row["clip_end_sec"],
+                "virality_score": row["virality_score"],
+                "storage_path": row["storage_path"],
+                "storage_url": row["storage_url"],
+                "subtitle_url": row["subtitle_url"],
+                "subtitle_text": row["subtitle_text"],
+                "status": row["status"],
+            }
+        ).execute()
 
 
 def _resolve_export_settings(

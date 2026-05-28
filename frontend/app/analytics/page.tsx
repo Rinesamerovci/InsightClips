@@ -25,45 +25,9 @@ import {
   buildAnalyticsSnapshot,
   formatAnalyticsChange,
 } from "@/lib/analytics-presentation";
+import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
-const T = {
-  dark: {
-    bg: "#070d06",
-    shell: "rgba(9,14,8,.88)",
-    card: "rgba(13,20,11,.88)",
-    cardAlt: "rgba(16,24,13,.94)",
-    border: "rgba(60,105,40,.34)",
-    borderSub: "rgba(60,105,40,.18)",
-    text: "#dff0d8",
-    textSub: "rgba(163,210,128,.68)",
-    textFaint: "rgba(100,148,72,.42)",
-    accent: "#5a9e3a",
-    accentLt: "#7ab55c",
-    accentGlow: "rgba(90,158,58,.22)",
-    chip: "rgba(90,158,58,.12)",
-    errorBg: "rgba(82,24,24,.72)",
-    errorBd: "rgba(170,84,84,.34)",
-    errorText: "#efaaaa",
-  },
-  light: {
-    bg: "#eef6e9",
-    shell: "rgba(244,249,239,.94)",
-    card: "rgba(255,255,255,.92)",
-    cardAlt: "rgba(247,251,242,.95)",
-    border: "rgba(140,200,110,.38)",
-    borderSub: "rgba(140,200,110,.22)",
-    text: "#142210",
-    textSub: "rgba(55,100,35,.66)",
-    textFaint: "rgba(100,148,72,.52)",
-    accent: "#4a8e2a",
-    accentLt: "#6aa845",
-    accentGlow: "rgba(90,158,58,.18)",
-    chip: "rgba(90,158,58,.08)",
-    errorBg: "rgba(255,238,238,.88)",
-    errorBd: "rgba(215,165,165,.5)",
-    errorText: "#9d3a3a",
-  },
-};
+const T = studioTheme;
 
 function AnalyticsPageContent() {
   const router = useRouter();
@@ -90,7 +54,7 @@ function AnalyticsPageContent() {
   const publishRate = analyticsSnapshot.publishRate;
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (savedTheme) {
       setDark(savedTheme === "dark");
     }
@@ -107,7 +71,7 @@ function AnalyticsPageContent() {
       return;
     }
 
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
 
   useEffect(() => {
@@ -330,6 +294,7 @@ function AnalyticsPageContent() {
         </div>
 
         <section
+          className="ic-premium-card"
           style={{
             borderRadius: 30,
             border: `1px solid ${t.border}`,
@@ -438,6 +403,7 @@ function AnalyticsPageContent() {
         >
           <aside style={{ display: "grid", gap: 18, alignSelf: "start" }}>
             <section
+              className="ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -490,7 +456,7 @@ function AnalyticsPageContent() {
             </section>
 
             <section
-              className="lift-card"
+              className="lift-card ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -539,6 +505,7 @@ function AnalyticsPageContent() {
 
           <main style={{ display: "grid", gap: 18 }}>
             <section
+              className="ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,

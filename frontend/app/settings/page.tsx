@@ -23,6 +23,7 @@ import {
   type UserMessageCategory,
   type UserMessageType,
 } from "@/lib/api";
+import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
@@ -42,7 +43,7 @@ export default function SettingsPage() {
     if (typeof window === "undefined") {
       return false;
     }
-    return window.localStorage.getItem("insightclips-theme") === "dark";
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark";
   });
   const [messageType, setMessageType] = useState<UserMessageType>("feedback");
   const [messageCategory, setMessageCategory] =
@@ -64,7 +65,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark]);
 
   useEffect(() => {
@@ -93,27 +94,27 @@ export default function SettingsPage() {
     };
   }, [authLoading, backendToken, router, syncBackendSession]);
 
-  const palette = useMemo(
-    () => ({
-      bg: dark ? "#070d06" : "#eef6e9",
-      shell: dark ? "rgba(9,14,8,.92)" : "rgba(244,249,239,.95)",
-      card: dark ? "rgba(13,20,11,.88)" : "rgba(255,255,255,.92)",
-      border: dark ? "rgba(60,105,40,.34)" : "rgba(140,200,110,.4)",
-      subBorder: dark ? "rgba(60,105,40,.18)" : "rgba(140,200,110,.22)",
-      text: dark ? "#dff0d8" : "#142210",
-      muted: dark ? "rgba(163,210,128,.66)" : "rgba(55,100,35,.68)",
-      accent: dark ? "#5a9e3a" : "#4a8e2a",
-      accentLight: dark ? "#7ab55c" : "#6aa845",
-      chip: dark ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+  const palette = useMemo(() => {
+    const base = getStudioTheme(dark);
+    return {
+      bg: base.bg,
+      shell: base.shell,
+      card: base.card,
+      border: base.border,
+      subBorder: base.borderSub,
+      text: base.text,
+      muted: base.textSub,
+      accent: base.accent,
+      accentLight: base.accentLt,
+      chip: base.chip,
       successBg: dark ? "rgba(18,48,14,.8)" : "rgba(228,251,220,.9)",
       successBorder: dark ? "rgba(90,158,58,.35)" : "rgba(130,205,110,.5)",
       successText: dark ? "#bfe4ab" : "#25591a",
-      errorBg: dark ? "rgba(58,14,14,.82)" : "rgba(255,234,234,.92)",
-      errorBorder: dark ? "rgba(170,84,84,.34)" : "rgba(215,165,165,.5)",
-      errorText: dark ? "#efaaaa" : "#9d3a3a",
-    }),
-    [dark],
-  );
+      errorBg: base.errorBg,
+      errorBorder: base.errorBd,
+      errorText: base.errorText,
+    };
+  }, [dark]);
 
   const messageFeedbackStyles =
     messageFeedback?.tone === "success"
@@ -302,7 +303,7 @@ export default function SettingsPage() {
         </header>
 
         <section
-          className="a-up glass"
+          className="a-up glass ic-premium-card"
           style={{
             borderRadius: 32,
             border: `1px solid ${palette.border}`,
@@ -442,7 +443,7 @@ export default function SettingsPage() {
         </section>
 
         <section
-          className="a-up"
+          className="a-up ic-premium-card"
           style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : "minmax(250px,.78fr) minmax(0,1.22fr)",
@@ -451,7 +452,7 @@ export default function SettingsPage() {
           }}
         >
           <aside
-            className="glass"
+            className="glass ic-premium-card"
             style={{
               borderRadius: 24,
               background: dark ? "rgba(13,20,11,.84)" : "rgba(255,255,255,.9)",
@@ -559,7 +560,7 @@ export default function SettingsPage() {
           </aside>
 
           <div
-            className="glass"
+            className="glass ic-premium-card"
             style={{
               borderRadius: 26,
               background: dark

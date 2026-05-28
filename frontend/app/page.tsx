@@ -26,15 +26,15 @@ const theme = {
     bgCard:      "#141A0E",
     bgCardHover: "#1A2213",
     border:      "rgba(163,208,107,0.08)",
-    borderHover: "rgba(163,208,107,0.18)",
+    borderHover: "rgba(163,208,107,0.22)",
     text:        "#E8F0DC",
     textMuted:   "#7A9060",
     textFaint:   "#3D5030",
     accent:      "#A3D06B",
     accentDark:  "#6E9C3A",
     accentLight: "#C9E89A",
-    glowA:       "rgba(163,208,107,0.12)",
-    glowB:       "rgba(100,160,60,0.08)",
+    glowA:       "rgba(163,208,107,0.14)",
+    glowB:       "rgba(140,190,60,0.10)",
   },
   light: {
     bg:          "#F5F8EE",
@@ -84,8 +84,11 @@ function getThemeServerSnapshot() {
 export default function InsightClipsLanding() {
   const [scrolled,       setScrolled]       = useState(false);
   const [activeFeature,  setActiveFeature]  = useState(1);
+  const [viewportWidth, setViewportWidth] = useState(1280);
   const currentTheme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
   const isDark = currentTheme === "dark";
+  const isMobile = viewportWidth < 760;
+  const isTablet = viewportWidth < 1024;
 
   const t = isDark ? theme.dark : theme.light;
 
@@ -98,6 +101,13 @@ export default function InsightClipsLanding() {
     window.addEventListener("scroll", handleScroll);
     handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   return (
@@ -184,7 +194,7 @@ export default function InsightClipsLanding() {
         borderBottom: scrolled ? `1px solid ${t.border}` : "1px solid transparent",
         transition:"all .4s ease",
       }}>
-        <div style={{ maxWidth:1280, margin:"0 auto", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ maxWidth:1280, margin:"0 auto", padding:isMobile ? "0 16px" : "0 40px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:16 }}>
           {/* Logo */}
           <button
             onClick={() => window.scrollTo({top:0,behavior:"smooth"})}
@@ -211,7 +221,7 @@ export default function InsightClipsLanding() {
           </button>
 
           {/* Center links */}
-          <div style={{ display:"flex", alignItems:"center", gap:40 }}>
+          <div style={{ display:isMobile ? "none" : "flex", alignItems:"center", gap:isTablet ? 22 : 40 }}>
             <button
               className="nav-link"
               style={{ color:t.textMuted }}
@@ -232,7 +242,7 @@ export default function InsightClipsLanding() {
           </div>
 
           {/* Right side */}
-          <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:isMobile ? 10 : 16 }}>
             {/* Theme toggle */}
             <button
               className="theme-toggle"
@@ -255,10 +265,10 @@ export default function InsightClipsLanding() {
               </div>
             </button>
 
-            <Link href="/register" style={{
+            <Link href="/register" className="ic-action" style={{
               background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
               color: isDark ? "#0D1008" : "#fff",
-              padding:"10px 26px", borderRadius:100,
+              padding:isMobile ? "10px 14px" : "10px 26px", borderRadius:100,
               fontSize:11, fontWeight:700, letterSpacing:".15em", textTransform:"uppercase",
               textDecoration:"none", display:"flex", alignItems:"center", gap:8,
               boxShadow:`0 4px 24px ${t.accent}30`,
@@ -267,7 +277,7 @@ export default function InsightClipsLanding() {
               onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 6px 32px ${t.accent}55`)}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = `0 4px 24px ${t.accent}30`)}
             >
-              Get Started <ArrowUpRight size={14} />
+              {isMobile ? "Start" : "Get Started"} <ArrowUpRight size={14} />
             </Link>
           </div>
         </div>
@@ -278,17 +288,17 @@ export default function InsightClipsLanding() {
         <section style={{
           minHeight:"100vh", display:"flex", flexDirection:"column",
           alignItems:"center", justifyContent:"center",
-          padding:"120px 40px 80px", textAlign:"center", position:"relative",
+          padding:isMobile ? "112px 18px 72px" : "120px 40px 80px", textAlign:"center", position:"relative",
         }}>
           {/* Decorative ring */}
           <div className="spin-ring" style={{
-            position:"absolute", width:600, height:600,
+            position:"absolute", width:isMobile ? 320 : 600, height:isMobile ? 320 : 600,
             borderRadius:"50%",
             border:`1px dashed ${t.accent}18`,
             pointerEvents:"none",
           }}/>
           <div style={{
-            position:"absolute", width:400, height:400,
+            position:"absolute", width:isMobile ? 220 : 400, height:isMobile ? 220 : 400,
             borderRadius:"50%",
             border:`1px solid ${t.accent}12`,
             pointerEvents:"none",
@@ -315,7 +325,7 @@ export default function InsightClipsLanding() {
               padding:"7px 18px", borderRadius:100,
               border:`1px solid ${t.accent}30`,
               background:`${t.accent}08`,
-              marginBottom:40,
+              marginBottom:isMobile ? 28 : 40,
             }}>
               <div className="pulse" style={{ width:6, height:6, borderRadius:"50%", background:t.accent }}/>
               <span style={{ fontSize:10, fontWeight:700, letterSpacing:".22em", textTransform:"uppercase", color:t.accent }}>
@@ -326,7 +336,7 @@ export default function InsightClipsLanding() {
             {/* Title */}
             <h1 className="hero-title" style={{
               fontFamily:"'DM Serif Display', serif",
-              fontSize:"clamp(52px,9vw,104px)",
+              fontSize:"clamp(44px,12vw,104px)",
               lineHeight:.88, color:t.text,
               letterSpacing:"-.04em", marginBottom:32,
             }}>
@@ -336,8 +346,8 @@ export default function InsightClipsLanding() {
 
             {/* Subtitle */}
             <p className="hero-sub" style={{
-              maxWidth:520, margin:"0 auto 48px",
-              fontSize:17, fontWeight:400, lineHeight:1.65,
+              maxWidth:520, margin:isMobile ? "0 auto 34px" : "0 auto 48px",
+              fontSize:isMobile ? 15 : 17, fontWeight:400, lineHeight:1.65,
               color:t.textMuted, letterSpacing:"-.01em",
             }}>
               Our AI engine identifies viral-worthy clips from long-form videos with
@@ -346,10 +356,10 @@ export default function InsightClipsLanding() {
 
             {/* CTAs */}
             <div className="hero-cta" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
-              <Link href="/register" style={{
+              <Link href="/register" className="ic-action" style={{
                 background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
                 color: isDark ? "#0D1008" : "#fff",
-                padding:"16px 36px", borderRadius:14,
+              padding:isMobile ? "15px 22px" : "16px 36px", borderRadius:14,
                 fontSize:12, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase",
                 textDecoration:"none", display:"flex", alignItems:"center", gap:10,
                 boxShadow:`0 8px 32px ${t.accent}38`,
@@ -358,9 +368,9 @@ export default function InsightClipsLanding() {
                 Start for Free <MoveRight size={16} />
               </Link>
 
-              <Link href="/demo" style={{
+              <Link href="/demo" className="ic-premium-card" style={{
                 display:"flex", alignItems:"center", gap:12,
-                padding:"15px 28px", borderRadius:14,
+                padding:isMobile ? "14px 20px" : "15px 28px", borderRadius:14,
                 border:`1px solid ${t.border}`,
                 background: isDark ? "rgba(255,255,255,.03)" : "rgba(0,0,0,.03)",
                 color:t.text, fontSize:12, fontWeight:600,
@@ -394,12 +404,13 @@ export default function InsightClipsLanding() {
         <div style={{
           borderTop:`1px solid ${t.border}`,
           borderBottom:`1px solid ${t.border}`,
-          padding:"20px 40px",
+          padding:isMobile ? "18px 16px" : "20px 40px",
           background: isDark ? "rgba(255,255,255,.01)" : "rgba(0,0,0,.01)",
         }}>
           <div style={{
             maxWidth:1280, margin:"0 auto",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:60,
+            display:"flex", alignItems:"center", justifyContent:"center", gap:isMobile ? 18 : 60,
+            flexWrap:"wrap",
           }}>
             {["TechCrunch", "Product Hunt", "Forbes", "Wired", "Y Combinator"].map(name => (
               <span key={name} style={{
@@ -411,9 +422,9 @@ export default function InsightClipsLanding() {
         </div>
 
         {/* ═══════════════════════════ FEATURES ═══════════════════════════ */}
-        <section id="features-section" style={{ maxWidth:1280, margin:"0 auto", padding:"120px 40px" }}>
+        <section id="features-section" style={{ maxWidth:1280, margin:"0 auto", padding:isMobile ? "76px 18px" : "120px 40px" }}>
           {/* Section header */}
-          <div style={{ maxWidth:600, marginBottom:72 }}>
+          <div style={{ maxWidth:600, marginBottom:isMobile ? 36 : 72 }}>
             <span style={{
               fontSize:10, fontWeight:700, letterSpacing:".25em",
               textTransform:"uppercase", color:t.accent, display:"block", marginBottom:16,
@@ -430,7 +441,7 @@ export default function InsightClipsLanding() {
           </div>
 
           {/* Feature grid */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:20 }}>
+          <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : isTablet ? "repeat(2, minmax(0, 1fr))" : "repeat(3, 1fr)", gap:20 }}>
             {[
               {
                 icon:<Cpu size={24}/>,
@@ -471,13 +482,13 @@ export default function InsightClipsLanding() {
 
         {/* ═══════════════════════════ STATS ═══════════════════════════ */}
         <section id="stats-section" style={{
-          maxWidth:1280, margin:"0 auto 120px",
-          padding:"80px 60px", borderRadius:32,
+          maxWidth:1280, margin:isMobile ? "0 18px 76px" : "0 auto 120px",
+          padding:isMobile ? "42px 20px" : "80px 60px", borderRadius:32,
           border:`1px solid ${t.border}`,
           background: isDark ? "rgba(255,255,255,.015)" : "rgba(0,0,0,.02)",
           backdropFilter:"blur(4px)",
         }}>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:40, textAlign:"center" }}>
+          <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : isTablet ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap:isMobile ? 26 : 40, textAlign:"center" }}>
             {[
               { val:"0.4s",  label:"Inference Latency" },
               { val:"12M+",  label:"Clips Processed" },
@@ -501,10 +512,10 @@ export default function InsightClipsLanding() {
 
         {/* ═══════════════════════════ CTA BANNER ═══════════════════════════ */}
         <section style={{
-          maxWidth:1280, margin:"0 auto 120px", padding:"0 40px",
+          maxWidth:1280, margin:isMobile ? "0 auto 76px" : "0 auto 120px", padding:isMobile ? "0 18px" : "0 40px",
         }}>
           <div style={{
-            padding:"80px 80px", borderRadius:32,
+            padding:isMobile ? "38px 22px" : "80px 80px", borderRadius:32,
             background:`linear-gradient(135deg, ${t.accentDark}22, ${t.accent}12)`,
             border:`1px solid ${t.accent}25`,
             display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:40,
@@ -521,10 +532,10 @@ export default function InsightClipsLanding() {
                 Join 40,000+ creators using InsightClips to grow their audience every week.
               </p>
             </div>
-            <Link href="/register" style={{
+            <Link href="/register" className="ic-action" style={{
               background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
               color: isDark ? "#0D1008" : "#fff",
-              padding:"18px 44px", borderRadius:14, flexShrink:0,
+              padding:isMobile ? "16px 22px" : "18px 44px", borderRadius:14, flexShrink:0,
               fontSize:12, fontWeight:700, letterSpacing:".14em", textTransform:"uppercase",
               textDecoration:"none", display:"flex", alignItems:"center", gap:10,
               boxShadow:`0 8px 40px ${t.accent}40`,
@@ -538,12 +549,12 @@ export default function InsightClipsLanding() {
       {/* ═══════════════════════════ FOOTER ═══════════════════════════ */}
       <footer style={{
         borderTop:`1px solid ${t.border}`,
-        padding:"60px 40px",
+        padding:isMobile ? "42px 18px" : "60px 40px",
         background: isDark ? "rgba(0,0,0,.3)" : "rgba(0,0,0,.02)",
       }}>
         <div style={{
           maxWidth:1280, margin:"0 auto",
-          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:32,
+          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:isMobile ? 22 : 32,
         }}>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <Image
@@ -569,7 +580,7 @@ export default function InsightClipsLanding() {
             © 2026 InsightClips · All rights reserved
           </p>
 
-          <div style={{ display:"flex", gap:28 }}>
+          <div style={{ display:"flex", gap:isMobile ? 14 : 28, flexWrap:"wrap" }}>
             {[
               { icon:<Globe size={16}/>,       label:"Global CDN" },
               { icon:<Shield size={16}/>,      label:"SOC 2" },
@@ -602,7 +613,7 @@ type FeatureCardProps = {
 function FeatureCard({ icon, title, desc, tag, active, isDark, t, onClick }: FeatureCardProps) {
   return (
     <button
-      className="card-feature"
+      className="card-feature ic-premium-card"
       onClick={onClick}
       style={{
         display:"flex", flexDirection:"column", alignItems:"flex-start", textAlign:"left",

@@ -90,18 +90,18 @@ export default function SubtitleStylePanel({
 }: SubtitleStylePanelProps) {
   const previewPreset = SUBTITLE_PRESET_DETAILS[styleValue.preset];
   const hasManualTuning = hasSubtitleManualOverrides(styleValue);
-  const previewWidth = exportMode === "portrait" ? 150 : 250;
-  const previewHeight = exportMode === "portrait" ? 250 : 150;
+  const previewWidth = exportMode === "portrait" ? 132 : 220;
+  const previewHeight = exportMode === "portrait" ? 220 : 126;
   const panelOpacity = disabled ? 0.68 : 1;
 
   return (
     <div
-      className="a2 glass"
+      className="a2 glass ic-premium-card"
       style={{
         borderRadius: 22,
         border: `1px solid ${palette.border}`,
         background: dark ? "rgba(14,24,11,.88)" : "rgba(255,255,255,.9)",
-        padding: "24px 24px 22px",
+        padding: "20px 20px 18px",
         marginBottom: 16,
         opacity: panelOpacity,
       }}
@@ -109,7 +109,7 @@ export default function SubtitleStylePanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,240px),1fr))",
           gap: 18,
           alignItems: "start",
         }}
@@ -210,7 +210,7 @@ export default function SubtitleStylePanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+              gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,150px),1fr))",
               gap: 10,
               marginBottom: 16,
             }}
@@ -309,7 +309,7 @@ export default function SubtitleStylePanel({
               borderRadius: 18,
               border: `1px solid ${palette.subBorder}`,
               background: dark ? "rgba(11,18,9,.6)" : "rgba(248,252,245,.82)",
-              padding: "16px 16px 14px",
+              padding: "14px 14px 13px",
             }}
           >
             <div
@@ -359,7 +359,7 @@ export default function SubtitleStylePanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
+                gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,160px),1fr))",
                 gap: 12,
               }}
             >
@@ -387,7 +387,7 @@ export default function SubtitleStylePanel({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,120px),1fr))",
                     gap: 8,
                   }}
                 >
@@ -551,7 +551,7 @@ export default function SubtitleStylePanel({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(84px,1fr))",
                     gap: 6,
                   }}
                 >
@@ -649,12 +649,12 @@ export default function SubtitleStylePanel({
 
           <div
             style={{
-              padding: "0 18px 18px",
+              padding: "0 14px 14px",
             }}
           >
             <div
               style={{
-                minHeight: 300,
+                minHeight: exportMode === "portrait" ? 240 : 210,
                 borderRadius: 18,
                 border: `1px solid ${palette.subBorder}`,
                 background: dark
@@ -738,7 +738,7 @@ export default function SubtitleStylePanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))",
+                gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,140px),1fr))",
                 gap: 8,
                 marginTop: 14,
               }}

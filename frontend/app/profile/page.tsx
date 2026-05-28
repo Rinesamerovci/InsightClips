@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Camera,
   CheckCircle2,
   Loader2,
   Moon,
+  Palette,
   Save,
   Shield,
+  Sparkles,
   SunMedium,
   UserRound,
 } from "lucide-react";
@@ -17,6 +20,7 @@ import {
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { useAuth } from "@/context/AuthContext";
 import { getUserProfile, updateUserProfile, type ProfileResponse } from "@/lib/api";
+import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 import { formatExportMode } from "@/lib/subtitle-style";
 import { supabase } from "@/lib/supabase";
 
@@ -33,8 +37,64 @@ type ProfileForm = {
   profile_picture_url: string;
 };
 
+function isRenderableProfileImage(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (value.startsWith("data:image/")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function SignalCard({
+  label,
+  value,
+  hint,
+  palette,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  palette: {
+    card: string;
+    subBorder: string;
+    text: string;
+    muted: string;
+  };
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 20,
+        border: `1px solid ${palette.subBorder}`,
+        background: palette.card,
+        padding: "16px 18px",
+      }}
+    >
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 26, lineHeight: 1.06, color: palette.text }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 12, lineHeight: 1.65, color: palette.muted, marginTop: 6 }}>
+        {hint}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const router = useRouter();
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
 
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
@@ -49,7 +109,7 @@ export default function ProfilePage() {
     if (typeof window === "undefined") {
       return false;
     }
-    return window.localStorage.getItem("insightclips-theme") === "dark";
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark";
   });
   const [feedback, setFeedback] = useState<{
     tone: "success" | "error" | "info";
@@ -67,7 +127,7 @@ export default function ProfilePage() {
   const isTablet = viewportWidth < 1180;
 
   useEffect(() => {
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark]);
 
   useEffect(() => {
@@ -114,31 +174,40 @@ export default function ProfilePage() {
     void load();
   }, [authLoading, backendToken, router, syncBackendSession]);
 
-  const palette = useMemo(
-    () => ({
-      bg: dark ? "#070d06" : "#eef6e9",
-      shell: dark ? "rgba(9,14,8,.92)" : "rgba(244,249,239,.95)",
-      card: dark ? "rgba(13,20,11,.88)" : "rgba(255,255,255,.92)",
-      border: dark ? "rgba(60,105,40,.34)" : "rgba(140,200,110,.4)",
-      subBorder: dark ? "rgba(60,105,40,.18)" : "rgba(140,200,110,.22)",
-      text: dark ? "#dff0d8" : "#142210",
-      muted: dark ? "rgba(163,210,128,.66)" : "rgba(55,100,35,.68)",
-      accent: dark ? "#5a9e3a" : "#4a8e2a",
-      accentLight: dark ? "#7ab55c" : "#6aa845",
-      chip: dark ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+  const palette = useMemo(() => {
+    const base = getStudioTheme(dark);
+    return {
+      bg: base.bg,
+      shell: base.shell,
+      card: base.card,
+      border: base.border,
+      subBorder: base.borderSub,
+      text: base.text,
+      muted: base.textSub,
+      accent: base.accent,
+      accentLight: base.accentLt,
+      chip: base.chip,
       successBg: dark ? "rgba(18,48,14,.8)" : "rgba(228,251,220,.9)",
       successBorder: dark ? "rgba(90,158,58,.35)" : "rgba(130,205,110,.5)",
       successText: dark ? "#bfe4ab" : "#25591a",
-      errorBg: dark ? "rgba(58,14,14,.82)" : "rgba(255,234,234,.92)",
-      errorBorder: dark ? "rgba(170,84,84,.34)" : "rgba(215,165,165,.5)",
-      errorText: dark ? "#efaaaa" : "#9d3a3a",
-    }),
-    [dark],
-  );
+      errorBg: base.errorBg,
+      errorBorder: base.errorBd,
+      errorText: base.errorText,
+    };
+  }, [dark]);
 
   const hasChanges =
     form.full_name !== (profile?.full_name ?? "") ||
     form.profile_picture_url !== (profile?.profile_picture_url ?? "");
+  const profileStrength = [
+    Boolean(form.full_name.trim()),
+    Boolean(form.profile_picture_url.trim()),
+    Boolean(profile?.export_settings?.subtitle_style?.preset),
+  ].filter(Boolean).length;
+  const avatarPreview = useMemo(() => {
+    const candidate = form.profile_picture_url.trim() || profile?.profile_picture_url || null;
+    return isRenderableProfileImage(candidate) ? candidate : null;
+  }, [form.profile_picture_url, profile?.profile_picture_url]);
 
   const handleSaveProfile = async () => {
     if (!profile || saving || !hasChanges) {
@@ -236,6 +305,53 @@ export default function ProfilePage() {
     }
 
     setPasswordLoading(false);
+  };
+
+  const handleAvatarChange = (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setFeedback({
+        tone: "error",
+        message: "Please choose an image file for your profile photo.",
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setFeedback({
+        tone: "error",
+        message: "Profile photo must be smaller than 5 MB.",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) {
+        setFeedback({
+          tone: "error",
+          message: "We could not read that image. Please try another one.",
+        });
+        return;
+      }
+
+      setForm((current) => ({
+        ...current,
+        profile_picture_url: result,
+      }));
+      setFeedback(null);
+    };
+    reader.onerror = () => {
+      setFeedback({
+        tone: "error",
+        message: "We could not read that image. Please try another one.",
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   if (loading || authLoading) {
@@ -374,12 +490,13 @@ export default function ProfilePage() {
         </header>
 
         <section
-          className="a-up"
+          className="a-up ic-premium-card"
           style={{
-            borderRadius: 30,
+            borderRadius: 34,
             border: `1px solid ${palette.border}`,
-            background: palette.shell,
-            padding: isMobile ? "24px 20px" : "30px 32px",
+            background: `linear-gradient(180deg, ${palette.shell}, ${palette.card})`,
+            padding: isMobile ? "24px 20px" : "34px 36px",
+            boxShadow: dark ? "0 26px 60px rgba(0,0,0,.24)" : "0 26px 60px rgba(14,55,78,.10)",
           }}
         >
           <div
@@ -418,12 +535,39 @@ export default function ProfilePage() {
                   letterSpacing: "-.04em",
                 }}
               >
-                Keep your creator identity and account details in sync.
+                Shape how your creator identity appears across the whole studio.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: palette.muted, maxWidth: 720 }}>
-                Update how your profile appears across the dashboard and keep your
-                default export preferences visible while you manage account security.
+                Tune your public-facing profile, keep export defaults visible, and manage account security without leaving the product context.
               </p>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
+                  gap: 12,
+                  marginTop: 18,
+                }}
+              >
+                <SignalCard
+                  label="Profile state"
+                  value={profileStrength >= 3 ? "Studio-ready" : profileStrength === 2 ? "Nearly complete" : "Needs setup"}
+                  hint="A clearer identity helps every page feel more personal and easier to scan."
+                  palette={palette}
+                />
+                <SignalCard
+                  label="Display name"
+                  value={form.full_name.trim() || "Add your name"}
+                  hint="This is the name shown across profile and workspace areas."
+                  palette={palette}
+                />
+                <SignalCard
+                  label="Export style"
+                  value={formatExportMode(profile?.export_settings.export_mode ?? "landscape")}
+                  hint="Your default export mode stays visible while editing your account."
+                  palette={palette}
+                />
+              </div>
             </div>
 
             <div
@@ -480,7 +624,7 @@ export default function ProfilePage() {
         >
           <main style={{ display: "grid", gap: 18 }}>
             <section
-              className="a-up"
+              className="a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,
@@ -488,11 +632,11 @@ export default function ProfilePage() {
                 padding: 20,
               }}
             >
-              {profile ? <UserProfileCard profile={profile} /> : null}
+              {profile ? <UserProfileCard profile={profile} dark={dark} /> : null}
             </section>
 
             <section
-              className="a-up"
+              className="a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,
@@ -502,6 +646,21 @@ export default function ProfilePage() {
             >
               <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted, marginBottom: 14 }}>
                 Profile Details
+              </div>
+
+              <div
+                style={{
+                  borderRadius: 18,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: palette.chip,
+                  padding: "14px 16px",
+                  marginBottom: 14,
+                  color: palette.muted,
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                }}
+              >
+                Fill in only what matters here. The display name and image help the studio feel clearer, while your email stays fixed for account identity.
               </div>
 
               <div style={{ display: "grid", gap: 14 }}>
@@ -522,29 +681,128 @@ export default function ProfilePage() {
                       outline: "none",
                     }}
                   />
+                  <span style={{ fontSize: 12, color: palette.muted, lineHeight: 1.6 }}>
+                    Use the name you want shown across your workspace and profile.
+                  </span>
                 </label>
 
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>Profile image URL</span>
-                  <input
-                    value={form.profile_picture_url}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        profile_picture_url: event.target.value,
-                      }))
-                    }
-                    placeholder="https://..."
+                <div style={{ display: "grid", gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Profile photo</span>
+                  <div
                     style={{
-                      borderRadius: 16,
+                      borderRadius: 18,
                       border: `1px solid ${palette.subBorder}`,
                       background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
-                      color: palette.text,
-                      padding: "14px 16px",
-                      outline: "none",
+                      padding: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 14,
+                      flexWrap: "wrap",
                     }}
-                  />
-                </label>
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                      {avatarPreview ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={avatarPreview}
+                          alt="Avatar preview"
+                          style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 20,
+                            objectFit: "cover",
+                            border: `1px solid ${palette.subBorder}`,
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 20,
+                            border: `1px solid ${palette.subBorder}`,
+                            background: palette.chip,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: palette.accent,
+                          }}
+                        >
+                          <Camera size={24} />
+                        </div>
+                      )}
+
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: palette.text, marginBottom: 4 }}>
+                          {avatarPreview ? "Photo ready" : "No photo selected"}
+                        </div>
+                        <div style={{ fontSize: 12, color: palette.muted, lineHeight: 1.6, maxWidth: 320 }}>
+                          Choose an image directly and we will use it as your profile photo instead of asking for a link.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={(event) => handleAvatarChange(event.target.files?.[0] ?? null)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          borderRadius: 999,
+                          border: "none",
+                          background: `linear-gradient(135deg, ${palette.accent}, ${palette.accentLight})`,
+                          color: "#fff",
+                          padding: "11px 16px",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <Camera size={15} />
+                        Choose photo
+                      </button>
+                      {form.profile_picture_url.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((current) => ({
+                              ...current,
+                              profile_picture_url: "",
+                            }))
+                          }
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 999,
+                            border: `1px solid ${palette.subBorder}`,
+                            background: palette.card,
+                            color: palette.text,
+                            padding: "11px 16px",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Remove photo
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 12, color: palette.muted, lineHeight: 1.6 }}>
+                    Best result: use a square photo so it looks clean on profile cards and account areas.
+                  </span>
+                </div>
 
                 <div
                   style={{
@@ -565,7 +823,46 @@ export default function ProfilePage() {
 
           <aside style={{ display: "grid", gap: 18 }}>
             <section
-              className="a-up"
+              className="a-up ic-premium-card"
+              style={{
+                borderRadius: 24,
+                background: palette.card,
+                border: `1px solid ${palette.border}`,
+                padding: 20,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <Palette size={18} color={palette.accent} />
+                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
+                  What changes here
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {[
+                  "Display name improves recognition across the studio.",
+                  "Avatar helps profile and account views feel more polished.",
+                  "Security stays separate so account changes remain easy to understand.",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      borderRadius: 16,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: palette.chip,
+                      padding: "11px 12px",
+                      fontSize: 13,
+                      lineHeight: 1.65,
+                      color: palette.muted,
+                    }}
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section
+              className="a-up ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: palette.card,
@@ -578,6 +875,21 @@ export default function ProfilePage() {
                 <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
                   Security
                 </div>
+              </div>
+
+              <div
+                style={{
+                  borderRadius: 16,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: palette.chip,
+                  padding: "12px 14px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                  color: palette.muted,
+                }}
+              >
+                Choose a password with at least 8 characters, including letters and numbers, so the message stays clear and you know exactly what is required.
               </div>
 
               {passwordFeedback ? (
@@ -648,6 +960,25 @@ export default function ProfilePage() {
                   {passwordLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                   {passwordLoading ? "Updating..." : "Update password"}
                 </button>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  borderRadius: 16,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
+                  padding: "12px 14px",
+                  fontSize: 12,
+                  lineHeight: 1.65,
+                  color: palette.muted,
+                }}
+              >
+                <Sparkles size={15} color={palette.accent} />
+                Password changes stay in this panel so profile edits and security tasks never get mixed together.
               </div>
             </section>
           </aside>

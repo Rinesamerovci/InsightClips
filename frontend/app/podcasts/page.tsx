@@ -28,37 +28,9 @@ import {
   type PodcastAnalyticsSummary,
   type PodcastsResponse,
 } from "@/lib/api";
+import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
-const T = {
-  dark: {
-    bg: "#070d06",
-    shell: "rgba(9,14,8,.88)",
-    card: "rgba(13,20,11,.88)",
-    cardAlt: "rgba(16,24,13,.94)",
-    border: "rgba(60,105,40,.34)",
-    borderSub: "rgba(60,105,40,.18)",
-    text: "#dff0d8",
-    textSub: "rgba(163,210,128,.68)",
-    textFaint: "rgba(100,148,72,.42)",
-    accent: "#5a9e3a",
-    accentLt: "#7ab55c",
-    accentGlow: "rgba(90,158,58,.22)",
-  },
-  light: {
-    bg: "#eef6e9",
-    shell: "rgba(244,249,239,.94)",
-    card: "rgba(255,255,255,.92)",
-    cardAlt: "rgba(247,251,242,.95)",
-    border: "rgba(140,200,110,.38)",
-    borderSub: "rgba(140,200,110,.22)",
-    text: "#142210",
-    textSub: "rgba(55,100,35,.66)",
-    textFaint: "rgba(100,148,72,.52)",
-    accent: "#4a8e2a",
-    accentLt: "#6aa845",
-    accentGlow: "rgba(90,158,58,.18)",
-  },
-};
+const T = studioTheme;
 
 function fmtDur(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -95,7 +67,7 @@ export default function PodcastsPage() {
   const isMobile = viewportWidth < 900;
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (savedTheme) setDark(savedTheme === "dark");
     const handleResize = () => setViewportWidth(window.innerWidth);
     handleResize();
@@ -106,7 +78,7 @@ export default function PodcastsPage() {
 
   useEffect(() => {
     if (!mounted) return;
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
 
   useEffect(() => {
@@ -481,21 +453,6 @@ export default function PodcastsPage() {
                   Peak score {analysisByPodcast[strongestPodcast.id]?.highest_score.toFixed(1)} with{" "}
                   {analysisByPodcast[strongestPodcast.id]?.total_scored_segments ?? 0} scored segments.
                 </div>
-                <Link
-                  href={`/clips?podcastId=${strongestPodcast.id}`}
-                  className="pill-btn"
-                  style={{
-                    width: "fit-content",
-                    borderRadius: 999,
-                    padding: "11px 15px",
-                    background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                    color: "#fff",
-                    textDecoration: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  Open best clips
-                </Link>
               </div>
             ) : (
               <div style={{ color: t.textSub, lineHeight: 1.8 }}>
@@ -604,7 +561,7 @@ export default function PodcastsPage() {
               <Loader2 size={24} className="animate-spin" />
             </div>
           ) : filtered.length === 0 ? (
-            <div style={{ borderRadius: 22, border: `1px dashed ${t.border}`, padding: "54px 24px", textAlign: "center", color: t.textSub }}>
+            <div className="ic-empty-state" style={{ borderRadius: 22, border: `1px dashed ${t.border}`, padding: "54px 24px", textAlign: "center", color: t.textSub }}>
               <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
               <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text, margin: 0 }}>No podcasts match this view</h2>
               <p style={{ marginTop: 10, lineHeight: 1.8 }}>
@@ -619,7 +576,7 @@ export default function PodcastsPage() {
                     setQuery("");
                     setFilter("all");
                   }}
-                  className="pill-btn"
+                  className="pill-btn ic-action"
                   style={{
                     marginTop: 18,
                     border: "none",
@@ -636,7 +593,7 @@ export default function PodcastsPage() {
               ) : null}
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: 16 }}>
               {filtered.map((podcast) => (
                 <PodcastCard
                   key={podcast.id}
@@ -645,6 +602,7 @@ export default function PodcastsPage() {
                   analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
                   onAnalyze={() => void runAnalysis(podcast.id)}
                   generatedClipsCount={analyticsByPodcastId[podcast.id]?.total_clips ?? 0}
+                  dark={dark}
                 />
               ))}
             </div>

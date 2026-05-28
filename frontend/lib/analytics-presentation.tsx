@@ -155,6 +155,7 @@ export function AnalyticsMetricsDisplay({
       </div>
 
       <section
+        className="ic-premium-card"
         style={{
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
@@ -270,6 +271,59 @@ export function AnalyticsMetricsDisplay({
           <div style={{ color: theme.textSub, lineHeight: 1.8 }}>
             No top clips available yet for this podcast.
           </div>
+        ) : isMobile ? (
+          <div style={{ display: "grid", gap: 10 }}>
+            {metrics.top_clips.map((clip) => (
+              <div
+                key={clip.clip_id}
+                style={{
+                  borderRadius: 16,
+                  border: `1px solid ${theme.borderSub}`,
+                  background: theme.cardAlt,
+                  padding: 14,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800 }}>Clip {clip.clip_number}</div>
+                    <div style={{ marginTop: 5, color: theme.textSub, lineHeight: 1.6, overflowWrap: "anywhere" }}>
+                      {clip.title}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      flexShrink: 0,
+                      borderRadius: 999,
+                      padding: "6px 9px",
+                      background: clip.published ? theme.chip : theme.card,
+                      border: `1px solid ${clip.published ? theme.accent : theme.borderSub}`,
+                      color: clip.published ? theme.accent : theme.textSub,
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}
+                  >
+                    {clip.published ? "Published" : "Private"}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 12 }}>
+                  {[
+                    { label: "Views", value: clip.views },
+                    { label: "Downloads", value: clip.downloads },
+                    { label: "Trend", value: formatAnalyticsChange(clip.click_trend), tone: clip.click_trend >= 0 ? theme.accent : theme.errorText },
+                  ].map((item) => (
+                    <div key={item.label} style={{ borderRadius: 12, border: `1px solid ${theme.borderSub}`, padding: "9px 8px" }}>
+                      <div style={{ fontSize: 9, letterSpacing: ".14em", textTransform: "uppercase", color: theme.textFaint, marginBottom: 4 }}>
+                        {item.label}
+                      </div>
+                      <div style={{ fontWeight: 800, color: item.tone ?? theme.text }}>
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
@@ -361,6 +415,7 @@ function MetricPanel({
 }) {
   return (
     <div
+      className="ic-premium-card"
       style={{
         borderRadius: 24,
         background: theme.card,

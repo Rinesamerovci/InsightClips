@@ -712,7 +712,7 @@ function ClipsPageContent() {
     if (clips.length > 0) {
       setWorkspaceView("results");
     }
-  }, [clips.length]);
+  }, [clips]);
 
   const syncClipEverywhere = (
     clipId: string,
@@ -816,7 +816,11 @@ function ClipsPageContent() {
 
     setGenerating(true);
     setError("");
-    setActionFeedback(null);
+    setActionFeedback({
+      tone: "info",
+      message:
+        "Rendering clips now. This can take a few minutes while the video files are being created.",
+    });
     let token: string | null = null;
     try {
       token = backendToken ?? (await syncBackendSession());
@@ -1589,8 +1593,14 @@ function ClipsPageContent() {
 
                 <button
                   type="button"
-                  onClick={() => void handleGenerateClips()}
-                  disabled={!selectedPodcastId || generating || loadingClips || clips.length > 0}
+                  onClick={() => {
+                    if (clips.length > 0) {
+                      setWorkspaceView("results");
+                      return;
+                    }
+                    void handleGenerateClips();
+                  }}
+                  disabled={!selectedPodcastId || generating || loadingClips}
                   className="ic-action"
                   style={{
                     border: "none",
@@ -1602,13 +1612,13 @@ function ClipsPageContent() {
                     alignItems: "center",
                     gap: 10,
                     fontWeight: 700,
-                    cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
-                    opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                    cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
+                    opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
                     boxShadow: `0 14px 30px ${t.accentGlow}`,
                   }}
                 >
-                  {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                  {generating ? "Generating clips..." : clips.length > 0 ? "Clips already generated" : "Generate clips"}
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                  {generating ? "Rendering clips..." : clips.length > 0 ? "View generated clips" : "Generate clips"}
                 </button>
               </div>
 
@@ -2364,13 +2374,23 @@ function ClipsPageContent() {
                     color: t.textSub,
                   }}
                 >
-                  <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
+                  {generating ? (
+                    <Loader2 size={32} className="animate-spin" style={{ margin: "0 auto 12px" }} />
+                  ) : (
+                    <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
+                  )}
                   <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text }}>
-                    {clips.length === 0 ? "No generated clips yet" : "No clips match this search"}
+                    {generating
+                      ? "Rendering clips..."
+                      : clips.length === 0
+                        ? "No generated clips yet"
+                        : "No clips match this search"}
                   </h3>
                   <p style={{ marginTop: 10, lineHeight: 1.8 }}>
-                    {clips.length === 0
-                      ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, topic focus, and subtitle behavior first."
+                    {generating
+                      ? "The backend is creating the MP4 files now. The first ready clips will appear here automatically when rendering finishes."
+                      : clips.length === 0
+                        ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, topic focus, and subtitle behavior first."
                       : "Try another search or filter to surface different clip candidates."}
                   </p>
                   {clips.length > 0 && activeSearch ? (
@@ -2420,7 +2440,7 @@ function ClipsPageContent() {
                       }}
                     >
                       {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                      Generate now
+                      {generating ? "Rendering..." : "Generate now"}
                     </button>
                   ) : null}
                 </div>
@@ -3101,16 +3121,26 @@ function ClipsPageContent() {
                       margin: 0,
                     }}
                   >
-                    Results stay out of the way until you need them
+                    {generating ? "Rendering clips now" : "Results stay out of the way until you need them"}
                   </h2>
                   <p style={{ marginTop: 12, fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 720 }}>
-                    Generate clips first, then switch to the results view for previews, planning, publishing, and download actions. This keeps the main screen cleaner while you set things up.
+                    {generating
+                      ? "The backend is creating MP4 files with ffmpeg. This can take a few minutes, and the ready clips will appear in Results as soon as they are saved."
+                      : clips.length > 0
+                      ? "Generated clips are ready. Open the results view for previews, planning, publishing, and download actions."
+                      : "Generate clips first, then switch to the results view for previews, planning, publishing, and download actions. This keeps the main screen cleaner while you set things up."}
                   </p>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
                     <button
                       type="button"
-                      onClick={() => void handleGenerateClips()}
-                      disabled={!selectedPodcastId || generating || loadingClips || clips.length > 0}
+                      onClick={() => {
+                        if (clips.length > 0) {
+                          setWorkspaceView("results");
+                          return;
+                        }
+                        void handleGenerateClips();
+                      }}
+                      disabled={!selectedPodcastId || generating || loadingClips}
                       style={{
                         border: "none",
                         borderRadius: 999,
@@ -3121,12 +3151,12 @@ function ClipsPageContent() {
                         alignItems: "center",
                         gap: 8,
                         fontWeight: 700,
-                        cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
-                        opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                        cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
+                        opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
                       }}
                     >
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                      {generating ? "Generating clips..." : "Generate clips"}
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                      {generating ? "Rendering clips..." : clips.length > 0 ? "View generated clips" : "Generate clips"}
                     </button>
                     <button
                       type="button"

@@ -68,45 +68,9 @@ import {
   formatExportMode,
   normalizeExportSettings,
 } from "@/lib/subtitle-style";
+import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
-const T = {
-  dark: {
-    bg: "#070d06",
-    shell: "rgba(9,14,8,.88)",
-    card: "rgba(13,20,11,.88)",
-    cardAlt: "rgba(16,24,13,.95)",
-    border: "rgba(60,105,40,.34)",
-    borderSub: "rgba(60,105,40,.18)",
-    text: "#dff0d8",
-    textSub: "rgba(163,210,128,.68)",
-    textFaint: "rgba(100,148,72,.42)",
-    accent: "#5a9e3a",
-    accentLt: "#7ab55c",
-    accentGlow: "rgba(90,158,58,.22)",
-    chip: "rgba(90,158,58,.12)",
-    errorBg: "rgba(82,24,24,.72)",
-    errorBd: "rgba(170,84,84,.34)",
-    errorText: "#efaaaa",
-  },
-  light: {
-    bg: "#eef6e9",
-    shell: "rgba(244,249,239,.94)",
-    card: "rgba(255,255,255,.92)",
-    cardAlt: "rgba(247,251,242,.95)",
-    border: "rgba(140,200,110,.38)",
-    borderSub: "rgba(140,200,110,.22)",
-    text: "#142210",
-    textSub: "rgba(55,100,35,.66)",
-    textFaint: "rgba(100,148,72,.52)",
-    accent: "#4a8e2a",
-    accentLt: "#6aa845",
-    accentGlow: "rgba(90,158,58,.18)",
-    chip: "rgba(90,158,58,.08)",
-    errorBg: "rgba(255,238,238,.88)",
-    errorBd: "rgba(215,165,165,.5)",
-    errorText: "#9d3a3a",
-  },
-};
+const T = studioTheme;
 
 const FILTERS: Array<{ value: ClipStatusFilter; label: string }> = [
   { value: "all", label: "All clips" },
@@ -146,6 +110,8 @@ const VISUAL_OUTPUT_MODES: Array<{
     badge: "Portrait",
   },
 ];
+
+const EMPTY_CALENDAR_SUGGESTIONS: ContentCalendarSuggestion[] = [];
 
 function formatTime(seconds: number): string {
   const totalSeconds = Math.max(0, Math.round(seconds));
@@ -343,6 +309,24 @@ function getOverlayState(overlay?: ClipOverlay | null): {
   };
 }
 
+function formatGenerationFailureMessage(error: unknown): string {
+  const baseMessage =
+    error instanceof Error ? error.message : "Clip generation failed.";
+  const normalized = baseMessage.toLowerCase();
+
+  if (normalized.includes("topic_focus")) {
+    return "Topic focus only supports letters, numbers, spaces, and simple punctuation.";
+  }
+  if (normalized.includes("ffmpeg")) {
+    return `${baseMessage} Try Quick setup first with fewer clips, 15s or 30s length, and Original People mode.`;
+  }
+  if (normalized.includes("no clips could be generated")) {
+    return `${baseMessage} Try fewer clips, a shorter target length, or a simpler visual mode before retrying.`;
+  }
+
+  return baseMessage;
+}
+
 function ClipsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -375,6 +359,8 @@ function ClipsPageContent() {
     tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<"setup" | "results">("setup");
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [generationTemplateId, setGenerationTemplateId] =
     useState<GenerationTemplateId>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
@@ -407,7 +393,7 @@ function ClipsPageContent() {
     () => mergeOverlayMetadata(recommendations, overlayByClipId),
     [overlayByClipId, recommendations],
   );
-  const calendarSuggestions = contentCalendar?.suggestions ?? [];
+  const calendarSuggestions = contentCalendar?.suggestions ?? EMPTY_CALENDAR_SUGGESTIONS;
   const contentCalendarByClipId = useMemo(() => {
     const next = new Map<string, ContentCalendarSuggestion[]>();
     for (const suggestion of calendarSuggestions) {
@@ -446,7 +432,7 @@ function ClipsPageContent() {
     activeGenerationExportSettings.subtitle_style ?? buildSubtitleStyleFromPreset("classic");
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("insightclips-theme");
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (savedTheme) {
       setDark(savedTheme === "dark");
     }
@@ -463,7 +449,7 @@ function ClipsPageContent() {
       return;
     }
 
-    window.localStorage.setItem("insightclips-theme", dark ? "dark" : "light");
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
 
   useEffect(() => {
@@ -593,6 +579,53 @@ function ClipsPageContent() {
   }, [authLoading, backendToken, router, selectedPodcastId, syncBackendSession]);
 
   useEffect(() => {
+    if (!generating || !selectedPodcastId || authLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshGeneratedClips = async () => {
+      try {
+        const token = backendToken ?? (await syncBackendSession());
+        if (!token || cancelled) {
+          return;
+        }
+
+        const result = await getClips(selectedPodcastId, token);
+        if (cancelled || result.clips.length === 0) {
+          return;
+        }
+
+        setClips(result.clips);
+        if (selectedPodcast) {
+          setSearchResults(toDiscoveryClips(result.clips, selectedPodcast));
+        }
+        setWorkspaceView("results");
+      } catch {
+        // The main generation request still owns the final error message.
+      }
+    };
+
+    void refreshGeneratedClips();
+    const intervalId = window.setInterval(() => {
+      void refreshGeneratedClips();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    authLoading,
+    backendToken,
+    generating,
+    selectedPodcast,
+    selectedPodcastId,
+    syncBackendSession,
+  ]);
+
+  useEffect(() => {
     if (!selectedPodcastId || !selectedPodcast) {
       return;
     }
@@ -669,6 +702,17 @@ function ClipsPageContent() {
 
     setGenerationExportSettings(normalizeExportSettings(selectedPodcast.export_settings));
   }, [selectedPodcast]);
+
+  useEffect(() => {
+    setWorkspaceView("setup");
+    setShowAdvancedControls(false);
+  }, [selectedPodcastId]);
+
+  useEffect(() => {
+    if (clips.length > 0) {
+      setWorkspaceView("results");
+    }
+  }, [clips.length]);
 
   const syncClipEverywhere = (
     clipId: string,
@@ -773,8 +817,9 @@ function ClipsPageContent() {
     setGenerating(true);
     setError("");
     setActionFeedback(null);
+    let token: string | null = null;
     try {
-      const token = backendToken ?? (await syncBackendSession());
+      token = backendToken ?? (await syncBackendSession());
       if (!token) {
         router.replace("/login");
         return;
@@ -807,16 +852,33 @@ function ClipsPageContent() {
       if (calendar) {
         setContentCalendar(calendar);
       }
+      setWorkspaceView("results");
       setActionFeedback({
         tone: "success",
         message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast?.title ?? "this podcast"} using ${generationSettings.clip_duration_seconds}s targets.`,
       });
     } catch (generationError) {
-      setError(
-        generationError instanceof Error
-          ? generationError.message
-          : "Clip generation failed.",
-      );
+      if (token) {
+        const partialResult = await getClips(selectedPodcastId, token).catch(() => null);
+        if (partialResult?.clips.length) {
+          setClips(partialResult.clips);
+          setSearchResults(
+            selectedPodcast ? toDiscoveryClips(partialResult.clips, selectedPodcast) : [],
+          );
+          setWorkspaceView("results");
+          setActionFeedback({
+            tone: "info",
+            message: `Showing ${partialResult.clips.length} clip${partialResult.clips.length === 1 ? "" : "s"} that finished rendering. The rest may still need another generation run.`,
+          });
+          return;
+        }
+      }
+      const message = formatGenerationFailureMessage(generationError);
+      setError(message);
+      setActionFeedback({
+        tone: "error",
+        message,
+      });
     } finally {
       setGenerating(false);
     }
@@ -1193,7 +1255,7 @@ function ClipsPageContent() {
                 }}
               >
                 <Clapperboard size={14} />
-                Clip Discovery
+                Clip Studio
               </div>
               <h1
                 style={{
@@ -1205,10 +1267,10 @@ function ClipsPageContent() {
                   letterSpacing: "-.04em",
                 }}
               >
-                Search, publish, and ship your strongest moments.
+                Generate, shape, and publish your strongest moments.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
-                This board brings clip discovery, recommendation signals, and publish controls into one final demo workflow.
+                Upload is only the intake step. This workspace is where you fine-tune clip behavior, subtitle styling, visual direction, and final publishing decisions.
               </p>
             </div>
 
@@ -1312,6 +1374,7 @@ function ClipsPageContent() {
             }}
           >
             <section
+              className="ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -1341,6 +1404,7 @@ function ClipsPageContent() {
                         key={podcast.id}
                         type="button"
                         onClick={() => setSelectedPodcastId(podcast.id)}
+                        className="ic-premium-card"
                         style={{
                           textAlign: "left",
                           borderRadius: 18,
@@ -1365,7 +1429,7 @@ function ClipsPageContent() {
             </section>
 
             <section
-              className="lift-card"
+              className="lift-card ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -1417,6 +1481,7 @@ function ClipsPageContent() {
                     return (
                       <article
                         key={clip.id}
+                        className="ic-premium-card"
                         style={{
                           borderRadius: 18,
                           border: `1px solid ${t.borderSub}`,
@@ -1490,6 +1555,7 @@ function ClipsPageContent() {
             }}
           >
             <section
+              className="ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -1509,7 +1575,7 @@ function ClipsPageContent() {
               >
                 <div>
                   <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                    Selected Podcast
+                    Clip workspace
                   </div>
                   <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.08, margin: 0 }}>
                     {selectedPodcast?.title ?? "Choose a podcast"}
@@ -1525,6 +1591,7 @@ function ClipsPageContent() {
                   type="button"
                   onClick={() => void handleGenerateClips()}
                   disabled={!selectedPodcastId || generating || loadingClips || clips.length > 0}
+                  className="ic-action"
                   style={{
                     border: "none",
                     borderRadius: 18,
@@ -1545,6 +1612,106 @@ function ClipsPageContent() {
                 </button>
               </div>
 
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: viewportWidth < 900 ? "1fr" : "repeat(3,minmax(0,1fr))",
+                  gap: 10,
+                  marginBottom: 18,
+                }}
+              >
+                {[
+                  {
+                    label: "Generation controls",
+                    detail: "Set clip length, topic focus, and subtitle behavior before you render.",
+                  },
+                  {
+                    label: "Creative polish",
+                    detail: "Adjust the visual output mode and carry a cleaner subtitle style into the final clips.",
+                  },
+                  {
+                    label: "Publish handoff",
+                    detail: "Move from generation to recommendations, planning, export, and publishing in one place.",
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    style={{
+                      borderRadius: 18,
+                      border: `1px solid ${t.borderSub}`,
+                      background: t.cardAlt,
+                      padding: "14px 15px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: ".18em",
+                        textTransform: "uppercase",
+                        color: t.accentLt,
+                        fontWeight: 700,
+                        marginBottom: 6,
+                      }}
+                    >
+                      {item.label}
+                    </div>
+                    <div style={{ fontSize: 12, lineHeight: 1.65, color: t.textSub }}>{item.detail}</div>
+                  </div>
+                ))}
+              </div>
+
+              <section
+                style={{
+                  borderRadius: 20,
+                  border: `1px solid ${t.borderSub}`,
+                  background: t.cardAlt,
+                  padding: "14px 15px",
+                  marginBottom: 18,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                    Workspace view
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                    Keep setup light first, then switch to results when you want previews, planning, and publishing.
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([
+                    { id: "setup", label: "Quick setup" },
+                    { id: "results", label: "Results" },
+                  ] as const).map((item) => {
+                    const active = workspaceView === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setWorkspaceView(item.id)}
+                        style={{
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "10px 14px",
+                          background: active
+                            ? `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`
+                            : t.card,
+                          color: active ? "#fff" : t.textSub,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
               <GenerationSettingsPanel
                 dark={dark}
                 templateId={generationTemplateId}
@@ -1561,6 +1728,52 @@ function ClipsPageContent() {
                 }}
               />
 
+              <section
+                style={{
+                  borderRadius: 20,
+                  border: `1px solid ${t.borderSub}`,
+                  background: t.cardAlt,
+                  padding: "14px 15px",
+                  marginBottom: 16,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                      Advanced controls
+                    </div>
+                    <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                      Open visual mode and subtitle styling only when you need deeper polishing.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedControls((current) => !current)}
+                    style={{
+                      border: `1px solid ${t.borderSub}`,
+                      borderRadius: 999,
+                      padding: "10px 14px",
+                      background: showAdvancedControls ? t.chip : t.card,
+                      color: showAdvancedControls ? t.accent : t.textSub,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {showAdvancedControls ? "Hide advanced" : "Open advanced"}
+                  </button>
+                </div>
+              </section>
+
+              {showAdvancedControls ? (
+                <div style={{ display: "grid", gap: 16 }}>
               <section
                 className="glass a2"
                 style={{
@@ -1627,7 +1840,7 @@ function ClipsPageContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))",
                     gap: 10,
                   }}
                 >
@@ -1731,7 +1944,11 @@ function ClipsPageContent() {
                   hi2: t.accentLt,
                 }}
               />
+                </div>
+              ) : null}
 
+              {workspaceView === "results" ? (
+                <div style={{ display: "grid", gap: 18 }}>
               <section
                 style={{
                   borderRadius: 24,
@@ -1784,7 +2001,9 @@ function ClipsPageContent() {
                       border: `1px solid ${t.borderSub}`,
                       background: t.cardAlt,
                       padding: "14px 16px",
-                      minWidth: 220,
+                      minWidth: 0,
+                      width: "100%",
+                      maxWidth: 320,
                     }}
                   >
                     <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
@@ -1804,7 +2023,7 @@ function ClipsPageContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
                     gap: 10,
                     marginBottom: 16,
                   }}
@@ -1898,7 +2117,7 @@ function ClipsPageContent() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
                       gap: 12,
                     }}
                   >
@@ -2014,6 +2233,7 @@ function ClipsPageContent() {
                 }}
               >
                 <div
+                  className="ic-premium-card"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -2046,8 +2266,9 @@ function ClipsPageContent() {
                       key={option.value}
                       type="button"
                       onClick={() => setFilter(option.value)}
+                      className={filter === option.value ? "ic-action" : "ic-premium-card"}
                       style={{
-                        border: "none",
+                        border: filter === option.value ? "none" : `1px solid ${t.borderSub}`,
                         borderRadius: 999,
                         padding: "10px 14px",
                         background:
@@ -2069,6 +2290,7 @@ function ClipsPageContent() {
                         setSearchQuery("");
                         setFilter("all");
                       }}
+                      className="ic-premium-card"
                       style={{
                         border: `1px solid ${t.borderSub}`,
                         borderRadius: 999,
@@ -2099,9 +2321,9 @@ function ClipsPageContent() {
                       : "Browsing the full generated clip list."}
                 </span>
               </div>
-            </section>
 
             <section
+              className="ic-premium-card"
               style={{
                 borderRadius: 24,
                 background: t.card,
@@ -2110,9 +2332,22 @@ function ClipsPageContent() {
               }}
             >
               {loadingClips ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub, padding: "32px 0" }}>
-                  <Loader2 size={20} className="animate-spin" />
-                  Loading generated clips...
+                <div style={{ display: "grid", gap: 14 }}>
+                  {[0, 1, 2].map((item) => (
+                    <div
+                      key={item}
+                      style={{
+                        borderRadius: 20,
+                        border: `1px solid ${t.borderSub}`,
+                        background: t.cardAlt,
+                        padding: 16,
+                      }}
+                    >
+                      <div className="ic-skeleton" style={{ height: 170, marginBottom: 14 }} />
+                      <div className="ic-skeleton" style={{ height: 18, width: "62%", marginBottom: 10 }} />
+                      <div className="ic-skeleton" style={{ height: 12, width: "86%" }} />
+                    </div>
+                  ))}
                 </div>
               ) : !selectedPodcast ? (
                 <div style={{ color: t.textSub, lineHeight: 1.8 }}>
@@ -2120,6 +2355,7 @@ function ClipsPageContent() {
                 </div>
               ) : visibleClips.length === 0 ? (
                 <div
+                  className="ic-empty-state"
                   style={{
                     borderRadius: 22,
                     border: `1px dashed ${t.border}`,
@@ -2144,6 +2380,7 @@ function ClipsPageContent() {
                         setSearchQuery("");
                         setFilter("all");
                       }}
+                      className="ic-action"
                       style={{
                         marginTop: 18,
                         border: `1px solid ${t.borderSub}`,
@@ -2166,6 +2403,7 @@ function ClipsPageContent() {
                       type="button"
                       onClick={() => void handleGenerateClips()}
                       disabled={generating}
+                      className="ic-action"
                       style={{
                         marginTop: 18,
                         border: "none",
@@ -2190,7 +2428,7 @@ function ClipsPageContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
                     gap: 16,
                     alignItems: "start",
                   }}
@@ -2247,7 +2485,7 @@ function ClipsPageContent() {
                     return (
                       <article
                         key={clip.id}
-                        className="lift-card"
+                        className="lift-card ic-premium-card ic-clip-card"
                         style={{
                           borderRadius: 22,
                           overflow: "hidden",
@@ -2257,11 +2495,12 @@ function ClipsPageContent() {
                         }}
                       >
                         <div
+                          className="ic-clip-media"
                           style={{
                             minHeight: 190,
                             background: dark
-                              ? "linear-gradient(135deg, #152412, #385530)"
-                              : "linear-gradient(135deg, #dfead7, #c9ddbd)",
+                              ? "radial-gradient(circle at top left, rgba(163,208,107,.22), transparent 32%), linear-gradient(135deg, #152412, #385530)"
+                              : "radial-gradient(circle at top left, rgba(255,255,255,.72), transparent 34%), linear-gradient(135deg, #dfead7, #c9ddbd)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -2308,8 +2547,8 @@ function ClipsPageContent() {
                         </div>
 
                         <div style={{ padding: 16 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-                            <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12, alignItems: "flex-start" }}>
+                            <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".18em", color: t.textFaint }}>
                                 {clip.podcast_title} / Clip {clip.clip_number}
                               </div>
@@ -2398,15 +2637,23 @@ function ClipsPageContent() {
                             </div>
                             <div
                               style={{
-                                borderRadius: 999,
+                                borderRadius: 18,
                                 background: t.chip,
                                 color: t.accent,
                                 fontWeight: 700,
-                                padding: "8px 10px",
+                                padding: "9px 10px",
                                 height: "fit-content",
+                                minWidth: 72,
+                                textAlign: "center",
                               }}
                             >
-                              {clip.virality_score.toFixed(1)}
+                              <div style={{ fontSize: 18, lineHeight: 1 }}>{clip.virality_score.toFixed(1)}</div>
+                              <div style={{ marginTop: 5 }} className="ic-score-bar">
+                                <div
+                                  className="ic-score-fill"
+                                  style={{ width: `${Math.min(100, Math.max(0, clip.virality_score))}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -2441,7 +2688,7 @@ function ClipsPageContent() {
                           <div
                             style={{
                               display: "grid",
-                              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
                               gap: 12,
                               marginTop: 14,
                             }}
@@ -2703,6 +2950,7 @@ function ClipsPageContent() {
                                       <button
                                         type="button"
                                         onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
+                                        className="ic-premium-card"
                                         style={{
                                           border: `1px solid ${t.borderSub}`,
                                           borderRadius: 999,
@@ -2722,6 +2970,7 @@ function ClipsPageContent() {
                                       <button
                                         type="button"
                                         onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
+                                        className="ic-premium-card"
                                         style={{
                                           border: `1px solid ${t.borderSub}`,
                                           borderRadius: 999,
@@ -2757,6 +3006,7 @@ function ClipsPageContent() {
                                 type="button"
                                 onClick={() => void handleRevoke(clip)}
                                 disabled={isRevoking}
+                                className="ic-premium-card"
                                 style={{
                                   border: `1px solid ${t.border}`,
                                   borderRadius: 14,
@@ -2779,6 +3029,7 @@ function ClipsPageContent() {
                                 type="button"
                                 onClick={() => void handlePublish(clip)}
                                 disabled={isPublishing}
+                                className="ic-action"
                                 style={{
                                   border: "none",
                                   borderRadius: 14,
@@ -2802,6 +3053,7 @@ function ClipsPageContent() {
                               type="button"
                               onClick={() => void handleDownload(clip)}
                               disabled={isDownloading || !clip.published}
+                              className="ic-action"
                               style={{
                                 border: "none",
                                 borderRadius: 14,
@@ -2825,6 +3077,77 @@ function ClipsPageContent() {
                     );
                   })}
                 </div>
+              )}
+            </section>
+                </div>
+              ) : (
+                <section
+                  style={{
+                    borderRadius: 24,
+                    background: t.card,
+                    border: `1px solid ${t.border}`,
+                    padding: 20,
+                  }}
+                >
+                  <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform: "uppercase", color: t.accentLt, fontWeight: 700, marginBottom: 8 }}>
+                    Results workspace
+                  </div>
+                  <h2
+                    style={{
+                      fontFamily: "'DM Serif Display',serif",
+                      fontStyle: "italic",
+                      fontSize: 24,
+                      fontWeight: 400,
+                      margin: 0,
+                    }}
+                  >
+                    Results stay out of the way until you need them
+                  </h2>
+                  <p style={{ marginTop: 12, fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 720 }}>
+                    Generate clips first, then switch to the results view for previews, planning, publishing, and download actions. This keeps the main screen cleaner while you set things up.
+                  </p>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateClips()}
+                      disabled={!selectedPodcastId || generating || loadingClips || clips.length > 0}
+                      style={{
+                        border: "none",
+                        borderRadius: 999,
+                        background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                        color: "#fff",
+                        padding: "12px 18px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontWeight: 700,
+                        cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
+                        opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                      }}
+                    >
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                      {generating ? "Generating clips..." : "Generate clips"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedControls(true)}
+                      style={{
+                        border: `1px solid ${t.borderSub}`,
+                        borderRadius: 999,
+                        background: "transparent",
+                        color: t.textSub,
+                        padding: "12px 16px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Open advanced controls
+                    </button>
+                  </div>
+                </section>
               )}
             </section>
           </main>

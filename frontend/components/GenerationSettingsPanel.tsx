@@ -37,19 +37,19 @@ export default function GenerationSettingsPanel({
 }: GenerationSettingsPanelProps) {
   return (
     <section
-      className="glass a2"
+      className="glass a2 ic-premium-card"
       style={{
         borderRadius: 22,
         border: `1px solid ${palette.border}`,
         background: dark ? "rgba(14,24,11,.88)" : "rgba(255,255,255,.9)",
-        padding: "24px 24px 22px",
+        padding: "20px 20px 18px",
         marginBottom: 16,
       }}
     >
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,240px),1fr))",
           gap: 18,
           alignItems: "start",
         }}
@@ -166,7 +166,7 @@ export default function GenerationSettingsPanel({
             borderRadius: 18,
             border: `1px solid ${palette.subBorder}`,
             background: dark ? "rgba(11,18,9,.92)" : "rgba(247,252,243,.96)",
-            padding: "16px 16px 14px",
+            padding: "14px 14px 13px",
           }}
         >
           <div
@@ -201,7 +201,7 @@ export default function GenerationSettingsPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,180px),1fr))",
           gap: 10,
           marginTop: 18,
           marginBottom: 18,
@@ -322,7 +322,7 @@ export default function GenerationSettingsPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,220px),1fr))",
           gap: 12,
         }}
       >
@@ -349,7 +349,7 @@ export default function GenerationSettingsPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4,minmax(0,1fr))",
+              gridTemplateColumns: "repeat(auto-fit,minmax(58px,1fr))",
               gap: 8,
             }}
           >
@@ -406,7 +406,7 @@ export default function GenerationSettingsPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(5,minmax(0,1fr))",
+              gridTemplateColumns: "repeat(auto-fit,minmax(48px,1fr))",
               gap: 8,
             }}
           >
@@ -556,8 +556,12 @@ export default function GenerationSettingsPanel({
               topic_focus: event.target.value.slice(0, MAX_TOPIC_FOCUS_LENGTH),
             })
           }
+          onKeyDownCapture={(event) => {
+            event.stopPropagation();
+          }}
           placeholder="Example: Prioritize moments about audience growth, retention, or clear tactical advice."
           rows={3}
+          spellCheck={false}
           style={{
             width: "100%",
             resize: "vertical",
@@ -568,6 +572,7 @@ export default function GenerationSettingsPanel({
             padding: "12px 13px",
             fontSize: 13,
             lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
             outline: "none",
           }}
         />

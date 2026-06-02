@@ -30,10 +30,13 @@ type BackendAuthResponse = {
   }
 }
 
+type BackendProfile = BackendAuthResponse['user']
+
 type AuthContextValue = {
   user: SupabaseUser | null
   loading: boolean
   backendToken: string | null
+  profile: BackendProfile | null
   syncBackendSession: () => Promise<string | null>
   signOut: () => Promise<void>
 }
@@ -45,6 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [backendToken, setBackendToken] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : getStoredBackendToken(),
   )
+  const [profile, setProfile] = useState<BackendProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
@@ -56,6 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!session?.access_token) {
       clearBackendToken()
       setBackendToken(null)
+      setProfile(null)
       return null
     }
 
@@ -70,6 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error instanceof ApiRequestError && [401, 403].includes(error.status)) {
         clearBackendToken()
         setBackendToken(null)
+        setProfile(null)
         return null
       }
       if (cachedToken) {
@@ -81,6 +87,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     storeBackendToken(verified.access_token)
     setBackendToken(verified.access_token)
+    setProfile(verified.user)
     return verified.access_token
   }
 
@@ -88,6 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut()
     clearBackendToken()
     setBackendToken(null)
+    setProfile(null)
     setUser(null)
     router.replace('/login')
   }
@@ -117,6 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           } else {
             clearBackendToken()
             setBackendToken(null)
+            setProfile(null)
           }
         }
       }
@@ -136,6 +145,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!session) {
         clearBackendToken()
         setBackendToken(null)
+        setProfile(null)
       }
     })
 
@@ -147,7 +157,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, backendToken, syncBackendSession, signOut }}
+      value={{ user, loading, backendToken, profile, syncBackendSession, signOut }}
     >
       {children}
     </AuthContext.Provider>

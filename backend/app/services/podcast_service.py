@@ -106,6 +106,35 @@ def get_podcast_for_user(podcast_id: str, user_id: str) -> PodcastRecord | None:
     return PodcastRecord.model_validate(_serialize_podcast_row(rows[0])) if rows else None
 
 
+def update_podcast_payment_status_for_user(
+    podcast_id: str,
+    user_id: str,
+    *,
+    payment_status: str,
+    status: str,
+) -> PodcastResponse | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    updated_at = datetime.utcnow().isoformat()
+    (
+        service_supabase.table("podcasts")
+        .update(
+            {
+                "payment_status": payment_status,
+                "status": status,
+                "updated_at": updated_at,
+            }
+        )
+        .eq("id", podcast_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    podcast = get_podcast_for_user(podcast_id, user_id)
+    return PodcastResponse.model_validate(podcast.model_dump()) if podcast is not None else None
+
+
 def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -> PodcastRecord | None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return None

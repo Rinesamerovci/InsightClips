@@ -1888,6 +1888,27 @@ export default function UploadWorkspace({
                       <div style={{ opacity: 0.72, marginTop: 4 }}>Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})</div>
                       <div style={{ opacity: 0.72, marginTop: 4 }}>{selectedAudioFeedback.description}</div>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                        {prep.checkout_required ? (
+                          <Link
+                            href={`/checkout?podcastId=${encodeURIComponent(prep.podcast_id)}&amount=${encodeURIComponent(String(result.price))}&currency=${encodeURIComponent(result.currency)}`}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              borderRadius: 999,
+                              padding: "10px 16px",
+                              background: "#9e8a20",
+                              border: "1px solid rgba(255,255,255,.24)",
+                              color: "#fff",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              textDecoration: "none",
+                            }}
+                          >
+                            <CreditCard size={13} />
+                            Pay & Unlock
+                          </Link>
+                        ) : null}
                         <Link
                           href={`/clips?podcastId=${prep.podcast_id}`}
                           style={{
@@ -1979,26 +2000,50 @@ export default function UploadWorkspace({
                       {preparing ? "Saving..." : `Create ${exportDetails.label.toLowerCase()} record`}
                     </button>
                     {prep ? (
-                      <Link
-                        href={`/clips?podcastId=${prep.podcast_id}`}
-                        className="ic-premium-card"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          borderRadius: 14,
-                          padding: "12px 18px",
-                          border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                          background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
-                          color: text,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textDecoration: "none",
-                        }}
-                      >
-                        <Play size={14} />
-                        Go to clips generation
-                      </Link>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {prep.checkout_required ? (
+                          <Link
+                            href={`/checkout?podcastId=${encodeURIComponent(prep.podcast_id)}&amount=${encodeURIComponent(String(result.price))}&currency=${encodeURIComponent(result.currency)}`}
+                            className="ic-premium-card"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              borderRadius: 14,
+                              padding: "12px 18px",
+                              border: "1px solid rgba(158,138,32,.38)",
+                              background: "#9e8a20",
+                              color: "#fff",
+                              fontSize: 13,
+                              fontWeight: 800,
+                              textDecoration: "none",
+                            }}
+                          >
+                            <CreditCard size={14} />
+                            Pay & Unlock
+                          </Link>
+                        ) : null}
+                        <Link
+                          href={`/clips?podcastId=${prep.podcast_id}`}
+                          className="ic-premium-card"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 14,
+                            padding: "12px 18px",
+                            border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
+                            background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
+                            color: text,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            textDecoration: "none",
+                          }}
+                        >
+                          <Play size={14} />
+                          Go to clips generation
+                        </Link>
+                      </div>
                     ) : null}
                   </div>
                 </section>

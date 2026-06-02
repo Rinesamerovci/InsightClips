@@ -282,6 +282,8 @@ export type Podcast = {
   updated_at: string | null;
 };
 
+export type PodcastResponse = Podcast;
+
 export type PodcastsResponse = {
   podcasts: Podcast[];
   is_mock: boolean;
@@ -923,6 +925,19 @@ export async function revokeClipDownload(
   token?: string | null,
 ): Promise<ClipRevocationResult> {
   return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
+}
+
+// INTEGRATION POINT: In production, payment status should be set by backend webhook, not client
+export async function confirmMockPayment(
+  podcastId: string,
+  paymentStatus: "paid" | "failed",
+  token: string,
+): Promise<PodcastResponse> {
+  return patchJson<PodcastResponse>(
+    `/podcasts/${podcastId}/payment`,
+    { payment_status: paymentStatus },
+    token,
+  );
 }
 
 function normalizeCalendarText(value: string): string {

@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  CreditCard,
   Loader2,
   Play,
   Sparkles,
@@ -17,6 +18,8 @@ type Podcast = {
   title: string;
   duration: number;
   status: string;
+  price?: number;
+  payment_status?: string;
   created_at: string | null;
   source_type?: "upload" | "youtube";
 };
@@ -312,7 +315,7 @@ export function PodcastCard({
   const theme = getTheme(dark);
   const hasAnalysis = Boolean(analysis && analysis.total_scored_segments > 0);
   const hasGeneratedVideos = generatedClipsCount > 0;
-  const needsPayment = podcast.status === "awaiting_payment";
+  const needsPayment = podcast.status === "awaiting_payment" && podcast.payment_status === "pending";
   const statusChip = badge(podcast.status, dark);
   const stages = STAGES(podcast.duration);
 
@@ -447,6 +450,27 @@ export function PodcastCard({
                   }}
                 >
                   {sourceBadge.label}
+                </span>
+              ) : null}
+
+              {needsPayment ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "3px 9px",
+                    borderRadius: 999,
+                    background: theme.paymentBg,
+                    border: `1px solid ${theme.paymentBorder}`,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: ".1em",
+                    textTransform: "uppercase",
+                    color: theme.paymentText,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Payment required
                 </span>
               ) : null}
 
@@ -827,6 +851,26 @@ export function PodcastCard({
               }}
             >
               Payment is needed before analysis can continue for this episode.
+              <Link
+                href={`/checkout?podcastId=${encodeURIComponent(podcast.id)}&amount=${encodeURIComponent(String(podcast.price ?? 0))}&currency=USD`}
+                style={{
+                  marginTop: 9,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderRadius: 999,
+                  border: "1px solid rgba(158,138,32,.38)",
+                  background: "transparent",
+                  color: "#9e8a20",
+                  padding: "6px 10px",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textDecoration: "none",
+                }}
+              >
+                <CreditCard size={11} />
+                Pay now
+              </Link>
             </div>
           ) : null}
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CreditCard,
   Loader2,
   Mail,
   MessageSquare,
@@ -280,6 +281,23 @@ export default function SettingsPage() {
             >
               <Settings2 size={16} />
               Export settings
+            </Link>
+            <Link
+              href="/settings/billing"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "none",
+                color: "inherit",
+                border: `1px solid ${palette.border}`,
+                borderRadius: 999,
+                padding: "10px 16px",
+                background: palette.card,
+              }}
+            >
+              <CreditCard size={16} />
+              Billing
             </Link>
             <button
               type="button"

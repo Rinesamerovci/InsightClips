@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   LogOut, Moon, Plus, SunMedium, Mic2, Download,
-  Sparkles, Settings, Bell, ChevronRight, Play,
+  Sparkles, Settings, Bell, ChevronRight, Play, CreditCard,
   Activity, Zap, TrendingUp,
   Radio, LayoutDashboard, Library, BarChart2,
   User, ArrowUpRight,
@@ -589,6 +589,7 @@ export default function DashboardPage() {
             <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
+            <NavItem icon={CreditCard}       label="Billing"   href="/settings/billing"  t={t} collapsed={collapsed}/>
           </nav>
 
           {/* Profile + sign out */}

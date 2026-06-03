@@ -829,6 +829,14 @@ export async function importYouTubePodcast(
   return postJson<YouTubeImportResponse>("/upload/youtube", payload as JsonRecord, options.token);
 }
 
+export async function createCheckoutSession(
+  podcastId: string,
+  price: number,
+  token?: string | null,
+): Promise<{ checkout_url: string }> {
+  return postJson<{ checkout_url: string }>("/upload/checkout-session", { podcast_id: podcastId, price }, token);
+}
+
 export async function analyzePodcast(
   podcastId: string,
   payload: AnalyzePodcastPayload,

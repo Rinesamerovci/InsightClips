@@ -1,18 +1,20 @@
 from fastapi import HTTPException, status
 
 from app.database import public_supabase, service_supabase
-from app.models.auth import AuthResponse, LoginRequest, RegisterRequest
-from app.services.profile_service import get_profile_by_id, upsert_profile
+from app.models.auth import AuthResponse, EmailAvailabilityResponse, LoginRequest, RegisterRequest
+from app.services.profile_service import get_profile_by_email, get_profile_by_id, upsert_profile
 from app.utils.security import create_backend_token, validate_password_rules
 
 
-def _issue_auth_response(profile_id: str) -> AuthResponse:
+def _issue_auth_response(profile_id: str, email: str | None = None, full_name: str | None = None) -> AuthResponse:
     profile = get_profile_by_id(profile_id)
     if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Authenticated profile is missing from the database.",
-        )
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Authenticated profile is missing from the database.",
+            )
+        profile = upsert_profile(profile_id, email, full_name)
 
     token, expires_at = create_backend_token(profile.id, profile.email, profile.free_trial_used)
     return AuthResponse(
@@ -32,14 +34,22 @@ def _issue_auth_response(profile_id: str) -> AuthResponse:
 
 def register_user(payload: RegisterRequest) -> AuthResponse:
     validate_password_rules(payload.password)
+    email = payload.email.lower()
+    availability = check_email_availability(email)
+    if availability.exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=availability.message,
+        )
 
     try:
-        auth_user = service_supabase.auth.admin.create_user(
+        sign_up_response = public_supabase.auth.sign_up(
             {
-                "email": payload.email.lower(),
+                "email": email,
                 "password": payload.password,
-                "email_confirm": True,
-                "user_metadata": {"full_name": payload.full_name} if payload.full_name else {},
+                "options": {
+                    "data": {"full_name": payload.full_name} if payload.full_name else {},
+                },
             }
         )
     except Exception as exc:
@@ -48,9 +58,52 @@ def register_user(payload: RegisterRequest) -> AuthResponse:
             detail=f"Registration failed: {exc}",
         ) from exc
 
-    user = auth_user.user
-    upsert_profile(user.id, payload.email, payload.full_name)
+    user = sign_up_response.user
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration failed. Supabase did not return a user record.",
+        )
+
+    upsert_profile(user.id, email, payload.full_name)
     return _issue_auth_response(user.id)
+
+
+def check_email_availability(email: str) -> EmailAvailabilityResponse:
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        return EmailAvailabilityResponse(
+            email=email,
+            exists=False,
+            message="Email address is required.",
+        )
+
+    try:
+        if get_profile_by_email(normalized_email):
+            return EmailAvailabilityResponse(
+                email=normalized_email,
+                exists=True,
+                message="An account already exists for this email. Please sign in instead.",
+            )
+    except Exception:
+        pass
+
+    try:
+        users = service_supabase.auth.admin.list_users()
+        if any(str(getattr(user, "email", "") or "").lower() == normalized_email for user in users):
+            return EmailAvailabilityResponse(
+                email=normalized_email,
+                exists=True,
+                message="An account already exists for this email. Please sign in instead.",
+            )
+    except Exception:
+        pass
+
+    return EmailAvailabilityResponse(
+        email=normalized_email,
+        exists=False,
+        message="This email is available.",
+    )
 
 
 def login_user(payload: LoginRequest) -> AuthResponse:
@@ -71,7 +124,11 @@ def login_user(payload: LoginRequest) -> AuthResponse:
             detail="Invalid email or password.",
         )
 
-    return _issue_auth_response(user.id)
+    full_name = None
+    if user.user_metadata:
+        full_name = user.user_metadata.get("full_name")
+
+    return _issue_auth_response(user.id, user.email, full_name)
 
 
 def verify_session(supabase_token: str) -> AuthResponse:
@@ -90,4 +147,8 @@ def verify_session(supabase_token: str) -> AuthResponse:
             detail="Invalid or expired Supabase session.",
         )
 
-    return _issue_auth_response(user.id)
+    full_name = None
+    if user.user_metadata:
+        full_name = user.user_metadata.get("full_name")
+
+    return _issue_auth_response(user.id, user.email, full_name)

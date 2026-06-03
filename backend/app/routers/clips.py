@@ -1,0 +1,190 @@
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.dependencies.auth import AuthenticatedUser, get_current_user
+from app.models.export_settings import GenerationSettings
+from app.models.publishing import (
+    ClipMetricResponse,
+    ClipPublicationStatus,
+    ClipPublicationStatusResponse,
+    ClipRevocationResult,
+    PublicationDestination,
+    PublishClipRequest,
+)
+from app.models.search import ClipSearchResult
+from app.services.podcast_service import get_podcasts_for_user
+from app.services.search_service import SearchServiceError, search_clips
+from app.services.analysis_service import podcast_belongs_to_user
+from app.services.clipping_service import get_clip_podcast_id
+from app.services.publishing_service import (
+    PublishingError,
+    get_clip_metrics,
+    get_clip_publication_status,
+    publish_clips,
+    revoke_clip_download,
+)
+
+router = APIRouter(prefix="/clips", tags=["clips"])
+
+
+@router.get("/generation-settings/defaults", response_model=GenerationSettings)
+async def get_generation_settings_defaults(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> GenerationSettings:
+    return GenerationSettings()
+
+
+@router.get("/search", response_model=ClipSearchResult)
+async def search_clips_route(
+    query: str = Query(default=""),
+    podcast_id: str | None = Query(default=None, alias="podcast_id"),
+    status_filter: str = Query(default="all", alias="status"),
+    published: bool | None = Query(default=None),
+    min_duration: float | None = Query(default=None, ge=0),
+    max_duration: float | None = Query(default=None, ge=0),
+    min_score: float | None = Query(default=None, ge=0, le=100),
+    max_score: float | None = Query(default=None, ge=0, le=100),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipSearchResult:
+    filters = {
+        "status": status_filter,
+        "published": published,
+        "min_duration": min_duration,
+        "max_duration": max_duration,
+        "min_score": min_score,
+        "max_score": max_score,
+    }
+    try:
+        if podcast_id:
+            if not podcast_belongs_to_user(podcast_id, current_user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Podcast not found for the current user.",
+                )
+            return search_clips(podcast_id, query=query, filters=filters)
+
+        podcasts, _ = get_podcasts_for_user(current_user.id)
+        combined_hits = []
+        cleaned_query = " ".join(query.split())
+        for podcast in podcasts:
+            result = search_clips(podcast.id, query=cleaned_query, filters=filters)
+            combined_hits.extend(result.clips)
+
+        combined_hits.sort(
+            key=lambda item: (
+                -item.search_score,
+                -(item.insight_score or 0.0),
+                -item.virality_score,
+                item.clip_number,
+                item.id,
+            )
+        )
+        return ClipSearchResult(
+            query=cleaned_query,
+            total_results=len(combined_hits),
+            clips=[
+                item.model_copy(update={"rank_position": index + 1})
+                for index, item in enumerate(combined_hits)
+            ],
+        )
+    except SearchServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/{clip_id}/revoke-download", response_model=ClipRevocationResult)
+async def revoke_clip_download_route(
+    clip_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipRevocationResult:
+    podcast_id = get_clip_podcast_id(clip_id)
+    if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found for the current user.",
+        )
+
+    try:
+        return revoke_clip_download(clip_id)
+    except PublishingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/{clip_id}/metrics", response_model=ClipMetricResponse)
+async def get_clip_metrics_route(
+    clip_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipMetricResponse:
+    podcast_id = get_clip_podcast_id(clip_id)
+    if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found for the current user.",
+        )
+
+    try:
+        metrics = get_clip_metrics(clip_id)
+    except PublishingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if metrics is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip metrics not found for the current user.",
+        )
+    return metrics
+
+
+@router.post("/{clip_id}/publish", response_model=ClipPublicationStatus)
+async def publish_clip_route(
+    clip_id: str,
+    payload: PublishClipRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipPublicationStatus:
+    podcast_id = get_clip_podcast_id(clip_id)
+    if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found for the current user.",
+        )
+
+    try:
+        result = publish_clips(
+            podcast_id,
+            [clip_id],
+            destination=payload.destination,
+            metadata=payload.metadata,
+        )
+    except PublishingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if not result.published_clips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found for the current user.",
+        )
+    return result.published_clips[0]
+
+
+@router.get("/{clip_id}/publication-status", response_model=ClipPublicationStatusResponse)
+async def get_clip_publication_status_route(
+    clip_id: str,
+    destination: PublicationDestination = Query(default="download"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ClipPublicationStatusResponse:
+    podcast_id = get_clip_podcast_id(clip_id)
+    if not podcast_id or not podcast_belongs_to_user(podcast_id, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clip not found for the current user.",
+        )
+
+    try:
+        publication = get_clip_publication_status(clip_id, destination=destination)
+    except PublishingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if publication is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Publication status not found for the current user.",
+        )
+    return publication

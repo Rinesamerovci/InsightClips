@@ -1,0 +1,65 @@
+-- InsightClips Supabase SQL run order
+-- ===================================
+--
+-- This file is intentionally a guide, not a migration to run by itself.
+-- Supabase SQL Editor does not support including other local .sql files, so
+-- copy and run the files below one-by-one in this exact order.
+--
+-- 1. repair_disable_auth_profile_triggers.sql
+--    Removes old auth.users profile triggers. The backend creates/syncs
+--    public.profiles during auth verify/login/register.
+--
+-- 2. schema_init.sql
+--    Creates the base profiles and podcasts schema.
+--
+-- 3. auth_schema.sql
+--    Adds profile export_settings, profile constraints, and user_messages.
+--
+-- 4. analysis_schema.sql
+--    Creates scores for podcast segment analysis.
+--
+-- 5. clips_schema.sql
+--    Creates clips and clip-generation columns.
+--
+-- 6. export_settings_schema.sql
+--    Adds export, subtitle, crop, and audio settings to podcasts/clips.
+--    Run this after clips_schema.sql because it alters public.clips.
+--
+-- 7. overlay_schema.sql
+--    Creates clip_overlays.
+--
+-- 8. publication_schema.sql
+--    Adds clip publishing/download metrics and clip_publications.
+--
+-- 9. 97_repair_existing_payment_state.sql
+--    Fixes old podcast rows that were saved as free/not_required before the
+--    final payment gate existed. Run once for existing projects.
+--
+-- 10. 98_repair_profiles_export_settings.sql
+--    Normalizes profile export_settings for existing databases that were
+--    migrated with older defaults and newer constraints.
+--
+-- 11. 99_final_rls_policies.sql
+--    Replaces all RLS policies with the final canonical policies.
+--
+-- Optional verification after all files finish:
+--
+-- select
+--   to_regclass('public.profiles') as profiles,
+--   to_regclass('public.podcasts') as podcasts,
+--   to_regclass('public.scores') as scores,
+--   to_regclass('public.clips') as clips,
+--   to_regclass('public.clip_overlays') as clip_overlays,
+--   to_regclass('public.clip_publications') as clip_publications,
+--   to_regclass('public.user_messages') as user_messages;
+--
+-- select trigger_name, action_statement
+-- from information_schema.triggers
+-- where event_object_schema = 'auth'
+--   and event_object_table = 'users'
+-- order by trigger_name;
+--
+-- select tablename, policyname, roles, cmd
+-- from pg_policies
+-- where schemaname = 'public'
+-- order by tablename, policyname;

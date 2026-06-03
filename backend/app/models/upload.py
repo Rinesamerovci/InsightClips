@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.models.export_settings import ExportSettings, ExportSettingsInput
 
 
 UploadStatus = Literal["draft", "free_ready", "awaiting_payment", "ready_for_processing", "blocked"]
@@ -16,10 +18,11 @@ class UploadCalculatePriceRequest(BaseModel):
     filesize_bytes: int = Field(gt=0)
     mime_type: str | None = None
     storage_path: str | None = None
+    duration_seconds: float | None = Field(default=None, gt=0)
 
     @field_validator("filename")
     @classmethod
-    def validate_non_empty_strings(cls, value: str) -> str:
+    def validate_filename(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Field cannot be empty.")
@@ -27,7 +30,7 @@ class UploadCalculatePriceRequest(BaseModel):
 
     @field_validator("storage_path")
     @classmethod
-    def validate_optional_storage_path(cls, value: str | None) -> str | None:
+    def validate_storage_path(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -66,6 +69,7 @@ class UploadPrepareRequest(BaseModel):
     duration_seconds: float | None = Field(default=None, gt=0)
     price: float | None = Field(default=None, ge=0)
     status: UploadPreflightStatus | None = None
+    export_settings: ExportSettingsInput | None = None
 
     @field_validator("title", "filename")
     @classmethod
@@ -77,7 +81,7 @@ class UploadPrepareRequest(BaseModel):
 
     @field_validator("storage_path")
     @classmethod
-    def validate_optional_prepare_path(cls, value: str | None) -> str | None:
+    def validate_prepare_path(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -101,3 +105,50 @@ class UploadPrepareResponse(BaseModel):
     payment_status: str
     price: float
     currency: str = "USD"
+    export_settings: ExportSettings | None = None
+
+
+class YouTubeImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    title: str | None = None
+    export_settings: ExportSettingsInput | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("YouTube URL cannot be empty.")
+        return cleaned
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Field cannot be empty.")
+        return cleaned
+
+
+class YouTubeImportResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    podcast_id: str
+    status: UploadStatus
+    source_type: Literal["youtube"] = "youtube"
+    source_url: str
+    video_id: str
+    title: str
+    storage_path: str
+    duration_seconds: float
+    storage_ready: bool
+    checkout_required: bool
+    payment_status: str
+    price: float
+    currency: str = "USD"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    export_settings: ExportSettings | None = None

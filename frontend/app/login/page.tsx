@@ -1,50 +1,112 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, Info, Loader2, Lock, Mail, Zap } from "lucide-react";
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  Sparkles,
+} from "lucide-react";
 
+import { AuthScaffold } from "@/components/AuthScaffold";
 import { postJson, storeBackendToken } from "@/lib/api";
+import { getAuthTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 
-type LoginResponse = {
-  access_token: string;
-};
+type LoginResponse = { access_token: string };
 
-export default function LoginPage() {
+function MetricChip({
+  value,
+  label,
+  accent,
+  border,
+  dark,
+}: {
+  value: string;
+  label: string;
+  accent: string;
+  border: string;
+  dark: boolean;
+}) {
+  return (
+    <div
+      style={{
+        borderRadius: 20,
+        border: `1px solid ${border}`,
+        background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.72)",
+        padding: "16px 14px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-serif)",
+          color: accent,
+          fontSize: 28,
+          lineHeight: 1,
+          letterSpacing: "-0.05em",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: ".18em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { syncBackendSession, user } = useAuth();
-  const [email, setEmail] = useState(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
 
-    return window.localStorage.getItem("rememberedEmail") ?? "";
-  });
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    return Boolean(window.localStorage.getItem("rememberedEmail"));
-  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const successMessage = useMemo(
-    () =>
-      searchParams.get("registered") === "true"
-        ? "Account created. Sign in to open your dashboard."
-        : "",
-    [searchParams]
-  );
+  const [dark, setDark] = useState(false);
 
-  /**
-   * Leximi i të dhënave kur hapet faqja
-   */
+  const shell = getAuthTheme(dark);
+  const successMessage = useMemo(() => {
+    if (searchParams.get("registered") === "true") {
+      return "Account verified. You can now sign in directly with your email and password.";
+    }
+
+    return "";
+  }, [searchParams]);
+
+  useEffect(() => {
+    try {
+      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      const remembered = window.localStorage.getItem("rememberedEmail");
+      if (remembered) {
+        setRememberMe(true);
+        setEmail((current) => current || remembered);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
+    } catch {}
+  }, [dark]);
 
   useEffect(() => {
     if (user) {
@@ -52,28 +114,23 @@ export default function LoginPage() {
     }
   }, [router, user]);
 
-  /**
-   * Logjika e Login
-   */
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
     setError("");
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    });
-
-    if (error) {
-      setError("Invalid email or password.");
-      setLoading(false);
-      return;
-    }
-
     try {
+      const { error: supaErr } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
+      if (supaErr) {
+        throw new Error(supaErr.message || "Invalid email or password.");
+      }
+
       const backendAuth = await postJson<LoginResponse>("/auth/login", {
         email: normalizedEmail,
         password,
@@ -82,126 +139,329 @@ export default function LoginPage() {
       storeBackendToken(backendAuth.access_token);
       await syncBackendSession();
 
-      // Menaxhimi i Remember Me pas suksesit
       if (rememberMe) {
         window.localStorage.setItem("rememberedEmail", normalizedEmail);
       } else {
         window.localStorage.removeItem("rememberedEmail");
       }
-      
-      // Refresh dhe dërgim te Dashboard
+
       router.replace("/dashboard");
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "Unable to sign in.";
-      setError(message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign in.");
       setLoading(false);
     }
   };
 
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    borderRadius: 16,
+    padding: "14px 16px 14px 46px",
+    fontSize: 14,
+    outline: "none",
+    border: `1px solid ${shell.border}`,
+    background: dark ? "rgba(255,255,255,.03)" : "#ffffff",
+    color: shell.text,
+    fontFamily: "var(--font-sans)",
+  };
+
   return (
-    <div className="min-h-screen bg-[#02040a] text-slate-300 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-      
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl h-[500px] bg-emerald-500/5 blur-[120px] rounded-full -z-10" />
-
-      <div className="absolute top-10 left-10">
-        <Link href="/" className="group flex items-center gap-3 text-emerald-400/50 hover:text-emerald-400 transition-all">
-          <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-          <span className="text-[10px] font-black uppercase tracking-[0.3em]">Back to Home</span>
-        </Link>
-      </div>
-
-      <div className="w-full max-w-md bg-white/[0.02] border border-white/5 p-12 rounded-[3.5rem] backdrop-blur-3xl shadow-2xl relative">
-        
-        <div className="flex flex-col items-center mb-12 text-center">
-          <div className="w-14 h-14 bg-emerald-400 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 mb-6 transition-transform hover:scale-110 duration-500">
-            <Zap size={28} className="text-black" fill="currentColor" />
-          </div>
-          <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white leading-none">Neural Login</h2>
-          <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-600 mt-3 italic">Verify Your Identity</p>
-        </div>
-
-        <form className="space-y-6" onSubmit={handleLogin}>
-          <div className="space-y-4">
-            
-            <div className="relative group">
-              <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-emerald-400 transition-colors" size={18} />
-              <input 
-                type="email" 
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="EMAIL ADDRESS" 
-                className="w-full bg-black/40 border border-white/5 p-5 pl-14 rounded-2xl outline-none focus:border-emerald-400/30 text-xs font-bold tracking-widest text-emerald-400 transition-all placeholder:text-slate-800" 
-              />
-            </div>
-
-            <div className="relative group">
-              <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-emerald-400 transition-colors" size={18} />
-              <input 
-                type="password" 
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="PASSWORD" 
-                className="w-full bg-black/40 border border-white/5 p-5 pl-14 rounded-2xl outline-none focus:border-emerald-400/30 text-xs font-bold tracking-widest text-white transition-all placeholder:text-slate-800" 
-              />
-            </div>
-          </div>
-
-          {successMessage && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 py-3 px-4 rounded-xl text-center">
-               <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300">{successMessage}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/20 py-3 px-4 rounded-xl text-center">
-               <p className="text-[9px] font-black uppercase tracking-widest text-red-400">{error}</p>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between px-2">
-            <label className="flex items-center gap-2 cursor-pointer group select-none">
-              <input 
-                type="checkbox" 
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-white/10 bg-black/40 checked:bg-emerald-400 transition-all accent-emerald-400 cursor-pointer" 
-              />
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-600 group-hover:text-slate-400 transition-colors">Remember Me</span>
-            </label>
-            <Link 
-              href="/forgot-password" 
-              className="text-[9px] font-black uppercase tracking-widest text-emerald-400/60 hover:text-emerald-400 transition-colors"
-            >
-              Forgot Password?
-            </Link>
-          </div>
-
-          <button 
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-400 text-black p-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:shadow-[0_0_30px_rgba(52,211,153,0.3)] transition-all active:scale-95 border-none mt-4 disabled:opacity-50"
+    <AuthScaffold
+      dark={dark}
+      backHref="/"
+      backLabel="Back"
+      showcaseBadge="Creator workspace"
+      showcaseTitle={
+        <>
+          Sign in to the
+          <br />
+          <em style={{ color: shell.accent }}>InsightClips studio.</em>
+        </>
+      }
+      showcaseBody="A cleaner workspace for upload, analysis, clip generation, and publishing, all inside one focused flow."
+      showcaseContent={
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 120px), 1fr))",
+              gap: 12,
+            }}
           >
-            {loading ? (
-              <>ESTABLISHING... <Loader2 size={18} className="animate-spin" /></>
-            ) : (
-              <>Initialize Session <ChevronRight size={18} /></>
-            )}
-          </button>
-        </form>
+            <MetricChip value="12M+" label="Clips made" accent={shell.accent} border={shell.border} dark={dark} />
+            <MetricChip value="99.9%" label="Uptime" accent={shell.accent} border={shell.border} dark={dark} />
+            <MetricChip value="0.4s" label="Latency" accent={shell.accent} border={shell.border} dark={dark} />
+          </div>
 
-        <p className="text-center mt-10 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-          NO SYSTEM ACCESS? <Link href="/register" className="text-emerald-400 hover:underline underline-offset-4 ml-1 font-black transition-all">CREATE IDENTITY</Link>
+          <div
+            style={{
+              marginTop: 22,
+              borderRadius: 24,
+              border: `1px solid ${shell.border}`,
+              background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.72)",
+              padding: "18px",
+            }}
+          >
+            <div
+              style={{
+                color: shell.accent,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: ".18em",
+                textTransform: "uppercase",
+                marginBottom: 12,
+              }}
+            >
+              Included in the flow
+            </div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              {[
+                "Upload, analyze, and publish from one product flow.",
+                "Subtitle, framing, and clip settings stay aligned.",
+                "The strongest moments are easier to review and ship.",
+              ].map((item) => (
+                <div
+                  key={item}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: shell.muted,
+                    fontSize: 14,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: shell.accent,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      }
+      statusLabel="Secure workspace access"
+      shell={shell}
+      onToggleTheme={() => setDark((value) => !value)}
+      footerLabel="InsightClips secure sign in"
+    >
+      <div style={{ marginBottom: 24 }}>
+        <div
+          style={{
+            color: shell.accent,
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: ".18em",
+            textTransform: "uppercase",
+            marginBottom: 10,
+          }}
+        >
+          Sign in
+        </div>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 34,
+            lineHeight: 1,
+            letterSpacing: "-0.04em",
+            marginBottom: 10,
+          }}
+        >
+          Welcome back
+        </h1>
+        <p style={{ color: shell.muted, fontSize: 14, lineHeight: 1.7 }}>
+          Continue with your email and password to open dashboard, uploads, and clips.
         </p>
       </div>
-      
-      <div className="absolute bottom-10 opacity-20 text-[8px] font-black uppercase tracking-[0.5em] flex items-center gap-2">
-        <Info size={10} /> InsightClips • Security Protocol v3.0
+
+      <div
+        style={{
+          marginBottom: 18,
+          borderRadius: 18,
+          border: `1px solid ${shell.border}`,
+          background: dark ? "rgba(255,255,255,.025)" : "rgba(255,255,255,.72)",
+          padding: "14px 16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Sparkles size={14} color={shell.accent} />
+          <span style={{ color: shell.text, fontSize: 13, fontWeight: 700 }}>
+            Streamlined access
+          </span>
+        </div>
+        <div style={{ color: shell.muted, fontSize: 13, lineHeight: 1.65 }}>
+          The sign-in view is intentionally simpler now, with focus on the form instead of heavy presentation blocks.
+        </div>
       </div>
-    </div>
+
+      {successMessage ? (
+        <div
+          style={{
+            marginBottom: 16,
+            borderRadius: 16,
+            border: `1px solid ${shell.borderStrong}`,
+            background: shell.accentSoft,
+            color: shell.text,
+            padding: "14px 16px",
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          {successMessage}
+        </div>
+      ) : null}
+
+      <form style={{ display: "grid", gap: 14 }} onSubmit={handleLogin}>
+        <div style={{ position: "relative" }}>
+          <Mail
+            size={16}
+            style={{
+              position: "absolute",
+              left: 16,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: shell.faint,
+            }}
+          />
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="Email address"
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ position: "relative" }}>
+          <Lock
+            size={16}
+            style={{
+              position: "absolute",
+              left: 16,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: shell.faint,
+            }}
+          />
+          <input
+            type={showPassword ? "text" : "password"}
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password"
+            style={{ ...inputStyle, paddingRight: 48 }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((value) => !value)}
+            style={{
+              position: "absolute",
+              right: 14,
+              top: "50%",
+              transform: "translateY(-50%)",
+              border: "none",
+              background: "transparent",
+              color: shell.faint,
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+
+        {error ? (
+          <div
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${dark ? "rgba(236,122,140,.24)" : "rgba(224,140,156,.36)"}`,
+              background: dark ? "rgba(86,28,40,.56)" : "rgba(255,236,239,.9)",
+              color: dark ? "#ffc1cb" : "#9b314b",
+              padding: "14px 16px",
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, color: shell.muted, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              style={{ accentColor: shell.accent, width: 14, height: 14 }}
+            />
+            Remember me
+          </label>
+
+          <Link href="/forgot-password" style={{ color: shell.accent, fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+            Forgot password?
+          </Link>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="brand-button"
+          style={{
+            marginTop: 4,
+            width: "100%",
+            padding: "14px 20px",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.72 : 1,
+          }}
+        >
+          {loading ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Signing in...
+            </>
+          ) : (
+            <>
+              Sign in
+              <ChevronRight size={16} />
+            </>
+          )}
+        </button>
+      </form>
+
+      <p style={{ marginTop: 22, textAlign: "center", color: shell.muted, fontSize: 13 }}>
+        Don&apos;t have an account?{" "}
+        <Link href="/register" style={{ color: shell.accent, fontWeight: 700, textDecoration: "none" }}>
+          Create one
+        </Link>
+      </p>
+    </AuthScaffold>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

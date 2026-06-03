@@ -78,6 +78,8 @@ class Settings(BaseSettings):
         default=600,
         validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
     )
+    stripe_secret_key: str = Field(default="", validation_alias=AliasChoices("STRIPE_SECRET_KEY"))
+    stripe_webhook_secret: str = Field(default="", validation_alias=AliasChoices("STRIPE_WEBHOOK_SECRET"))
 
 
 @lru_cache(maxsize=1)

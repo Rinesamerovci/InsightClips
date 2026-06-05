@@ -49,9 +49,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter()
 
   const syncBackendSession = async (): Promise<string | null> => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    let session = null
+
+    try {
+      const result = await supabase.auth.getSession()
+      session = result.data.session
+    } catch (error) {
+      clearBackendToken()
+      setBackendToken(null)
+      if (String(error).toLowerCase().includes('invalid refresh token')) {
+        try {
+          await supabase.auth.signOut()
+        } catch {
+          // Ignore sign-out cleanup failures and continue with a clean local state.
+        }
+        return null
+      }
+      throw error
+    }
 
     if (!session?.access_token) {
       clearBackendToken()
@@ -96,9 +111,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let active = true
 
     const bootstrap = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      let session = null
+
+      try {
+        const result = await supabase.auth.getSession()
+        session = result.data.session
+      } catch (error) {
+        clearBackendToken()
+        setBackendToken(null)
+        if (active) {
+          setUser(null)
+          setLoading(false)
+        }
+        return
+      }
 
       if (!active) {
         return

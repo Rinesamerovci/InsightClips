@@ -126,6 +126,77 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         persist_analysis_result_mock.assert_not_called()
 
     @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.get_clips_for_podcast")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_generate_podcast_clips_allows_regenerating_partial_results(
+        self,
+        podcast_belongs_mock,
+        update_status_mock,
+        get_clips_for_podcast_mock,
+        generate_clips_mock,
+    ) -> None:
+        get_clips_for_podcast_mock.return_value = ClipGenerationResult(
+            podcast_id="podcast-123",
+            total_clips_generated=1,
+            clips=[
+                ClipResult(
+                    id="clip-1",
+                    clip_number=1,
+                    clip_start_seconds=0.0,
+                    clip_end_seconds=12.0,
+                    duration_seconds=12.0,
+                    virality_score=82.4,
+                    video_url="https://example.com/clip-1.mp4",
+                    subtitle_text="A strong subtitle line",
+                    status="ready",
+                )
+            ],
+            processing_time_seconds=0.0,
+            download_folder_url="/podcasts/podcast-123/clips",
+        )
+        generate_clips_mock.return_value = [
+            ClipResult(
+                id="clip-2",
+                clip_number=2,
+                clip_start_seconds=12.0,
+                clip_end_seconds=24.0,
+                duration_seconds=12.0,
+                virality_score=80.1,
+                video_url="https://example.com/clip-2.mp4",
+                subtitle_text="Another strong subtitle line",
+                status="ready",
+            )
+        ]
+
+        result = asyncio.run(
+            generate_podcast_clips(
+                "podcast-123",
+                GenerateClipsRequest(
+                    score_segments=[
+                        ScoreSegment(
+                            segment_start_seconds=12.0,
+                            segment_end_seconds=24.0,
+                            duration_seconds=12.0,
+                            virality_score=80.1,
+                            transcript_snippet="Another strong subtitle line",
+                            sentiment="positive",
+                            keywords=["clip"],
+                        )
+                    ],
+                    transcription=self.payload.transcription,
+                ),
+                self.user,
+            )
+        )
+
+        self.assertEqual(result.total_clips_generated, 1)
+        generate_clips_mock.assert_called_once()
+        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "done")
+
+    @patch("app.routers.podcasts.generate_clips")
     @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")

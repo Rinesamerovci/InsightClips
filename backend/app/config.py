@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     app_name: str = "InsightClips"
     app_version: str = "1.0.0"
     environment: str = "development"
-    frontend_origins: list[str] = Field(
+    frontend_origins: Any = Field(
         default_factory=lambda: [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
@@ -41,7 +42,13 @@ class Settings(BaseSettings):
             if not cleaned:
                 return []
             if cleaned.startswith("["):
-                return value
+                import json
+                try:
+                    parsed = json.loads(cleaned)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed]
+                except Exception:
+                    pass
             return [origin.strip() for origin in cleaned.split(",") if origin.strip()]
         return value
 

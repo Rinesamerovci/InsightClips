@@ -58,15 +58,23 @@ def close_db_pool() -> None:
         db_pool.close()
 
 def run_db_healthcheck() -> bool:
-    if not db_pool:
-        return False
-    try:
-        with connect(settings.database_url, autocommit=True, connect_timeout=3) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("select 1;")
-                return cursor.fetchone() == (1,)
-    except Exception:
-        return False
+    if db_pool:
+        try:
+            with connect(settings.database_url, autocommit=True, connect_timeout=3) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("select 1;")
+                    return cursor.fetchone() == (1,)
+        except Exception:
+            pass
+
+    if settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key):
+        try:
+            service_supabase.table("profiles").select("id").limit(1).execute()
+            return True
+        except Exception:
+            pass
+
+    return False
 
 @asynccontextmanager
 async def lifespan(_: object) -> Iterator[None]:

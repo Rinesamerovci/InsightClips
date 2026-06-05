@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 import re
+import tempfile
 
 from app.database import service_supabase
 from app.dependencies.auth import AuthenticatedUser
@@ -30,7 +31,21 @@ MAX_UPLOAD_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024
 SHORT_UPLOAD_PRICE = 1.0
 MEDIUM_UPLOAD_PRICE = 2.0
 LONG_UPLOAD_PRICE = 4.0
-YOUTUBE_IMPORT_DIR = Path(".generated") / "youtube-imports"
+
+
+def get_youtube_import_dir() -> Path:
+    """Get persistent YouTube import directory for Render."""
+    try:
+        temp_dir = Path(tempfile.gettempdir()) / "insightclips-youtube"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return temp_dir
+    except Exception:
+        fallback = Path(".") / ".generated" / "youtube-imports"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+YOUTUBE_IMPORT_DIR = get_youtube_import_dir()
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
 YOUTUBE_HOSTS = {
     "youtube.com",
@@ -356,8 +371,10 @@ def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownl
             if not downloaded_path:
                 downloaded_path = str(info.get("filepath") or downloader.prepare_filename(info))
     except Exception as exc:
+        import logging
+        logging.exception("YouTube download failed")
         raise UploadWorkflowError(
-            "YouTube media could not be imported. Check that the video is public and try again.",
+            f"YouTube media could not be imported: {str(exc)}. Check that the video is public and try again.",
             status_code=502,
             code="youtube_import_failed",
         ) from exc

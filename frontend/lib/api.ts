@@ -12,11 +12,23 @@ import {
 
 const configuredBackendUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
-const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
+const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "real";
+const BACKEND_IS_LOCAL = (() => {
+  try {
+    const host = new URL(configuredBackendUrl).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return true;
+  }
+})();
 
 export const BACKEND_TOKEN_KEY = "insightclips_backend_token";
 export const FRONTEND_UPLOAD_PREFLIGHT_MODE =
-  process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "live";
+  uploadPreflightMode === "mock" && BACKEND_IS_LOCAL ? "mock" : "live";
+
+export function shouldUseMockUploadFlow(): boolean {
+  return FRONTEND_UPLOAD_PREFLIGHT_MODE === "mock";
+}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -798,7 +810,7 @@ export async function calculateUploadPrice(
   payload: UploadPriceRequest,
   options: UploadRequestOptions = {},
 ): Promise<UploadPriceResponse> {
-  if (options.useMock ?? uploadPreflightMode === "mock") {
+  if (options.useMock ?? shouldUseMockUploadFlow()) {
     return buildMockUploadPrice(payload);
   }
 
@@ -809,7 +821,7 @@ export async function prepareUpload(
   payload: PrepareUploadRequest,
   options: UploadRequestOptions = {},
 ): Promise<PrepareUploadResponse> {
-  if (options.useMock ?? uploadPreflightMode === "mock") {
+  if (options.useMock ?? shouldUseMockUploadFlow()) {
     return buildMockPrepareResponse(payload);
   }
 
@@ -820,7 +832,7 @@ export async function importYouTubePodcast(
   payload: YouTubeImportPayload,
   options: UploadRequestOptions = {},
 ): Promise<YouTubeImportResponse> {
-  if (options.useMock ?? uploadPreflightMode === "mock") {
+  if (options.useMock ?? shouldUseMockUploadFlow()) {
     return buildMockYouTubeImportResponse(payload);
   }
 

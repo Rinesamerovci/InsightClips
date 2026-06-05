@@ -21,10 +21,18 @@ const BACKEND_IS_LOCAL = (() => {
     return true;
   }
 })();
+const CLIENT_IS_LOCALHOST = (() => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+})();
 
 export const BACKEND_TOKEN_KEY = "insightclips_backend_token";
 export const FRONTEND_UPLOAD_PREFLIGHT_MODE =
-  uploadPreflightMode === "mock" && BACKEND_IS_LOCAL ? "mock" : "live";
+  uploadPreflightMode === "mock" && BACKEND_IS_LOCAL && CLIENT_IS_LOCALHOST ? "mock" : "live";
 
 export function shouldUseMockUploadFlow(): boolean {
   return FRONTEND_UPLOAD_PREFLIGHT_MODE === "mock";

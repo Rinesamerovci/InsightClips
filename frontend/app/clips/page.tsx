@@ -413,6 +413,7 @@ function ClipsPageContent() {
     () => describeGenerationSettings(generationSettings),
     [generationSettings],
   );
+  const hasCompleteClipSet = clips.length >= generationSettings.number_of_clips;
   const topicFocusSummary = generationSettings.topic_focus.trim();
   const selectedVisualModeSummary =
     VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode) ?? VISUAL_OUTPUT_MODES[0];
@@ -806,7 +807,7 @@ function ClipsPageContent() {
       });
       return;
     }
-    if (clips.length > 0) {
+    if (hasCompleteClipSet) {
       setActionFeedback({
         tone: "info",
         message: "Clips already exist for this podcast. Use the existing clips instead of generating them again.",
@@ -1594,7 +1595,7 @@ function ClipsPageContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (clips.length > 0) {
+                    if (hasCompleteClipSet) {
                       setWorkspaceView("results");
                       return;
                     }
@@ -1617,8 +1618,8 @@ function ClipsPageContent() {
                     boxShadow: `0 14px 30px ${t.accentGlow}`,
                   }}
                 >
-                  {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <PlayCircle size={16} /> : <Wand2 size={16} />}
-                  {generating ? "Rendering clips..." : clips.length > 0 ? "View generated clips" : "Generate clips"}
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : hasCompleteClipSet ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                  {generating ? "Rendering clips..." : hasCompleteClipSet ? "View generated clips" : clips.length > 0 ? "Continue generation" : "Generate clips"}
                 </button>
               </div>
 
@@ -3134,7 +3135,7 @@ function ClipsPageContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (clips.length > 0) {
+                        if (hasCompleteClipSet) {
                           setWorkspaceView("results");
                           return;
                         }
@@ -3155,8 +3156,8 @@ function ClipsPageContent() {
                         opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
                       }}
                     >
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <PlayCircle size={16} /> : <Wand2 size={16} />}
-                      {generating ? "Rendering clips..." : clips.length > 0 ? "View generated clips" : "Generate clips"}
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : hasCompleteClipSet ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                      {generating ? "Rendering clips..." : hasCompleteClipSet ? "View generated clips" : clips.length > 0 ? "Continue generation" : "Generate clips"}
                     </button>
                     <button
                       type="button"

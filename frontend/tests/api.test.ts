@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import {
   buildAuthenticatedBackendUrl,
+  deletePodcast,
+  deleteUserAccount,
   generateClips,
   getClipMetrics,
   getContentCalendar,
@@ -56,6 +58,8 @@ export async function runApiTests(): Promise<void> {
   testBuildAuthenticatedBackendUrlLeavesPublicUrlsUntouched();
   await testGetUserProfileUsesProtectedEndpoint();
   await testUpdateUserProfilePatchesProfileFields();
+  await testDeleteUserAccountUsesProtectedEndpoint();
+  await testDeletePodcastUsesProtectedEndpoint();
   await testGetUserExportSettingsUsesProtectedEndpoint();
   await testUpdateUserExportSettingsPersistsPreferences();
   await testSubmitFeedbackPostsProtectedMessage();
@@ -209,6 +213,73 @@ async function testUpdateUserProfilePatchesProfileFields(): Promise<void> {
         full_name: "Updated Creator",
         profile_picture_url: "https://example.com/new-avatar.png",
       }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testDeleteUserAccountUsesProtectedEndpoint(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/users/account")) {
+      return jsonResponse({
+        deleted: true,
+        user_id: "user-1",
+        podcasts_deleted: 2,
+        source_objects_removed: 3,
+        clip_objects_removed: 4,
+        auth_user_deleted: true,
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await deleteUserAccount("creator@example.com", "token-123");
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.podcasts_deleted, 2);
+    assert.equal(calls[0]?.init?.method, "DELETE");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({ confirmation_email: "creator@example.com" }),
+    );
+    assert.equal(
+      (calls[0]?.init?.headers as Record<string, string>)?.Authorization,
+      "Bearer token-123",
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testDeletePodcastUsesProtectedEndpoint(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url) => {
+    if (url.endsWith("/podcasts/pod-1")) {
+      return jsonResponse({
+        deleted: true,
+        podcast_id: "pod-1",
+        source_objects_removed: 1,
+        clip_objects_removed: 2,
+        database_rows_removed: 5,
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  try {
+    const result = await deletePodcast("pod-1", "token-123");
+
+    assert.equal(result.deleted, true);
+    assert.equal(result.podcast_id, "pod-1");
+    assert.equal(result.clip_objects_removed, 2);
+    assert.equal(calls[0]?.init?.method, "DELETE");
+    assert.equal(calls[0]?.init?.body, JSON.stringify({}));
+    assert.equal(
+      (calls[0]?.init?.headers as Record<string, string>)?.Authorization,
+      "Bearer token-123",
     );
   } finally {
     restore();

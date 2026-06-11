@@ -20,6 +20,7 @@ import { PodcastCard } from "@/components/PodcastCard";
 import { useAuth } from "@/context/AuthContext";
 import {
   analyzePodcast,
+  deletePodcast,
   getJson,
   getPodcastAnalytics,
   getPodcastAnalysis,
@@ -60,6 +61,7 @@ export default function PodcastsPage() {
   const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
   const [analyticsByPodcastId, setAnalyticsByPodcastId] = useState<Record<string, PodcastAnalyticsSummary>>({});
+  const [deletingByPodcast, setDeletingByPodcast] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "processing" | "payments" | "done">("all");
 
@@ -223,6 +225,51 @@ export default function PodcastsPage() {
       );
     } finally {
       setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: false }));
+    }
+  };
+
+  const handleDeletePodcast = async (podcast: Podcast) => {
+    const confirmed = window.confirm(
+      [
+        `Delete "${podcast.title}"?`,
+        "",
+        "This removes the podcast, source media, analysis, generated clips, and related records.",
+        "Your one-time free upload usage will not be restored.",
+      ].join("\n"),
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeletingByPodcast((current) => ({ ...current, [podcast.id]: true }));
+      setError("");
+
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      await deletePodcast(podcast.id, token);
+      setPodcasts((current) => current.filter((item) => item.id !== podcast.id));
+      setAnalysisByPodcast((current) => {
+        const next = { ...current };
+        delete next[podcast.id];
+        return next;
+      });
+      setAnalysisLoadingByPodcast((current) => {
+        const next = { ...current };
+        delete next[podcast.id];
+        return next;
+      });
+      setAnalyticsByPodcastId((current) => {
+        const next = { ...current };
+        delete next[podcast.id];
+        return next;
+      });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete podcast.");
+    } finally {
+      setDeletingByPodcast((current) => ({ ...current, [podcast.id]: false }));
     }
   };
 
@@ -601,6 +648,11 @@ export default function PodcastsPage() {
                   analysis={analysisByPodcast[podcast.id]}
                   analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
                   onAnalyze={() => void runAnalysis(podcast.id)}
+                  onDelete={
+                    deletingByPodcast[podcast.id]
+                      ? undefined
+                      : () => void handleDeletePodcast(podcast)
+                  }
                   generatedClipsCount={analyticsByPodcastId[podcast.id]?.total_clips ?? 0}
                   dark={dark}
                 />

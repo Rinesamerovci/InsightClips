@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user
+from app.models.account import DeleteAccountRequest, DeleteAccountResponse
 from app.models.profile import (
     ProfileResponse,
     UpdateProfileRequest,
@@ -9,6 +10,7 @@ from app.models.profile import (
     UserMessageRequest,
     UserMessageResponse,
 )
+from app.services.account_service import AccountDeletionError, delete_account
 from app.services.profile_service import (
     get_profile_by_id,
     get_user_export_settings,
@@ -95,7 +97,7 @@ async def submit_feedback(
     try:
         return submit_user_message(
             current_user.id,
-            payload.model_copy(update={"message_type": "feedback"}),
+            payload.model_copy(update={"message_type": "feedback", "contact_email": profile.email}),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -116,7 +118,7 @@ async def submit_support_request(
     try:
         return submit_user_message(
             current_user.id,
-            payload.model_copy(update={"message_type": "support"}),
+            payload.model_copy(update={"message_type": "support", "contact_email": profile.email}),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -137,7 +139,40 @@ async def submit_contact_message(
     try:
         return submit_user_message(
             current_user.id,
-            payload.model_copy(update={"message_type": "contact"}),
+            payload.model_copy(update={"message_type": "contact", "contact_email": profile.email}),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete("/account", response_model=DeleteAccountResponse)
+async def delete_current_account(
+    payload: DeleteAccountRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> DeleteAccountResponse:
+    profile = get_profile_by_id(current_user.id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found.",
+        )
+    if str(payload.confirmation_email).lower() != profile.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirmation email must match the signed-in account email.",
+        )
+
+    try:
+        result = delete_account(current_user.id, email=profile.email)
+    except AccountDeletionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    return DeleteAccountResponse(
+        deleted=True,
+        user_id=result.user_id,
+        podcasts_deleted=result.podcasts_deleted,
+        source_objects_removed=result.source_objects_removed,
+        clip_objects_removed=result.clip_objects_removed,
+        auth_user_deleted=result.auth_user_deleted,
+        email_notification_sent=getattr(result, "email_notification_sent", False),
+    )

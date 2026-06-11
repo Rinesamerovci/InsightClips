@@ -23,6 +23,23 @@ alter table if exists public.profiles
 drop index if exists public.profiles_email_unique_idx;
 create index if not exists profiles_email_idx on public.profiles (email);
 
+create table if not exists public.free_trial_usage (
+  email text primary key,
+  first_profile_id uuid,
+  used_seconds numeric(12,2) not null default 0,
+  first_used_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+alter table if exists public.free_trial_usage
+  add column if not exists email text,
+  add column if not exists first_profile_id uuid,
+  add column if not exists used_seconds numeric(12,2) not null default 0,
+  add column if not exists first_used_at timestamptz not null default timezone('utc', now()),
+  add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.free_trial_usage enable row level security;
+
 drop trigger if exists on_auth_user_created_profile on auth.users;
 drop function if exists public.handle_new_user_profile();
 

@@ -1,11 +1,14 @@
 # Node & Next.js (Frontend)
 frontend/node_modules/
 frontend/.next/
+frontend/out/
+frontend/node_modules/.cache/
 frontend/.env.local
 frontend/.env
 
 # Python (Backend)
 backend/venv/
+backend/.venv/
 backend/**/__pycache__/
 *.pyc
 *.pyo
@@ -14,6 +17,9 @@ backend/**/__pycache__/
 .pytest_cache/
 backend/.env.local
 .generated/
+.compile-check/
+.sixth/
+bin/
 
 # Media Files
 *.mp4

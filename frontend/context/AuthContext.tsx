@@ -16,7 +16,7 @@ import {
   postJson,
   storeBackendToken,
 } from '@/lib/api'
-import { supabase, type SupabaseUser } from '@/lib/supabase'
+import { clearSupabaseAuthArtifacts, supabase, type SupabaseUser } from '@/lib/supabase'
 
 type BackendAuthResponse = {
   access_token: string
@@ -40,6 +40,11 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  const text = String(error).toLowerCase()
+  return text.includes('invalid refresh token') || text.includes('refresh token not found')
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [backendToken, setBackendToken] = useState<string | null>(() =>
@@ -57,12 +62,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       clearBackendToken()
       setBackendToken(null)
-      if (String(error).toLowerCase().includes('invalid refresh token')) {
-        try {
-          await supabase.auth.signOut()
-        } catch {
-          // Ignore sign-out cleanup failures and continue with a clean local state.
-        }
+      if (isInvalidRefreshTokenError(error)) {
+        clearSupabaseAuthArtifacts()
         return null
       }
       throw error
@@ -119,6 +120,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } catch (error) {
         clearBackendToken()
         setBackendToken(null)
+        if (isInvalidRefreshTokenError(error)) {
+          clearSupabaseAuthArtifacts()
+        }
         if (active) {
           setUser(null)
           setLoading(false)

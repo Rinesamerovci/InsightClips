@@ -50,6 +50,14 @@ class PodcastsResponse(BaseModel):
     is_mock: bool = False
 
 
+class DeletePodcastResponse(BaseModel):
+    deleted: bool
+    podcast_id: str
+    source_objects_removed: int = 0
+    clip_objects_removed: int = 0
+    database_rows_removed: int = 0
+
+
 class TopPerformingClip(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

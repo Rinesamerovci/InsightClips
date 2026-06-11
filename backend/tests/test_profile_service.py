@@ -15,13 +15,74 @@ from app.models.export_settings import ExportSettingsInput  # noqa: E402
 from app.models.profile import UserMessageRequest  # noqa: E402
 from app.services.profile_service import (
     get_profile_by_id,
+    mark_free_trial_used,
     submit_user_message,
     update_profile,
     update_user_export_settings,
+    upsert_profile,
 )  # noqa: E402
 
 
 class ProfileServiceTests(unittest.TestCase):
+    def test_upsert_profile_keeps_free_trial_used_when_email_has_prior_usage(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "user-new",
+                        "email": "creator@example.com",
+                        "free_trial_used": True,
+                        "full_name": "Creator",
+                        "profile_picture_url": None,
+                        "export_settings": {},
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                ]
+            )
+        )
+        upsert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(upsert=upsert_mock))
+
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(profile_service_module, "has_email_used_free_trial", return_value=True),
+        ):
+            profile = upsert_profile("user-new", "Creator@Example.com", "Creator")
+
+        self.assertTrue(profile.free_trial_used)
+        upsert_payload = upsert_mock.call_args.args[0]
+        self.assertEqual(upsert_payload["email"], "creator@example.com")
+        self.assertTrue(upsert_payload["free_trial_used"])
+
+    def test_mark_free_trial_used_records_email_ledger(self) -> None:
+        profile = SimpleNamespace(id="user-123", email="creator@example.com")
+        free_trial_table = MagicMock()
+        upsert_execute = MagicMock()
+        free_trial_table.upsert.return_value = SimpleNamespace(execute=upsert_execute)
+        profiles_table = MagicMock()
+        update_eq_execute = MagicMock()
+        profiles_table.update.return_value = SimpleNamespace(
+            eq=MagicMock(return_value=SimpleNamespace(execute=update_eq_execute))
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: free_trial_table if name == "free_trial_usage" else profiles_table
+        )
+
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(profile_service_module, "get_profile_by_id", return_value=profile),
+            patch.object(profile_service_module, "get_free_trial_used_seconds", return_value=0.0),
+        ):
+            mark_free_trial_used("user-123")
+
+        free_trial_table.upsert.assert_called_once()
+        self.assertEqual(free_trial_table.upsert.call_args.args[0]["email"], "creator@example.com")
+        self.assertEqual(free_trial_table.upsert.call_args.args[0]["used_seconds"], 1800)
+        profiles_table.update.assert_called_once_with({"free_trial_used": True})
+
     def test_update_profile_normalizes_blank_fields(self) -> None:
         service_supabase_mock = MagicMock()
         execute_mock = MagicMock(
@@ -218,12 +279,25 @@ class ProfileServiceTests(unittest.TestCase):
             contact_email="creator@example.com",
         )
 
-        with patch.object(profile_service_module, "service_supabase", service_supabase_mock):
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(
+                profile_service_module,
+                "get_settings",
+                return_value=SimpleNamespace(
+                    support_inbox_email="",
+                    smtp_host="",
+                    smtp_username="",
+                    smtp_from_email="",
+                ),
+            ),
+        ):
             response = submit_user_message("user-123", payload)
 
         self.assertEqual(response.id, "message-1")
         self.assertEqual(response.category, "feature_request")
         self.assertEqual(response.subject, "Calendar")
+        self.assertFalse(response.email_notification_sent)
         insert_payload = insert_mock.call_args.args[0]
         self.assertEqual(insert_payload["user_id"], "user-123")
         self.assertEqual(insert_payload["message"], "Please add a better weekly planning flow.")
@@ -258,12 +332,81 @@ class ProfileServiceTests(unittest.TestCase):
             contact_email="creator@example.com",
         )
 
-        with patch.object(profile_service_module, "service_supabase", service_supabase_mock):
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(
+                profile_service_module,
+                "get_settings",
+                return_value=SimpleNamespace(
+                    support_inbox_email="",
+                    smtp_host="",
+                    smtp_username="",
+                    smtp_from_email="",
+                ),
+            ),
+        ):
             response = submit_user_message("user-123", payload)
 
         self.assertEqual(response.message_type, "contact")
         self.assertEqual(response.contact_email, "creator@example.com")
+        self.assertFalse(response.email_notification_sent)
         self.assertEqual(insert_mock.call_args.args[0]["message_type"], "contact")
+
+    def test_submit_user_message_sends_support_notification_when_smtp_is_configured(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "message-3",
+                        "user_id": "user-123",
+                        "message_type": "support",
+                        "category": "technical_support",
+                        "subject": "Upload issue",
+                        "message": "The upload flow needs help.",
+                        "contact_email": "creator@example.com",
+                        "status": "received",
+                        "created_at": None,
+                    }
+                ]
+            )
+        )
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
+        smtp_client = MagicMock()
+        smtp_context = MagicMock()
+        smtp_context.__enter__.return_value = smtp_client
+        settings = SimpleNamespace(
+            support_inbox_email="team@insightclips.dev",
+            smtp_host="smtp.resend.com",
+            smtp_port=587,
+            smtp_username="resend",
+            smtp_password="secret",
+            smtp_from_email="noreply@insightclips.dev",
+            smtp_from_name="InsightClips",
+            smtp_use_tls=True,
+        )
+
+        payload = UserMessageRequest(
+            message_type="support",
+            category="technical_support",
+            subject="Upload issue",
+            message="The upload flow needs help.",
+            contact_email="creator@example.com",
+        )
+
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(profile_service_module, "get_settings", return_value=settings),
+            patch.object(profile_service_module.smtplib, "SMTP", return_value=smtp_context),
+        ):
+            response = submit_user_message("user-123", payload)
+
+        self.assertEqual(response.id, "message-3")
+        self.assertTrue(response.email_notification_sent)
+        smtp_client.starttls.assert_called_once()
+        smtp_client.login.assert_called_once_with("resend", "secret")
+        smtp_client.send_message.assert_called_once()
 
     def test_user_message_request_rejects_short_messages(self) -> None:
         with self.assertRaises(ValueError):

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.config import BACKEND_DIR, ROOT_DIR
+from app.config import BACKEND_DIR, ROOT_DIR, get_settings
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
@@ -23,6 +23,7 @@ from app.models.media import SubtitleTimingContract, VisualOutputMode
 from app.models.overlay import OverlayDecision, OverlayMappingResult
 from app.models.transcription import TranscriptWord, TranscriptionResult
 from app.services.media_service import build_render_contract, resolve_export_settings_for_render
+from app.services.source_storage_service import SourceStorageError, materialize_source_media_path
 from app.utils.reframing import CropWindow, build_portrait_video_filters, compute_portrait_crop_window
 import app.services.overlay_mapping_service as overlay_mapping_service_module
 
@@ -34,6 +35,17 @@ MAX_GENERATED_CLIPS = 10
 CLIP_LEAD_IN_SECONDS = 2.0
 CLIP_LEAD_OUT_SECONDS = 1.0
 OVERLAY_ASSETS_ROOT = BACKEND_DIR / "assets" / "overlays"
+FFMPEG_PRESETS = {
+    "ultrafast",
+    "superfast",
+    "veryfast",
+    "faster",
+    "fast",
+    "medium",
+    "slow",
+    "slower",
+    "veryslow",
+}
 
 
 class ClippingError(Exception):
@@ -113,6 +125,7 @@ def build_ffmpeg_clip_command(
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
 ) -> list[str]:
+    ffmpeg_settings = _get_ffmpeg_render_settings()
     command = [
         "ffmpeg",
         "-v",
@@ -174,9 +187,11 @@ def build_ffmpeg_clip_command(
             "-c:v",
             "libx264",
             "-preset",
-            "medium",
+            ffmpeg_settings["preset"],
             "-crf",
-            "18",
+            str(ffmpeg_settings["crf"]),
+            "-threads",
+            str(ffmpeg_settings["threads"]),
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -189,6 +204,22 @@ def build_ffmpeg_clip_command(
         ]
     )
     return command
+
+
+def _get_ffmpeg_render_settings() -> dict[str, int | str]:
+    settings = get_settings()
+    preset = settings.clip_ffmpeg_preset.strip().lower() or "veryfast"
+    if preset not in FFMPEG_PRESETS:
+        preset = "veryfast"
+    crf = min(max(int(settings.clip_ffmpeg_crf), 18), 30)
+    threads = min(max(int(settings.clip_ffmpeg_threads), 1), 4)
+    timeout = min(max(int(settings.clip_ffmpeg_timeout_seconds), 60), 900)
+    return {
+        "preset": preset,
+        "crf": crf,
+        "threads": threads,
+        "timeout": timeout,
+    }
 
 
 def build_srt_content(
@@ -388,7 +419,6 @@ def generate_clips(
                 "render_fallback_reason": render_contract.render_fallback_reason,
             }
             rows_to_persist.append(row_to_persist)
-            _persist_generated_clip_row(row_to_persist)
         except ClippingError as exc:
             last_generation_error = exc
             continue
@@ -1237,12 +1267,13 @@ def _run_ffmpeg_clip_generation(
 
 
 def _execute_ffmpeg_command(command: list[str], clip_path: Path) -> None:
+    timeout_seconds = int(_get_ffmpeg_render_settings()["timeout"])
     try:
         result = subprocess.run(
             command,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout_seconds,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -1251,7 +1282,6 @@ def _execute_ffmpeg_command(command: list[str], clip_path: Path) -> None:
     if result.returncode != 0 or not clip_path.exists():
         stderr = (result.stderr or result.stdout).strip()
         raise ClippingError(stderr or "ffmpeg failed to generate the clip.", status_code=502)
-
 
 def _build_failed_audio_export_settings(export_settings: ExportSettings) -> ExportSettings:
     failed_audio = export_settings.audio_enhancement.model_copy(
@@ -1303,7 +1333,13 @@ def _resolve_source_media_path(podcast_row: dict[str, Any]) -> Path:
     storage_path = str(podcast_row.get("storage_path") or "").strip()
     if not storage_path:
         raise ClippingError("Podcast source media is missing, so clips cannot be generated.")
-    source_path = Path(storage_path).expanduser().resolve()
+    try:
+        source_path = materialize_source_media_path(
+            storage_path,
+            filename=str(podcast_row.get("source_filename") or "source.mp4"),
+        )
+    except SourceStorageError as exc:
+        raise ClippingError(exc.detail, status_code=exc.status_code) from exc
     if not source_path.exists():
         raise ClippingError(f"Podcast source media was not found: {source_path}", status_code=404)
     return source_path

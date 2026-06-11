@@ -52,6 +52,23 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(decision.price, 0.0)
         self.assertTrue(decision.free_trial_available)
 
+    def test_determine_upload_price_uses_remaining_free_minutes(self) -> None:
+        short_decision = determine_upload_price(
+            4.0,
+            free_trial_used=False,
+            free_trial_remaining_seconds=15 * 60,
+        )
+        long_decision = determine_upload_price(
+            16.0,
+            free_trial_used=False,
+            free_trial_remaining_seconds=15 * 60,
+        )
+
+        self.assertEqual(short_decision.status, "free_ready")
+        self.assertEqual(short_decision.price, 0.0)
+        self.assertEqual(long_decision.status, "awaiting_payment")
+        self.assertEqual(long_decision.price, 1.0)
+
     def test_determine_upload_price_blocks_over_mvp_limit(self) -> None:
         decision = determine_upload_price(121, free_trial_used=True)
         self.assertEqual(decision.status, "blocked")
@@ -95,7 +112,7 @@ class UploadServiceTests(unittest.TestCase):
                 return_value=SimpleNamespace(free_trial_used=False),
             ):
                 with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
-                    with patch.object(upload_service_module, "mark_free_trial_used") as mark_free_trial_used_mock:
+                    with patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock:
                         response = prepare_upload(
                             UploadPrepareRequest(
                                 title="Episode 1",
@@ -118,7 +135,7 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(response.export_settings.audio_enhancement.status, "enabled")
         insert_payload = insert_mock.call_args.args[0]
         self.assertEqual(insert_payload["audio_enhancement"]["status"], "enabled")
-        mark_free_trial_used_mock.assert_called_once_with("user-123")
+        record_free_trial_usage_mock.assert_called_once_with("user-123", 1800.0)
 
     def test_prepare_upload_persists_export_settings(self) -> None:
         service_supabase_mock = MagicMock()
@@ -134,7 +151,7 @@ class UploadServiceTests(unittest.TestCase):
                 return_value=SimpleNamespace(free_trial_used=False),
             ):
                 with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
-                    with patch.object(upload_service_module, "mark_free_trial_used"):
+                    with patch.object(upload_service_module, "record_free_trial_usage"):
                         response = prepare_upload(
                             UploadPrepareRequest(
                                 title="Portrait Episode",
@@ -194,6 +211,13 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(playlist_error.exception.code, "playlist_not_supported")
         self.assertEqual(host_error.exception.code, "unsupported_youtube_source")
 
+    def test_parse_youtube_source_rejects_invalid_video_ids(self) -> None:
+        with self.assertRaises(UploadWorkflowError) as error:
+            parse_youtube_source("https://www.youtube.com/watch?v=not-valid")
+
+        self.assertEqual(error.exception.code, "invalid_youtube_video_id")
+        self.assertEqual(error.exception.status_code, 400)
+
     def test_import_youtube_podcast_creates_ready_processing_record(self) -> None:
         download_result = YouTubeDownloadResult(
             title="Imported Founder Interview",
@@ -211,13 +235,14 @@ class UploadServiceTests(unittest.TestCase):
 
         with patch.object(upload_service_module, "_download_youtube_media", return_value=download_result):
             with patch.object(upload_service_module, "create_imported_podcast_record", return_value="pod-youtube") as create_mock:
-                response = import_youtube_podcast(
-                    YouTubeImportRequest(
-                        url="https://www.youtube.com/watch?v=abcDEF123_4",
-                        title="Custom Import Title",
-                    ),
-                    self.user,
-                )
+                with patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock:
+                    response = import_youtube_podcast(
+                        YouTubeImportRequest(
+                            url="https://www.youtube.com/watch?v=abcDEF123_4",
+                            title="Custom Import Title",
+                        ),
+                        self.user,
+                    )
 
         self.assertEqual(response.podcast_id, "pod-youtube")
         self.assertEqual(response.status, "ready_for_processing")
@@ -232,6 +257,7 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload["status"], "ready_for_processing")
         self.assertEqual(insert_payload["payment_status"], "not_required")
         self.assertEqual(insert_payload["import_metadata"]["channel"], "Insight Lab")
+        record_free_trial_usage_mock.assert_called_once_with("user-123", 182.4)
 
     def test_import_youtube_podcast_surfaces_download_failure(self) -> None:
         with patch.object(
@@ -247,6 +273,17 @@ class UploadServiceTests(unittest.TestCase):
 
         self.assertEqual(error.exception.status_code, 502)
         self.assertEqual(error.exception.code, "youtube_import_failed")
+
+    def test_get_youtube_import_dir_uses_configured_persistent_storage(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch.object(upload_service_module, "get_settings") as settings_mock:
+                settings_mock.return_value.upload_storage_dir = tmp_dir
+
+                result = upload_service_module.get_youtube_import_dir()
+
+        self.assertEqual(result, Path(tmp_dir) / "youtube-imports")
 
 
 if __name__ == "__main__":

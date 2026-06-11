@@ -42,6 +42,15 @@
 -- 11. 99_final_rls_policies.sql
 --    Replaces all RLS policies with the final canonical policies.
 --
+-- 12. free_trial_usage_ledger.sql
+--    Creates the permanent email ledger for one-time free upload usage.
+--    Run this before testing account deletion so deleted/recreated accounts
+--    cannot receive a second free upload with the same email.
+--
+-- 13. storage_policies.sql
+--    Creates/normalizes private Supabase Storage buckets and policies for
+--    podcast-sources and clips.
+--
 -- Optional verification after all files finish:
 --
 -- select
@@ -51,6 +60,7 @@
 --   to_regclass('public.clips') as clips,
 --   to_regclass('public.clip_overlays') as clip_overlays,
 --   to_regclass('public.clip_publications') as clip_publications,
+--   to_regclass('public.free_trial_usage') as free_trial_usage,
 --   to_regclass('public.user_messages') as user_messages;
 --
 -- select trigger_name, action_statement
@@ -63,3 +73,9 @@
 -- from pg_policies
 -- where schemaname = 'public'
 -- order by tablename, policyname;
+--
+-- select policyname, roles, cmd
+-- from pg_policies
+-- where schemaname = 'storage'
+--   and tablename = 'objects'
+-- order by policyname;

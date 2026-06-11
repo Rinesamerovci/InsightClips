@@ -61,6 +61,29 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="", validation_alias=AliasChoices("JWT_SECRET"))
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
+    upload_storage_dir: str = Field(
+        default="",
+        validation_alias=AliasChoices("INSIGHTCLIPS_UPLOAD_DIR", "UPLOAD_STORAGE_DIR"),
+    )
+    source_storage_bucket: str = Field(
+        default="podcast-sources",
+        validation_alias=AliasChoices("SOURCE_STORAGE_BUCKET", "PODCAST_SOURCE_STORAGE_BUCKET"),
+    )
+    allow_local_source_fallback: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("ALLOW_LOCAL_SOURCE_FALLBACK"),
+    )
+    support_inbox_email: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPPORT_INBOX_EMAIL", "INSIGHTCLIPS_SUPPORT_EMAIL"),
+    )
+    smtp_host: str = Field(default="", validation_alias=AliasChoices("SMTP_HOST"))
+    smtp_port: int = Field(default=587, validation_alias=AliasChoices("SMTP_PORT"))
+    smtp_username: str = Field(default="", validation_alias=AliasChoices("SMTP_USERNAME", "SMTP_USER"))
+    smtp_password: str = Field(default="", validation_alias=AliasChoices("SMTP_PASSWORD", "SMTP_PASS"))
+    smtp_from_email: str = Field(default="", validation_alias=AliasChoices("SMTP_FROM_EMAIL", "SMTP_SENDER_EMAIL"))
+    smtp_from_name: str = Field(default="InsightClips", validation_alias=AliasChoices("SMTP_FROM_NAME"))
+    smtp_use_tls: bool = Field(default=True, validation_alias=AliasChoices("SMTP_USE_TLS"))
     groq_api_key: str = Field(default="", validation_alias=AliasChoices("GROQ_API_KEY"))
     transcription_api_base_url: str = Field(
         default="",
@@ -77,6 +100,22 @@ class Settings(BaseSettings):
     transcription_chunk_duration_seconds: int = Field(
         default=600,
         validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
+    )
+    clip_ffmpeg_preset: str = Field(
+        default="veryfast",
+        validation_alias=AliasChoices("CLIP_FFMPEG_PRESET", "FFMPEG_PRESET"),
+    )
+    clip_ffmpeg_crf: int = Field(
+        default=22,
+        validation_alias=AliasChoices("CLIP_FFMPEG_CRF", "FFMPEG_CRF"),
+    )
+    clip_ffmpeg_threads: int = Field(
+        default=1,
+        validation_alias=AliasChoices("CLIP_FFMPEG_THREADS", "FFMPEG_THREADS"),
+    )
+    clip_ffmpeg_timeout_seconds: int = Field(
+        default=240,
+        validation_alias=AliasChoices("CLIP_FFMPEG_TIMEOUT_SECONDS", "FFMPEG_TIMEOUT_SECONDS"),
     )
 
 

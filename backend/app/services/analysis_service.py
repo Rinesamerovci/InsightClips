@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from functools import lru_cache
 from typing import Any
 
@@ -14,6 +14,7 @@ from app.database import service_supabase
 from app.models.analysis import AnalysisResult, AnalysisSummary, ScoreSegment
 from app.models.transcription import TranscriptWord, TranscriptionResult
 from app.services.podcast_service import get_podcast_for_user
+from app.services.source_storage_service import SourceStorageError, source_media_path
 from app.services.transcription_service import TranscriptionError, transcribe_media
 
 try:
@@ -205,10 +206,32 @@ def transcribe_podcast_media_for_user(podcast_id: str, user_id: str, *, model: s
             "This podcast does not have a staged media file available for transcription.",
             status_code=422,
         )
+    source_filename = _resolve_podcast_source_filename(podcast)
     try:
-        return transcribe_media(Path(podcast.storage_path), model=model)
+        with source_media_path(podcast.storage_path, filename=source_filename) as local_media_path:
+            return transcribe_media(local_media_path, model=model)
+    except SourceStorageError as exc:
+        raise AnalysisError(exc.detail, status_code=exc.status_code) from exc
     except TranscriptionError as exc:
         raise AnalysisError(exc.detail, status_code=exc.status_code) from exc
+
+
+def _resolve_podcast_source_filename(podcast: Any) -> str:
+    source_filename = getattr(podcast, "source_filename", None)
+    if isinstance(source_filename, str) and source_filename.strip():
+        return source_filename.strip()
+
+    storage_path = getattr(podcast, "storage_path", None)
+    if isinstance(storage_path, str) and storage_path.strip():
+        path_name = Path(storage_path.strip()).name
+        if path_name:
+            return path_name
+
+    title = getattr(podcast, "title", None)
+    if isinstance(title, str) and title.strip():
+        return f"{title.strip()}.mp4"
+
+    return "source.mp4"
 
 
 def get_analysis_summary_for_podcast(podcast_id: str) -> AnalysisSummary | None:

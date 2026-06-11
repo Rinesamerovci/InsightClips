@@ -19,6 +19,7 @@ from app.services.analysis_service import (  # noqa: E402
     detect_reference_mentions,
     extract_topic_labels,
     persist_analysis_result,
+    transcribe_podcast_media_for_user,
     score_segments_need_refresh,
 )
 
@@ -260,6 +261,27 @@ class AnalysisServiceTests(unittest.TestCase):
         payload = insert_mock.call_args.args[0]
         self.assertEqual(len(payload), len(result.all_scored_segments))
         self.assertEqual(payload[0]["podcast_id"], "podcast-123")
+
+    def test_transcribe_podcast_media_works_when_source_filename_is_missing(self) -> None:
+        podcast = SimpleNamespace(
+            storage_path="C:/tmp/Insight Episode.mp4",
+            title="Insight Episode",
+        )
+
+        with patch.object(analysis_service_module, "get_podcast_for_user", return_value=podcast):
+            with patch.object(analysis_service_module, "source_media_path") as source_media_path_mock:
+                with patch.object(analysis_service_module, "transcribe_media", return_value=self.transcription) as transcribe_mock:
+                    source_media_path_mock.return_value.__enter__.return_value = Path("C:/tmp/Insight Episode.mp4")
+                    source_media_path_mock.return_value.__exit__.return_value = None
+
+                    result = transcribe_podcast_media_for_user("podcast-123", "user-123")
+
+        self.assertEqual(result, self.transcription)
+        source_media_path_mock.assert_called_once_with(
+            "C:/tmp/Insight Episode.mp4",
+            filename="Insight Episode.mp4",
+        )
+        transcribe_mock.assert_called_once()
 
     def test_sixty_minute_transcript_benchmark_and_top_segments(self) -> None:
         long_transcription = self._build_long_form_transcription()

@@ -186,6 +186,18 @@ function collectPlanningHashtags(suggestions: ContentCalendarSuggestion[]): stri
   return hashtags.slice(0, 8);
 }
 
+function buildPlanningPostCopy(suggestion: ContentCalendarSuggestion): string {
+  return [
+    suggestion.title,
+    suggestion.caption,
+    suggestion.hashtags.join(" "),
+    suggestion.call_to_action,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSearchResult[] {
   if (!podcast) {
     return [];
@@ -327,10 +339,17 @@ function formatGenerationFailureMessage(error: unknown): string {
   return baseMessage;
 }
 
-function ClipsPageContent() {
+type ClipsPageMode = "results" | "generate";
+
+type ClipsPageContentProps = {
+  mode?: ClipsPageMode;
+};
+
+export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
+  const lockedWorkspaceView: "setup" | "results" = mode === "generate" ? "setup" : "results";
 
   const [mounted, setMounted] = useState(false);
   const [dark, setDark] = useState(true);
@@ -359,7 +378,7 @@ function ClipsPageContent() {
     tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<"setup" | "results">("setup");
+  const [workspaceView, setWorkspaceView] = useState<"setup" | "results">(lockedWorkspaceView);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [generationTemplateId, setGenerationTemplateId] =
     useState<GenerationTemplateId>("hook_spotlight");
@@ -375,6 +394,10 @@ function ClipsPageContent() {
   const isMobile = viewportWidth < 960;
   const selectedPodcast =
     podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
+  const generationPath = selectedPodcastId ? `/clips?podcastId=${selectedPodcastId}` : "/clips";
+  const resultsPath = selectedPodcastId
+    ? `/clips/generated?podcastId=${selectedPodcastId}`
+    : "/clips/generated";
   const activeSearch = searchQuery.trim().length > 0 || filter !== "all";
   const overlayByClipId = useMemo(
     () => new Map(clips.map((clip) => [clip.id, clip.overlay ?? null])),
@@ -704,15 +727,15 @@ function ClipsPageContent() {
   }, [selectedPodcast]);
 
   useEffect(() => {
-    setWorkspaceView("setup");
+    setWorkspaceView(lockedWorkspaceView);
     setShowAdvancedControls(false);
-  }, [selectedPodcastId]);
+  }, [lockedWorkspaceView, selectedPodcastId]);
 
   useEffect(() => {
-    if (clips.length > 0) {
+    if (mode === "results" && clips.length > 0) {
       setWorkspaceView("results");
     }
-  }, [clips]);
+  }, [clips, mode]);
 
   const syncClipEverywhere = (
     clipId: string,
@@ -857,6 +880,9 @@ function ClipsPageContent() {
         setContentCalendar(calendar);
       }
       setWorkspaceView("results");
+      if (mode === "generate") {
+        router.push(resultsPath);
+      }
       setActionFeedback({
         tone: "success",
         message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast?.title ?? "this podcast"} using ${generationSettings.clip_duration_seconds}s targets.`,
@@ -870,6 +896,9 @@ function ClipsPageContent() {
             selectedPodcast ? toDiscoveryClips(partialResult.clips, selectedPodcast) : [],
           );
           setWorkspaceView("results");
+          if (mode === "generate") {
+            router.push(resultsPath);
+          }
           setActionFeedback({
             tone: "info",
             message: `Showing ${partialResult.clips.length} clip${partialResult.clips.length === 1 ? "" : "s"} that finished rendering. The rest may still need another generation run.`,
@@ -899,16 +928,32 @@ function ClipsPageContent() {
     }
 
     try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API is not available.");
+      }
       await navigator.clipboard.writeText(value);
       setActionFeedback({
         tone: "success",
         message: `${label} copied to your clipboard.`,
       });
     } catch (copyError) {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+
       setActionFeedback({
-        tone: "error",
-        message:
-          copyError instanceof Error
+        tone: copied ? "success" : "error",
+        message: copied
+          ? `${label} copied to your clipboard.`
+          : copyError instanceof Error
             ? copyError.message
             : `Unable to copy ${label.toLowerCase()}.`,
       });
@@ -1281,7 +1326,7 @@ function ClipsPageContent() {
             <div
               className="lift-card"
               style={{
-                borderRadius: 24,
+                borderRadius: 20,
                 border: `1px solid ${t.borderSub}`,
                 background: t.cardAlt,
                 padding: "20px 22px",
@@ -1365,7 +1410,7 @@ function ClipsPageContent() {
           style={{
             display: "grid",
             gridTemplateColumns: isMobile ? "1fr" : "320px minmax(0, 1fr)",
-            gap: 20,
+            gap: 18,
             marginTop: 22,
             alignItems: "start",
           }}
@@ -1432,105 +1477,90 @@ function ClipsPageContent() {
               )}
             </section>
 
-            <section
-              className="lift-card ic-premium-card"
-              style={{
-                borderRadius: 24,
-                background: t.card,
-                border: `1px solid ${t.border}`,
-                padding: 18,
-              }}
-            >
-              <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
-                Recommendations
-              </div>
-              {loadingRecommendations ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub }}>
-                  <Loader2 size={18} className="animate-spin" />
-                  Loading recommendations...
+            {mode === "results" ? (
+              <section
+                className="lift-card ic-premium-card"
+                style={{
+                  borderRadius: 24,
+                  background: t.card,
+                  border: `1px solid ${t.border}`,
+                  padding: 18,
+                }}
+              >
+                <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
+                  Recommendations
                 </div>
-              ) : recommendations.length === 0 ? (
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                    Recommendations will appear here after clips are generated for the selected podcast.
+                {loadingRecommendations ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub }}>
+                    <Loader2 size={18} className="animate-spin" />
+                    Loading recommendations...
                   </div>
-                  {selectedPodcast ? (
-                    <Link
-                      href={`/analytics?podcastId=${selectedPodcast.id}`}
-                      style={{
-                        width: "fit-content",
-                        borderRadius: 999,
-                        padding: "10px 14px",
-                        background: t.cardAlt,
-                        border: `1px solid ${t.borderSub}`,
-                        color: t.textSub,
-                        textDecoration: "none",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Open analytics context
-                    </Link>
-                  ) : null}
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {recommendationsEstimated ? (
-                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
-                      Showing estimated recommendations based on current clip scores while the dedicated endpoint is unavailable.
+                ) : recommendations.length === 0 ? (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div style={{ color: t.textSub, lineHeight: 1.75 }}>
+                      Recommendations will appear here after clips are generated for the selected podcast.
                     </div>
-                  ) : null}
-                  {visibleRecommendations.map((clip) => {
-                    const overlayState = getOverlayState(clip.overlay);
-
-                    return (
-                      <article
-                        key={clip.id}
-                        className="ic-premium-card"
+                    {selectedPodcast ? (
+                      <Link
+                        href={`/analytics?podcastId=${selectedPodcast.id}`}
                         style={{
-                          borderRadius: 18,
-                          border: `1px solid ${t.borderSub}`,
+                          width: "fit-content",
+                          borderRadius: 999,
+                          padding: "10px 14px",
                           background: t.cardAlt,
-                          padding: 14,
+                          border: `1px solid ${t.borderSub}`,
+                          color: t.textSub,
+                          textDecoration: "none",
+                          fontWeight: 700,
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                          <div>
-                            <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                              Clip {clip.clip_number}
+                        Open analytics context
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {recommendationsEstimated ? (
+                      <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
+                        Showing estimated recommendations based on current clip scores while the dedicated endpoint is unavailable.
+                      </div>
+                    ) : null}
+                    {visibleRecommendations.map((clip) => {
+                      const overlayState = getOverlayState(clip.overlay);
+
+                      return (
+                        <article
+                          key={clip.id}
+                          className="ic-premium-card"
+                          style={{
+                            borderRadius: 18,
+                            border: `1px solid ${t.borderSub}`,
+                            background: t.cardAlt,
+                            padding: 14,
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                                Clip {clip.clip_number}
+                              </div>
+                              <div style={{ marginTop: 4, fontWeight: 700 }}>{clip.recommendation_reason ?? "Recommended next"}</div>
                             </div>
-                            <div style={{ marginTop: 4, fontWeight: 700 }}>{clip.recommendation_reason ?? "Recommended next"}</div>
+                            <div style={{ borderRadius: 999, background: t.chip, color: t.accent, fontWeight: 700, padding: "7px 10px", height: "fit-content" }}>
+                              {clip.virality_score.toFixed(1)}
+                            </div>
                           </div>
-                          <div style={{ borderRadius: 999, background: t.chip, color: t.accent, fontWeight: 700, padding: "7px 10px", height: "fit-content" }}>
-                            {clip.virality_score.toFixed(1)}
+                          <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
+                            {clip.subtitle_text}
                           </div>
-                        </div>
-                        <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
-                          {clip.subtitle_text}
-                        </div>
-                        {overlayState.variant === "enabled" ? (
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                            <span
-                              style={{
-                                borderRadius: 999,
-                                background: t.chip,
-                                border: `1px solid ${t.accent}`,
-                                color: t.accent,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                letterSpacing: ".08em",
-                                textTransform: "uppercase",
-                                padding: "6px 10px",
-                              }}
-                            >
-                              {overlayState.badge}
-                            </span>
-                            {overlayState.category ? (
+                          {overlayState.variant === "enabled" ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
                               <span
                                 style={{
                                   borderRadius: 999,
-                                  background: "transparent",
-                                  border: `1px solid ${t.borderSub}`,
-                                  color: t.textSub,
+                                  background: t.chip,
+                                  border: `1px solid ${t.accent}`,
+                                  color: t.accent,
                                   fontSize: 11,
                                   fontWeight: 700,
                                   letterSpacing: ".08em",
@@ -1538,17 +1568,34 @@ function ClipsPageContent() {
                                   padding: "6px 10px",
                                 }}
                               >
-                                {overlayState.category}
+                                {overlayState.badge}
                               </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+                              {overlayState.category ? (
+                                <span
+                                  style={{
+                                    borderRadius: 999,
+                                    background: "transparent",
+                                    border: `1px solid ${t.borderSub}`,
+                                    color: t.textSub,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    letterSpacing: ".08em",
+                                    textTransform: "uppercase",
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  {overlayState.category}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : null}
           </aside>
 
           <main
@@ -1561,10 +1608,10 @@ function ClipsPageContent() {
             <section
               className="ic-premium-card"
               style={{
-                borderRadius: 24,
+                borderRadius: 20,
                 background: t.card,
                 border: `1px solid ${t.border}`,
-                padding: 20,
+                padding: 18,
               }}
             >
               <div
@@ -1581,7 +1628,7 @@ function ClipsPageContent() {
                   <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
                     Clip workspace
                   </div>
-                  <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.08, margin: 0 }}>
+                  <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 28 : 32, lineHeight: 1.08, margin: 0 }}>
                     {selectedPodcast?.title ?? "Choose a podcast"}
                   </h2>
                   <p style={{ marginTop: 8, color: t.textSub }}>
@@ -1594,8 +1641,12 @@ function ClipsPageContent() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (mode === "results") {
+                      router.push(generationPath);
+                      return;
+                    }
                     if (clips.length > 0) {
-                      setWorkspaceView("results");
+                      router.push(resultsPath);
                       return;
                     }
                     void handleGenerateClips();
@@ -1618,56 +1669,14 @@ function ClipsPageContent() {
                   }}
                 >
                   {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <PlayCircle size={16} /> : <Wand2 size={16} />}
-                  {generating ? "Rendering clips..." : clips.length > 0 ? "View generated clips" : "Generate clips"}
+                  {generating
+                    ? "Rendering clips..."
+                    : mode === "results"
+                      ? "Open generation setup"
+                      : clips.length > 0
+                        ? "View generated clips"
+                        : "Generate clips"}
                 </button>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: viewportWidth < 900 ? "1fr" : "repeat(3,minmax(0,1fr))",
-                  gap: 10,
-                  marginBottom: 18,
-                }}
-              >
-                {[
-                  {
-                    label: "Generation controls",
-                    detail: "Set clip length, topic focus, and subtitle behavior before you render.",
-                  },
-                  {
-                    label: "Creative polish",
-                    detail: "Adjust the visual output mode and carry a cleaner subtitle style into the final clips.",
-                  },
-                  {
-                    label: "Publish handoff",
-                    detail: "Move from generation to recommendations, planning, export, and publishing in one place.",
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    style={{
-                      borderRadius: 18,
-                      border: `1px solid ${t.borderSub}`,
-                      background: t.cardAlt,
-                      padding: "14px 15px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        letterSpacing: ".18em",
-                        textTransform: "uppercase",
-                        color: t.accentLt,
-                        fontWeight: 700,
-                        marginBottom: 6,
-                      }}
-                    >
-                      {item.label}
-                    </div>
-                    <div style={{ fontSize: 12, lineHeight: 1.65, color: t.textSub }}>{item.detail}</div>
-                  </div>
-                ))}
               </div>
 
               <section
@@ -1689,20 +1698,20 @@ function ClipsPageContent() {
                     Workspace view
                   </div>
                   <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                    Keep setup light first, then switch to results when you want previews, planning, and publishing.
+                    Setup keeps generation controls separate. Results keeps previews, search, planning, and publish actions separate.
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {([
-                    { id: "setup", label: "Quick setup" },
-                    { id: "results", label: "Results" },
+                    { id: "setup", label: "Generation", href: generationPath },
+                    { id: "results", label: "Results", href: resultsPath },
                   ] as const).map((item) => {
                     const active = workspaceView === item.id;
                     return (
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => setWorkspaceView(item.id)}
+                        onClick={() => router.push(item.href)}
                         style={{
                           border: "none",
                           borderRadius: 999,
@@ -1722,68 +1731,70 @@ function ClipsPageContent() {
                 </div>
               </section>
 
-              <GenerationSettingsPanel
-                dark={dark}
-                templateId={generationTemplateId}
-                settings={generationSettings}
-                onTemplateChange={handleGenerationTemplateChange}
-                onSettingsChange={handleGenerationSettingsChange}
-                storageHint="These preferences are reused across the upload and clips workflow on this device."
-                palette={{
-                  border: t.border,
-                  subBorder: t.borderSub,
-                  muted: t.textSub,
-                  hi: t.accent,
-                  hi2: t.accentLt,
-                }}
-              />
+              {workspaceView === "setup" ? (
+                <>
+                  <GenerationSettingsPanel
+                    dark={dark}
+                    templateId={generationTemplateId}
+                    settings={generationSettings}
+                    onTemplateChange={handleGenerationTemplateChange}
+                    onSettingsChange={handleGenerationSettingsChange}
+                    storageHint="These preferences are reused across the upload and clips workflow on this device."
+                    palette={{
+                      border: t.border,
+                      subBorder: t.borderSub,
+                      muted: t.textSub,
+                      hi: t.accent,
+                      hi2: t.accentLt,
+                    }}
+                  />
 
-              <section
-                style={{
-                  borderRadius: 20,
-                  border: `1px solid ${t.borderSub}`,
-                  background: t.cardAlt,
-                  padding: "14px 15px",
-                  marginBottom: 16,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                      Advanced controls
-                    </div>
-                    <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                      Open visual mode and subtitle styling only when you need deeper polishing.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedControls((current) => !current)}
+                  <section
                     style={{
+                      borderRadius: 20,
                       border: `1px solid ${t.borderSub}`,
-                      borderRadius: 999,
-                      padding: "10px 14px",
-                      background: showAdvancedControls ? t.chip : t.card,
-                      color: showAdvancedControls ? t.accent : t.textSub,
-                      fontWeight: 700,
-                      cursor: "pointer",
+                      background: t.cardAlt,
+                      padding: "14px 15px",
+                      marginBottom: 16,
                     }}
                   >
-                    {showAdvancedControls ? "Hide advanced" : "Open advanced"}
-                  </button>
-                </div>
-              </section>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                          Advanced controls
+                        </div>
+                        <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                          Open visual mode and subtitle styling only when you need deeper polishing.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvancedControls((current) => !current)}
+                        style={{
+                          border: `1px solid ${t.borderSub}`,
+                          borderRadius: 999,
+                          padding: "10px 14px",
+                          background: showAdvancedControls ? t.chip : t.card,
+                          color: showAdvancedControls ? t.accent : t.textSub,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {showAdvancedControls ? "Hide advanced" : "Open advanced"}
+                      </button>
+                    </div>
+                  </section>
 
-              {showAdvancedControls ? (
-                <div style={{ display: "grid", gap: 16 }}>
+                  {showAdvancedControls ? (
+                    <div style={{ display: "grid", gap: 16 }}>
               <section
                 className="glass a2"
                 style={{
@@ -1954,7 +1965,9 @@ function ClipsPageContent() {
                   hi2: t.accentLt,
                 }}
               />
-                </div>
+                    </div>
+                  ) : null}
+                </>
               ) : null}
 
               {workspaceView === "results" ? (
@@ -2035,6 +2048,7 @@ function ClipsPageContent() {
                     display: "grid",
                     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
                     gap: 10,
+                    alignItems: "stretch",
                     marginBottom: 16,
                   }}
                 >
@@ -2071,10 +2085,13 @@ function ClipsPageContent() {
                     <div
                       key={item.label}
                       style={{
+                        display: "flex",
+                        flexDirection: "column",
                         borderRadius: 16,
                         border: `1px solid ${t.borderSub}`,
                         background: t.cardAlt,
                         padding: "14px 15px",
+                        minHeight: 168,
                       }}
                     >
                       <div
@@ -2099,7 +2116,7 @@ function ClipsPageContent() {
                       >
                         {item.value}
                       </div>
-                      <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6, marginTop: "auto" }}>
                         {item.detail}
                       </div>
                     </div>
@@ -2129,111 +2146,172 @@ function ClipsPageContent() {
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
                       gap: 12,
+                      alignItems: "stretch",
                     }}
                   >
                     {calendarPreview.map((suggestion) => (
-                      <article
+                      <details
                         key={`${suggestion.clip_id}-${suggestion.platform}`}
                         style={{
                           borderRadius: 18,
                           border: `1px solid ${t.borderSub}`,
                           background: t.cardAlt,
-                          padding: 14,
+                          padding: 0,
+                          minHeight: 168,
+                          overflow: "hidden",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                          <div>
-                            <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                              Clip {suggestion.clip_number}
+                        <summary
+                          style={{
+                            listStyle: "none",
+                            cursor: "pointer",
+                            padding: 14,
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                            <div>
+                              <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                                Clip {suggestion.clip_number}
+                              </div>
+                              <div style={{ marginTop: 4, fontWeight: 800, color: t.text }}>
+                                {formatPlatformLabel(suggestion.platform)}
+                              </div>
                             </div>
-                            <div style={{ marginTop: 4, fontWeight: 700 }}>{formatPlatformLabel(suggestion.platform)}</div>
-                          </div>
-                          <div
-                            style={{
-                              borderRadius: 999,
-                              border: `1px solid ${t.borderSub}`,
-                              background: t.chip,
-                              color: t.accent,
-                              padding: "6px 10px",
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
-                            Day {suggestion.scheduled_day}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: t.text, lineHeight: 1.55, marginBottom: 6 }}>
-                          {suggestion.title}
-                        </div>
-                        <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65, marginBottom: 8 }}>
-                          Best time: {suggestion.best_time_local}
-                        </div>
-                        <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65, marginBottom: 10 }}>
-                          {truncateText(suggestion.caption, 140)}
-                        </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                          {suggestion.hashtags.slice(0, 4).map((hashtag) => (
-                            <span
-                              key={hashtag}
+                            <div
                               style={{
                                 borderRadius: 999,
                                 border: `1px solid ${t.borderSub}`,
-                                background: "transparent",
-                                color: t.textSub,
+                                background: t.chip,
+                                color: t.accent,
+                                padding: "6px 10px",
                                 fontSize: 11,
-                                fontWeight: 700,
-                                padding: "5px 9px",
+                                fontWeight: 800,
+                                height: "fit-content",
                               }}
                             >
-                              {hashtag}
-                            </span>
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button
-                            type="button"
-                            onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
+                              Day {suggestion.scheduled_day}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.45, marginBottom: 6 }}>
+                            {truncateText(suggestion.title, 64)}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>
+                            Best time: {suggestion.best_time_local}
+                          </div>
+                          <div
                             style={{
-                              border: `1px solid ${t.borderSub}`,
+                              marginTop: 10,
+                              width: "fit-content",
                               borderRadius: 999,
+                              border: `1px solid ${t.borderSub}`,
                               background: "transparent",
                               color: t.textSub,
-                              padding: "8px 12px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              fontWeight: 700,
-                              cursor: "pointer",
+                              padding: "6px 9px",
+                              fontSize: 11,
+                              fontWeight: 800,
                             }}
                           >
-                            <Copy size={13} />
-                            Copy caption
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
-                            style={{
-                              border: `1px solid ${t.borderSub}`,
-                              borderRadius: 999,
-                              background: "transparent",
-                              color: t.textSub,
-                              padding: "8px 12px",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                              fontWeight: 700,
-                              cursor: "pointer",
-                            }}
-                          >
-                            <Hash size={13} />
-                            Copy tags
-                          </button>
+                            Open caption
+                          </div>
+                        </summary>
+                        <div
+                          style={{
+                            borderTop: `1px solid ${t.borderSub}`,
+                            padding: 14,
+                            display: "grid",
+                            gap: 12,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
+                            {suggestion.caption}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            {suggestion.hashtags.slice(0, 6).map((hashtag) => (
+                              <span
+                                key={hashtag}
+                                style={{
+                                  borderRadius: 999,
+                                  border: `1px solid ${t.borderSub}`,
+                                  background: "transparent",
+                                  color: t.textSub,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  padding: "5px 9px",
+                                }}
+                              >
+                                {hashtag}
+                              </span>
+                            ))}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                            {suggestion.repurpose_angle}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyPlanning(buildPlanningPostCopy(suggestion), "Post")}
+                              style={{
+                                border: "none",
+                                borderRadius: 999,
+                                background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                                color: "#fff",
+                                padding: "8px 12px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Copy size={13} />
+                              Copy post
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
+                              style={{
+                                border: `1px solid ${t.borderSub}`,
+                                borderRadius: 999,
+                                background: "transparent",
+                                color: t.textSub,
+                                padding: "8px 12px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Copy size={13} />
+                              Caption
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
+                              style={{
+                                border: `1px solid ${t.borderSub}`,
+                                borderRadius: 999,
+                                background: "transparent",
+                                color: t.textSub,
+                                padding: "8px 12px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <Hash size={13} />
+                              Hashtags
+                            </button>
+                          </div>
                         </div>
-                      </article>
+                      </details>
                     ))}
                   </div>
                 )}
               </section>
+
 
               <div
                 style={{
@@ -2335,10 +2413,10 @@ function ClipsPageContent() {
             <section
               className="ic-premium-card"
               style={{
-                borderRadius: 24,
+                borderRadius: 20,
                 background: t.card,
                 border: `1px solid ${t.border}`,
-                padding: 20,
+                padding: 18,
               }}
             >
               {loadingClips ? (
@@ -2448,8 +2526,8 @@ function ClipsPageContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
-                    gap: 16,
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+                    gap: 14,
                     alignItems: "start",
                   }}
                 >
@@ -2507,39 +2585,37 @@ function ClipsPageContent() {
                         key={clip.id}
                         className="lift-card ic-premium-card ic-clip-card"
                         style={{
-                          borderRadius: 22,
+                          borderRadius: 18,
                           overflow: "hidden",
-                          border: `1px solid ${t.borderSub}`,
-                          background: t.cardAlt,
+                          border: `1px solid ${t.border}`,
+                          background: t.card,
                           alignSelf: "start",
                         }}
                       >
                         <div
                           className="ic-clip-media"
                           style={{
-                            minHeight: 190,
-                            background: dark
-                              ? "radial-gradient(circle at top left, rgba(163,208,107,.22), transparent 32%), linear-gradient(135deg, #152412, #385530)"
-                              : "radial-gradient(circle at top left, rgba(255,255,255,.72), transparent 34%), linear-gradient(135deg, #dfead7, #c9ddbd)",
+                            background: dark ? "rgba(255,255,255,.025)" : "rgba(246,250,240,.82)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            padding: 16,
+                            padding: 12,
+                            borderBottom: `1px solid ${t.borderSub}`,
                           }}
                         >
                           {isPreviewable(previewUrl) ? (
                             <div
                               style={{
                                 width: "100%",
-                                maxWidth: portraitPreview ? 250 : "100%",
+                                maxWidth: portraitPreview ? 220 : 320,
                                 aspectRatio: previewAspectRatio,
                                 margin: "0 auto",
-                                borderRadius: 18,
+                                borderRadius: 14,
                                 overflow: "hidden",
                                 background: "#000",
                                 boxShadow: dark
-                                  ? "0 14px 30px rgba(0,0,0,.34)"
-                                  : "0 14px 30px rgba(20,34,16,.14)",
+                                  ? "0 10px 22px rgba(0,0,0,.28)"
+                                  : "0 10px 22px rgba(20,34,16,.12)",
                               }}
                             >
                               <video
@@ -2569,24 +2645,38 @@ function ClipsPageContent() {
                         <div style={{ padding: 16 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12, alignItems: "flex-start" }}>
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".18em", color: t.textFaint }}>
-                                {clip.podcast_title} / Clip {clip.clip_number}
+                              <div style={{ fontSize: 12, color: t.textSub, marginBottom: 6 }}>
+                                Clip {clip.clip_number}
                               </div>
-                              <div style={{ fontSize: 13, color: t.textSub, marginTop: 6 }}>
+                              <div
+                                style={{
+                                  fontSize: 15,
+                                  fontWeight: 800,
+                                  color: t.text,
+                                  lineHeight: 1.35,
+                                  display: "-webkit-box",
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: "vertical",
+                                  overflow: "hidden",
+                                }}
+                              >
+                                {clip.podcast_title}
+                              </div>
+                              <div style={{ fontSize: 12, color: t.textSub, marginTop: 7 }}>
                                 {formatTime(clip.clip_start_seconds)} - {formatTime(clip.clip_end_seconds)} / {formatTime(clip.duration_seconds)}
                               </div>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
                                 <span
                                   style={{
                                     borderRadius: 999,
                                     background: clip.published ? t.chip : "transparent",
                                     border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
                                     color: clip.published ? t.accent : t.textSub,
-                                    fontSize: 11,
+                                    fontSize: 10,
                                     fontWeight: 700,
-                                    letterSpacing: ".1em",
+                                    letterSpacing: ".08em",
                                     textTransform: "uppercase",
-                                    padding: "6px 10px",
+                                    padding: "5px 8px",
                                   }}
                                 >
                                   {clip.published ? "Published" : "Private"}
@@ -2594,46 +2684,14 @@ function ClipsPageContent() {
                                 <span
                                   style={{
                                     borderRadius: 999,
-                                    background: overlayBadgeBackground,
-                                    border: `1px solid ${overlayBadgeBorder}`,
-                                    color: overlayBadgeColor,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    letterSpacing: ".1em",
-                                    textTransform: "uppercase",
-                                    padding: "6px 10px",
-                                  }}
-                                >
-                                  {overlayState.badge}
-                                </span>
-                                {overlayState.category ? (
-                                  <span
-                                    style={{
-                                      borderRadius: 999,
-                                      background: "transparent",
-                                      border: `1px solid ${t.borderSub}`,
-                                      color: t.textSub,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      letterSpacing: ".1em",
-                                      textTransform: "uppercase",
-                                      padding: "6px 10px",
-                                    }}
-                                  >
-                                    {overlayState.category}
-                                  </span>
-                                ) : null}
-                                <span
-                                  style={{
-                                    borderRadius: 999,
                                     background: audioBadgeBackground,
                                     border: `1px solid ${audioBadgeBorder}`,
                                     color: audioBadgeColor,
-                                    fontSize: 11,
+                                    fontSize: 10,
                                     fontWeight: 700,
-                                    letterSpacing: ".1em",
+                                    letterSpacing: ".08em",
                                     textTransform: "uppercase",
-                                    padding: "6px 10px",
+                                    padding: "5px 8px",
                                   }}
                                 >
                                   {audioFeedback.badge}
@@ -2641,33 +2699,33 @@ function ClipsPageContent() {
                                 <span
                                   style={{
                                     borderRadius: 999,
-                                    background: "transparent",
-                                    border: `1px solid ${t.borderSub}`,
-                                    color: t.textSub,
-                                    fontSize: 11,
+                                    background: overlayBadgeBackground,
+                                    border: `1px solid ${overlayBadgeBorder}`,
+                                    color: overlayBadgeColor,
+                                    fontSize: 10,
                                     fontWeight: 700,
-                                    letterSpacing: ".1em",
+                                    letterSpacing: ".08em",
                                     textTransform: "uppercase",
-                                    padding: "6px 10px",
+                                    padding: "5px 8px",
                                   }}
                                 >
-                                  {clip.status}
+                                  {overlayState.variant === "enabled" ? "B-roll" : clip.status}
                                 </span>
                               </div>
                             </div>
                             <div
                               style={{
-                                borderRadius: 18,
+                                borderRadius: 14,
                                 background: t.chip,
                                 color: t.accent,
                                 fontWeight: 700,
-                                padding: "9px 10px",
+                                padding: "8px 10px",
                                 height: "fit-content",
-                                minWidth: 72,
+                                minWidth: 64,
                                 textAlign: "center",
                               }}
                             >
-                              <div style={{ fontSize: 18, lineHeight: 1 }}>{clip.virality_score.toFixed(1)}</div>
+                              <div style={{ fontSize: 17, lineHeight: 1 }}>{clip.virality_score.toFixed(1)}</div>
                               <div style={{ marginTop: 5 }} className="ic-score-bar">
                                 <div
                                   className="ic-score-fill"
@@ -2678,24 +2736,14 @@ function ClipsPageContent() {
                           </div>
 
                           <div style={{ marginTop: 2 }}>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                letterSpacing: ".16em",
-                                textTransform: "uppercase",
-                                color: t.textFaint,
-                                marginBottom: 8,
-                              }}
-                            >
-                              Clip Preview
-                            </div>
                             <p
                               style={{
                                 margin: 0,
-                                color: t.text,
-                                lineHeight: 1.7,
+                                color: t.textSub,
+                                fontSize: 13,
+                                lineHeight: 1.65,
                                 display: "-webkit-box",
-                                WebkitLineClamp: 5,
+                                WebkitLineClamp: 3,
                                 WebkitBoxOrient: "vertical",
                                 overflow: "hidden",
                               }}
@@ -2705,20 +2753,41 @@ function ClipsPageContent() {
                             </p>
                           </div>
 
+                          <details
+                            style={{
+                              marginTop: 14,
+                            }}
+                          >
+                            <summary
+                              style={{
+                                cursor: "pointer",
+                                borderRadius: 999,
+                                border: `1px solid ${t.borderSub}`,
+                                background: dark ? "rgba(255,255,255,.025)" : "rgba(255,255,255,.64)",
+                                color: t.textSub,
+                                padding: "9px 12px",
+                                fontSize: 12,
+                                fontWeight: 800,
+                                listStyle: "none",
+                                width: "fit-content",
+                              }}
+                            >
+                              Details
+                            </summary>
                           <div
                             style={{
                               display: "grid",
                               gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-                              gap: 12,
-                              marginTop: 14,
+                              gap: 10,
+                              marginTop: 12,
                             }}
                           >
                             <div
                               style={{
-                                borderRadius: 16,
+                                borderRadius: 14,
                                 border: `1px solid ${t.borderSub}`,
                                 background: t.chip,
-                                padding: "12px 14px",
+                                padding: "11px 12px",
                               }}
                             >
                               <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
@@ -2738,7 +2807,7 @@ function ClipsPageContent() {
 
                             <div
                               style={{
-                                borderRadius: 16,
+                                borderRadius: 14,
                                 border: `1px solid ${t.borderSub}`,
                                 background:
                                   audioFeedback.tone === "enabled"
@@ -2746,7 +2815,7 @@ function ClipsPageContent() {
                                     : audioFeedback.tone === "failed"
                                       ? t.errorBg
                                       : "transparent",
-                                padding: "12px 14px",
+                                padding: "11px 12px",
                               }}
                             >
                               <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
@@ -2774,10 +2843,10 @@ function ClipsPageContent() {
 
                             <div
                               style={{
-                                borderRadius: 16,
+                                borderRadius: 14,
                                 border: `1px solid ${t.borderSub}`,
                                 background: overlayState.variant === "enabled" ? t.chip : "transparent",
-                                padding: "12px 14px",
+                                padding: "11px 12px",
                               }}
                             >
                               <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
@@ -2865,10 +2934,10 @@ function ClipsPageContent() {
 
                             <div
                               style={{
-                                borderRadius: 16,
+                                borderRadius: 14,
                                 border: `1px solid ${t.borderSub}`,
                                 background: "transparent",
-                                padding: "12px 14px",
+                                padding: "11px 12px",
                               }}
                             >
                               <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
@@ -2894,10 +2963,10 @@ function ClipsPageContent() {
 
                             <div
                               style={{
-                                borderRadius: 16,
+                                borderRadius: 14,
                                 border: `1px solid ${t.borderSub}`,
                                 background: clipPlanningSuggestions.length > 0 ? t.chip : "transparent",
-                                padding: "12px 14px",
+                                padding: "11px 12px",
                               }}
                             >
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -2948,25 +3017,88 @@ function ClipsPageContent() {
                               }}
                             >
                               {clipPlanningSuggestions.map((suggestion) => (
-                                <div
+                                <details
                                   key={`${clip.id}-${suggestion.platform}`}
                                   style={{
                                     borderRadius: 16,
                                     border: `1px solid ${t.borderSub}`,
                                     background: "transparent",
-                                    padding: "12px 14px",
+                                    overflow: "hidden",
                                   }}
                                 >
-                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-                                    <div>
-                                      <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                                        {formatPlatformLabel(suggestion.platform)}
+                                  <summary
+                                    style={{
+                                      listStyle: "none",
+                                      cursor: "pointer",
+                                      padding: "12px 14px",
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                                      <div>
+                                        <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
+                                          {formatPlatformLabel(suggestion.platform)}
+                                        </div>
+                                        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: t.text }}>
+                                          Day {suggestion.scheduled_day} at {suggestion.best_time_local}
+                                        </div>
                                       </div>
-                                      <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: t.text }}>
-                                        Day {suggestion.scheduled_day} at {suggestion.best_time_local}
+                                      <div style={{ borderRadius: 999, border: `1px solid ${t.borderSub}`, color: t.textSub, padding: "6px 9px", fontSize: 11, fontWeight: 800, height: "fit-content" }}>
+                                        Open
                                       </div>
                                     </div>
+                                  </summary>
+                                  <div
+                                    style={{
+                                      borderTop: `1px solid ${t.borderSub}`,
+                                      padding: "12px 14px",
+                                      display: "grid",
+                                      gap: 10,
+                                    }}
+                                  >
+                                    <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                                      {suggestion.caption}
+                                    </div>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                      {suggestion.hashtags.slice(0, 6).map((hashtag) => (
+                                        <span
+                                          key={hashtag}
+                                          style={{
+                                            borderRadius: 999,
+                                            border: `1px solid ${t.borderSub}`,
+                                            color: t.textSub,
+                                            padding: "5px 9px",
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                          }}
+                                        >
+                                          {hashtag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
+                                      {suggestion.repurpose_angle}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleCopyPlanning(buildPlanningPostCopy(suggestion), "Post")}
+                                        className="ic-action"
+                                        style={{
+                                          border: "none",
+                                          borderRadius: 999,
+                                          background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                                          color: "#fff",
+                                          padding: "8px 12px",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: 6,
+                                          fontWeight: 800,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <Copy size={13} />
+                                        Post
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
@@ -3009,16 +3141,11 @@ function ClipsPageContent() {
                                       </button>
                                     </div>
                                   </div>
-                                  <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                    {truncateText(suggestion.caption, 180)}
-                                  </div>
-                                  <div style={{ marginTop: 8, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
-                                    {suggestion.repurpose_angle}
-                                  </div>
-                                </div>
+                                </details>
                               ))}
                             </div>
                           ) : null}
+                          </details>
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
                             {clip.published ? (
@@ -3100,7 +3227,7 @@ function ClipsPageContent() {
               )}
             </section>
                 </div>
-              ) : (
+              ) : mode === "generate" ? null : (
                 <section
                   style={{
                     borderRadius: 24,
@@ -3135,7 +3262,7 @@ function ClipsPageContent() {
                       type="button"
                       onClick={() => {
                         if (clips.length > 0) {
-                          setWorkspaceView("results");
+                          router.push(resultsPath);
                           return;
                         }
                         void handleGenerateClips();
@@ -3190,7 +3317,7 @@ function ClipsPageContent() {
 export default function ClipsPage() {
   return (
     <Suspense fallback={null}>
-      <ClipsPageContent />
+      <ClipsPageContent mode="generate" />
     </Suspense>
   );
 }

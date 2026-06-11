@@ -201,6 +201,10 @@ export default function ProfilePage() {
       errorBg: base.errorBg,
       errorBorder: base.errorBd,
       errorText: base.errorText,
+      deleteBg: dark ? "rgba(90,158,58,.1)" : "rgba(241,249,235,.92)",
+      deleteBorder: dark ? "rgba(130,205,110,.26)" : "rgba(130,205,110,.38)",
+      deleteText: dark ? "#bfe4ab" : "#3f7f25",
+      deleteButton: dark ? "#3c7627" : "#5a9e3a",
     };
   }, [dark]);
 
@@ -472,9 +476,9 @@ export default function ProfilePage() {
         }
       : deleteFeedback?.tone === "error"
         ? {
-            background: palette.errorBg,
-            border: palette.errorBorder,
-            color: palette.errorText,
+            background: palette.deleteBg,
+            border: palette.deleteBorder,
+            color: palette.deleteText,
           }
         : {
             background: palette.chip,
@@ -1064,27 +1068,27 @@ export default function ProfilePage() {
               style={{
                 borderRadius: 24,
                 background: palette.card,
-                border: `1px solid ${palette.errorBorder}`,
+                border: `1px solid ${palette.deleteBorder}`,
                 padding: 20,
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                <Trash2 size={18} color={palette.errorText} />
-                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.errorText }}>
-                  Danger zone
+                <Trash2 size={18} color={palette.deleteText} />
+                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.deleteText }}>
+                  Account deletion
                 </div>
               </div>
 
               <div
                 style={{
                   borderRadius: 16,
-                  border: `1px solid ${palette.errorBorder}`,
-                  background: palette.errorBg,
+                  border: `1px solid ${palette.deleteBorder}`,
+                  background: palette.deleteBg,
                   padding: "12px 14px",
                   marginBottom: 12,
                   fontSize: 13,
                   lineHeight: 1.65,
-                  color: palette.errorText,
+                  color: palette.deleteText,
                 }}
               >
                 Delete account permanently removes your profile, podcasts, generated clips, source media, messages, and sign-in access.
@@ -1129,7 +1133,7 @@ export default function ProfilePage() {
                   style={{
                     border: "none",
                     borderRadius: 16,
-                    background: palette.errorText,
+                    background: palette.deleteButton,
                     color: "#fff",
                     padding: "12px 16px",
                     display: "inline-flex",

@@ -89,7 +89,7 @@ export function AuthScaffold({
         />
 
         <div style={{ position: "relative", zIndex: 1, maxWidth: 620, margin: "0 auto" }}>
-          <BrandMark accent={shell.accent} inverse />
+          <BrandMark accent={shell.accent} inverse={dark} />
 
           <div
             className="ic-premium-card"

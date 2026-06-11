@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { DM_Sans, DM_Serif_Display, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/context/AuthContext"; // Import the Authentication Context
+import { AuthRouteGuard } from "@/components/AuthRouteGuard";
+import { AuthProvider } from "@/context/AuthContext";
 
 const sans = DM_Sans({
   subsets: ["latin"],
@@ -37,11 +38,8 @@ export default function RootLayout({
   return (
     <html lang="en" data-scroll-behavior="smooth" className="h-full antialiased">
       <body className={`${sans.variable} ${serif.variable} ${mono.variable} min-h-full flex flex-col`}>
-        {/* Wrap children with AuthProvider to ensure authentication state 
-          is accessible throughout the entire application.
-        */}
         <AuthProvider>
-          {children}
+          <AuthRouteGuard>{children}</AuthRouteGuard>
         </AuthProvider>
       </body>
     </html>

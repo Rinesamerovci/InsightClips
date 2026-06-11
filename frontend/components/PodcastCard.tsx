@@ -641,7 +641,7 @@ export function PodcastCard({
                   </span>
 
                   <Link
-                    href={`/clips?podcastId=${podcast.id}`}
+                    href={hasGeneratedVideos ? `/clips/generated?podcastId=${podcast.id}` : `/clips?podcastId=${podcast.id}`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -658,7 +658,7 @@ export function PodcastCard({
                       flexShrink: 0,
                     }}
                   >
-                    Open clips <ChevronRight size={10} />
+                    {hasGeneratedVideos ? "Open clips" : "Generate clips"} <ChevronRight size={10} />
                   </Link>
                 </div>
               </div>

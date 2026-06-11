@@ -529,7 +529,7 @@ function AnalyticsPageContent() {
                 </div>
                 {selectedPodcast ? (
                   <Link
-                    href={`/clips?podcastId=${selectedPodcast.id}`}
+                    href={`/clips/generated?podcastId=${selectedPodcast.id}`}
                     style={{
                       borderRadius: 999,
                       padding: "11px 16px",

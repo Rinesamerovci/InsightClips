@@ -18,6 +18,7 @@ import {
 import { AuthScaffold } from "@/components/AuthScaffold";
 import { ApiRequestError, postJson } from "@/lib/api";
 import { getAuthTheme, THEME_STORAGE_KEY } from "@/lib/brand";
+import { getPasswordPolicyError } from "@/lib/password-policy";
 import { supabase } from "@/lib/supabase";
 
 type EmailAvailabilityResponse = {
@@ -150,8 +151,9 @@ export default function RegisterPage() {
     setError("");
     setInfo("");
 
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const passwordError = getPasswordPolicyError(formData.password);
+    if (passwordError) {
+      setError(passwordError);
       setLoading(false);
       return;
     }

@@ -16,7 +16,7 @@ import {
   postJson,
   storeBackendToken,
 } from '@/lib/api'
-import { supabase, type SupabaseUser } from '@/lib/supabase'
+import { clearSupabaseAuthArtifacts, supabase, type SupabaseUser } from '@/lib/supabase'
 
 type BackendAuthResponse = {
   access_token: string
@@ -40,6 +40,11 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  const text = String(error).toLowerCase()
+  return text.includes('invalid refresh token') || text.includes('refresh token not found')
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [backendToken, setBackendToken] = useState<string | null>(() =>
@@ -49,9 +54,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter()
 
   const syncBackendSession = async (): Promise<string | null> => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    let session = null
+
+    try {
+      const result = await supabase.auth.getSession()
+      session = result.data.session
+    } catch (error) {
+      clearBackendToken()
+      setBackendToken(null)
+      if (isInvalidRefreshTokenError(error)) {
+        clearSupabaseAuthArtifacts()
+        return null
+      }
+      throw error
+    }
 
     if (!session?.access_token) {
       clearBackendToken()
@@ -96,9 +112,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let active = true
 
     const bootstrap = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      let session = null
+
+      try {
+        const result = await supabase.auth.getSession()
+        session = result.data.session
+      } catch (error) {
+        clearBackendToken()
+        setBackendToken(null)
+        if (isInvalidRefreshTokenError(error)) {
+          clearSupabaseAuthArtifacts()
+        }
+        if (active) {
+          setUser(null)
+          setLoading(false)
+        }
+        return
+      }
 
       if (!active) {
         return

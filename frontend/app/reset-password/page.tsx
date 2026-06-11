@@ -12,6 +12,7 @@ import {
 
 import { AuthScaffold } from "@/components/AuthScaffold";
 import { getAuthTheme, THEME_STORAGE_KEY } from "@/lib/brand";
+import { getPasswordPolicyError } from "@/lib/password-policy";
 import { supabase } from "@/lib/supabase";
 
 export default function ResetPasswordPage() {
@@ -50,8 +51,9 @@ export default function ResetPasswordPage() {
     event.preventDefault();
     setError("");
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    const passwordError = getPasswordPolicyError(password);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -113,7 +115,7 @@ export default function ResetPasswordPage() {
       showcaseContent={
         <div style={{ display: "grid", gap: 14 }}>
           {[
-            "Use at least 6 characters for the new password.",
+            "Use at least 8 characters for the new password.",
             "Confirm it once here to avoid mismatches on the next login.",
             "After a successful reset we sign you out and route you back to login.",
           ].map((line) => (

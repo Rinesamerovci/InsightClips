@@ -83,6 +83,13 @@ function LoginPageContent() {
   const [dark, setDark] = useState(false);
 
   const shell = getAuthTheme(dark);
+  const nextPath = useMemo(() => {
+    const candidate = searchParams.get("next") ?? "";
+    return candidate.startsWith("/") && !candidate.startsWith("//") && candidate !== "/login"
+      ? candidate
+      : "/dashboard";
+  }, [searchParams]);
+
   const successMessage = useMemo(() => {
     if (searchParams.get("registered") === "true") {
       return "Account verified. You can now sign in directly with your email and password.";
@@ -110,9 +117,9 @@ function LoginPageContent() {
 
   useEffect(() => {
     if (user) {
-      router.replace("/dashboard");
+      router.replace(nextPath);
     }
-  }, [router, user]);
+  }, [nextPath, router, user]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -145,7 +152,7 @@ function LoginPageContent() {
         window.localStorage.removeItem("rememberedEmail");
       }
 
-      router.replace("/dashboard");
+      router.replace(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
       setLoading(false);

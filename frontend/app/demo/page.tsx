@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ArrowLeft, CheckCircle2, PlayCircle, Sparkles, Wand2 } from "lucide-react";
 
 const palette = {
@@ -34,6 +35,8 @@ const steps = [
 ];
 
 export default function DemoPage() {
+  const [videoAvailable, setVideoAvailable] = useState(true);
+
   return (
     <main
       style={{
@@ -121,7 +124,7 @@ export default function DemoPage() {
             </h1>
 
             <p style={{ color: palette.textMuted, fontSize: 17, lineHeight: 1.7, maxWidth: 540 }}>
-              This page gives you a clean demo flow: first the simple product steps, then a real finished clip you can play right away.
+              This page gives you a clean demo flow: first the product steps, then the clip preview slot used during the presentation.
             </p>
 
             <div style={{ display: "grid", gap: 14, marginTop: 28 }}>
@@ -184,21 +187,85 @@ export default function DemoPage() {
               </h2>
             </div>
 
-            <video
-              controls
-              preload="metadata"
-              style={{
-                width: "100%",
-                borderRadius: 22,
-                border: `1px solid ${palette.border}`,
-                background: "#000",
-                minHeight: 520,
-                objectFit: "cover",
-              }}
-            >
-              <source src="/demo/finished-clip.mp4" type="video/mp4" />
-              Your browser does not support the demo video.
-            </video>
+            {videoAvailable ? (
+              <video
+                controls
+                preload="metadata"
+                onError={() => setVideoAvailable(false)}
+                style={{
+                  width: "100%",
+                  borderRadius: 22,
+                  border: `1px solid ${palette.border}`,
+                  background: "#000",
+                  minHeight: 520,
+                  objectFit: "cover",
+                }}
+              >
+                <source
+                  src="/demo/finished-clip.mp4"
+                  type="video/mp4"
+                  onError={() => setVideoAvailable(false)}
+                />
+                Your browser does not support the demo video.
+              </video>
+            ) : (
+              <div
+                style={{
+                  minHeight: 520,
+                  borderRadius: 22,
+                  border: `1px solid ${palette.border}`,
+                  background:
+                    "linear-gradient(180deg, rgba(163,208,107,0.12), rgba(0,0,0,0.28)), #080b06",
+                  display: "grid",
+                  alignContent: "center",
+                  gap: 18,
+                  padding: 28,
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 24,
+                    margin: "0 auto",
+                    background: "rgba(163,208,107,0.12)",
+                    border: `1px solid ${palette.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: palette.accent,
+                  }}
+                >
+                  <PlayCircle size={32} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 34, lineHeight: 1.05 }}>
+                    Demo clip slot ready
+                  </div>
+                  <p style={{ margin: "12px auto 0", maxWidth: 420, color: palette.textMuted, lineHeight: 1.7 }}>
+                    The final clip preview is not loaded in this environment. The walkthrough still gives you a clean presentation path until the MP4 is attached.
+                  </p>
+                </div>
+                <Link
+                  href="/upload"
+                  style={{
+                    justifySelf: "center",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    borderRadius: 999,
+                    background: `linear-gradient(135deg, ${palette.accentDark}, ${palette.accent})`,
+                    color: "#0d1008",
+                    padding: "12px 18px",
+                    fontWeight: 800,
+                    textDecoration: "none",
+                  }}
+                >
+                  Open upload flow
+                </Link>
+              </div>
+            )}
 
             <div
               style={{
@@ -212,7 +279,7 @@ export default function DemoPage() {
                 Demo tip
               </div>
               <p style={{ margin: 0, color: palette.textMuted, lineHeight: 1.7 }}>
-                Use this page during your presentation: explain the 3-step flow on the left, then play the finished clip on the right to show the final output users get.
+                Use this page during your presentation: explain the 3-step flow on the left, then play the finished clip when the MP4 is present.
               </p>
             </div>
           </div>

@@ -19,10 +19,15 @@ function formatMemberDate(value: string | null): string {
     return "Recently joined";
   }
 
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Recently joined";
+  }
+
   return new Intl.DateTimeFormat("en", {
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function formatSubtitlePreset(preset?: string | null): string {

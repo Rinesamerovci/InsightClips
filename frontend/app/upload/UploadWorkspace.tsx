@@ -851,10 +851,10 @@ export default function UploadWorkspace({
           <section
             className="slide-up ic-premium-card"
             style={{
-              borderRadius: 26,
+              borderRadius: 20,
               border: `1px solid ${border}`,
               background: card,
-              padding: isMobile ? "22px 18px" : "30px 28px",
+              padding: isMobile ? "20px 16px" : "26px 24px",
               marginBottom: 16,
             }}
           >
@@ -890,7 +890,7 @@ export default function UploadWorkspace({
                     fontFamily: "'DM Serif Display', serif",
                     fontSize: "clamp(30px, 4vw, 42px)",
                     lineHeight: 1.04,
-                    letterSpacing: "-.03em",
+                    letterSpacing: "0",
                   }}
                 >
                   {sourceMode === "file" ? (
@@ -906,7 +906,7 @@ export default function UploadWorkspace({
                 <p style={{ marginTop: 14, fontSize: 14, lineHeight: 1.75, color: muted }}>
                   {sourceMode === "file"
                     ? "Select a video, see duration and pricing clearly, then confirm when you are ready."
-                    : "Paste one public YouTube video and keep the same export, subtitle, and clip planning defaults used for file uploads."}
+                    : "Paste one public YouTube video and keep the same clip settings used for file uploads."}
                 </p>
               </div>
 
@@ -1003,7 +1003,7 @@ export default function UploadWorkspace({
           <section
             className="slide-up ic-premium-card"
             style={{
-              borderRadius: 22,
+              borderRadius: 20,
               border: `1px solid ${border}`,
               background: d ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.76)",
               padding: "16px",
@@ -1080,8 +1080,8 @@ export default function UploadWorkspace({
                 </div>
                 <div style={{ fontSize: 13, color: muted, lineHeight: 1.6 }}>
                   {sourceMode === "file"
-                    ? "Choose a local file, review the pre-flight result, and continue from there."
-                    : "Paste a single YouTube video link and continue straight to import."}
+                    ? "Choose a file, run pre-flight, then continue."
+                    : "Paste one public YouTube link and import it."}
                 </div>
               </div>
               {alternateHref ? (
@@ -1112,10 +1112,10 @@ export default function UploadWorkspace({
           <section
             className="slide-up ic-premium-card"
             style={{
-              borderRadius: 22,
+              borderRadius: 20,
               border: `1px solid ${border}`,
               background: card,
-              padding: isMobile ? "20px 18px 18px" : "24px 24px 22px",
+              padding: isMobile ? "18px 16px" : "22px",
               marginBottom: 16,
             }}
           >
@@ -1426,7 +1426,7 @@ export default function UploadWorkspace({
           <section
             className="slide-up ic-premium-card"
             style={{
-              borderRadius: 18,
+              borderRadius: 16,
               border: `1px solid ${border}`,
               background: d ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.74)",
               padding: "16px",
@@ -1781,14 +1781,14 @@ export default function UploadWorkspace({
                 <section
                   className="slide-up ic-premium-card"
                   style={{
-                    borderRadius: 18,
-                    border: `1px solid ${d ? "rgba(175,70,70,.35)" : "rgba(210,148,148,.55)"}`,
-                    background: d ? "rgba(44,8,8,.75)" : "rgba(255,232,232,.9)",
-                    padding: "18px 20px",
+                    borderRadius: 16,
+                    border: `1px solid ${d ? "rgba(231,184,106,.24)" : "rgba(190,134,48,.28)"}`,
+                    background: d ? "rgba(68,45,12,.36)" : "rgba(255,247,228,.94)",
+                    padding: "16px",
                     display: "flex",
                     alignItems: "flex-start",
                     gap: 12,
-                    color: d ? "#e08080" : "#934545",
+                    color: d ? "#f0c980" : "#7a541e",
                     marginBottom: 16,
                   }}
                 >
@@ -2097,25 +2097,25 @@ export default function UploadWorkspace({
               <section
                 className="slide-up ic-premium-card"
                 style={{
-                  borderRadius: 24,
+                  borderRadius: 20,
                   border: `1px solid ${border}`,
                   background: d
                     ? "linear-gradient(180deg, rgba(14,24,11,.94), rgba(10,18,8,.9))"
                     : "linear-gradient(180deg, rgba(255,255,255,.96), rgba(246,251,241,.96))",
-                  padding: "24px 24px 22px",
+                  padding: isMobile ? "18px 16px" : "22px",
                   marginBottom: 16,
                   boxShadow: d
-                    ? "0 18px 48px rgba(0,0,0,.16)"
-                    : "0 18px 42px rgba(90,158,58,.08)",
+                    ? "0 14px 36px rgba(0,0,0,.14)"
+                    : "0 14px 34px rgba(90,158,58,.07)",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 18 }}>
                   <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                     <div
                       style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 16,
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
                         background: d ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
                         border: `1px solid ${subBorder}`,
                         display: "flex",
@@ -2127,16 +2127,14 @@ export default function UploadWorkspace({
                       <Link2 size={22} color={hi} />
                     </div>
                     <div>
-                      <div style={{ fontSize: 10, letterSpacing: ".24em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 5 }}>
-                        Step 04 / Review
+                      <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 6 }}>
+                        YouTube import
                       </div>
-                      <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: 30, fontWeight: 400, lineHeight: 1.12 }}>
-                        Bring in one video,
-                        <br />
-                        skip the noisy setup.
+                      <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: isMobile ? 26 : 30, fontWeight: 400, lineHeight: 1.12 }}>
+                        Import one public video.
                       </h2>
-                      <p style={{ marginTop: 10, fontSize: 13, lineHeight: 1.72, color: muted, maxWidth: 560 }}>
-                        Paste a public YouTube link, import it into your library, and jump straight to analysis when it is ready.
+                      <p style={{ marginTop: 9, fontSize: 13, lineHeight: 1.65, color: muted, maxWidth: 560 }}>
+                        Paste the link, save it to your library, then analyze it from the ready state.
                       </p>
                     </div>
                   </div>
@@ -2145,10 +2143,10 @@ export default function UploadWorkspace({
                       borderRadius: 999,
                       border: `1px solid ${subBorder}`,
                       background: d ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
-                      padding: "8px 12px",
-                      color: hi,
-                      fontSize: 11,
-                      fontWeight: 700,
+                    padding: "7px 11px",
+                    color: hi,
+                    fontSize: 11,
+                    fontWeight: 700,
                     }}
                   >
                     Single public video
@@ -2158,17 +2156,17 @@ export default function UploadWorkspace({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.12fr) minmax(260px, .88fr)",
-                    gap: 16,
+                    gridTemplateColumns: isTablet ? "1fr" : "minmax(0, 1.22fr) minmax(240px, .78fr)",
+                    gap: 14,
                     alignItems: "start",
                   }}
                 >
                   <div
                     style={{
-                      borderRadius: 20,
+                      borderRadius: 16,
                       border: `1px solid ${subBorder}`,
                       background: d ? "rgba(8,14,8,.56)" : "rgba(255,255,255,.88)",
-                      padding: "16px",
+                      padding: isMobile ? "14px" : "16px",
                     }}
                   >
                     <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
@@ -2306,16 +2304,16 @@ export default function UploadWorkspace({
                   <div style={{ display: "grid", gap: 12 }}>
                     <div
                       style={{
-                        borderRadius: 18,
+                        borderRadius: 16,
                         border: `1px solid ${subBorder}`,
                         background: d ? "rgba(10,18,8,.74)" : "rgba(248,252,244,.94)",
-                        padding: "16px",
+                        padding: "14px",
                       }}
                     >
-                      <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 10 }}>
+                      <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 10 }}>
                         Accepted links
                       </div>
-                      <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {[
                           "youtube.com/watch?v=...",
                           "youtu.be/...",
@@ -2324,11 +2322,11 @@ export default function UploadWorkspace({
                           <div
                             key={item}
                             style={{
-                              borderRadius: 12,
+                              borderRadius: 999,
                               border: `1px solid ${subBorder}`,
                               background: d ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.05)",
-                              padding: "10px 12px",
-                              fontSize: 12,
+                              padding: "8px 10px",
+                              fontSize: 11,
                               color: text,
                               fontFamily: "monospace",
                             }}
@@ -2341,25 +2339,42 @@ export default function UploadWorkspace({
 
                     <div
                       style={{
-                        borderRadius: 18,
+                        borderRadius: 16,
                         border: `1px solid ${subBorder}`,
                         background: d ? "rgba(10,18,8,.74)" : "rgba(248,252,244,.94)",
-                        padding: "16px",
+                        padding: "14px",
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                         <Clock size={14} color={hi} />
-                        <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: hi2, fontWeight: 700 }}>
-                          What happens next
+                        <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: hi2, fontWeight: 700 }}>
+                          Next steps
                         </div>
                       </div>
-                      <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "grid", gap: 9 }}>
                         {[
-                          "We normalize the link and save one video to your podcast library.",
-                          "When import finishes, you can open clips directly from the success state.",
-                          "Playlist links are reduced to one selected video when possible.",
-                        ].map((item) => (
-                          <div key={item} style={{ fontSize: 12, color: muted, lineHeight: 1.6 }}>
+                          "Save video to library",
+                          "Analyze when ready",
+                          "Open clips workspace",
+                        ].map((item, index) => (
+                          <div key={item} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: muted, lineHeight: 1.5 }}>
+                            <span
+                              style={{
+                                width: 22,
+                                height: 22,
+                                borderRadius: 999,
+                                background: d ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
+                                color: hi,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {index + 1}
+                            </span>
                             {item}
                           </div>
                         ))}
@@ -2425,11 +2440,11 @@ export default function UploadWorkspace({
                 <section
                   className="slide-up ic-premium-card"
                   style={{
-                    borderRadius: 20,
-                    border: `1px solid ${d ? "rgba(58,158,56,.38)" : "rgba(140,215,130,.65)"}`,
-                    background: d ? "rgba(16,52,14,.9)" : "rgba(220,252,210,.92)",
-                    padding: "22px",
-                    color: "#2f7d2f",
+                    borderRadius: 18,
+                    border: `1px solid ${d ? "rgba(130,205,110,.3)" : "rgba(130,205,110,.48)"}`,
+                    background: d ? "rgba(18,48,14,.82)" : "rgba(238,250,229,.96)",
+                    padding: isMobile ? "18px 16px" : "20px",
+                    color: d ? "#c9e89a" : "#2f6f20",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 16 }}>
@@ -2452,7 +2467,7 @@ export default function UploadWorkspace({
                         <div style={{ fontSize: 10, letterSpacing: ".24em", textTransform: "uppercase", opacity: 0.72, marginBottom: 3 }}>
                           {youtubeNeedsPayment ? "Imported - payment needed" : "Imported and ready"}
                         </div>
-                        <div style={{ fontSize: 22, fontWeight: 800 }}>{youtubeImport.title}</div>
+                        <div style={{ fontSize: isMobile ? 18 : 20, fontWeight: 800, lineHeight: 1.25 }}>{youtubeImport.title}</div>
                       </div>
                     </div>
                     <div

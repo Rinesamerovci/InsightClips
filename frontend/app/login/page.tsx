@@ -72,7 +72,7 @@ function MetricChip({
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { syncBackendSession, user } = useAuth();
+  const { backendToken, loading: authLoading, syncBackendSession, user } = useAuth();
 
   const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
@@ -83,6 +83,13 @@ function LoginPageContent() {
   const [dark, setDark] = useState(false);
 
   const shell = getAuthTheme(dark);
+  const nextPath = useMemo(() => {
+    const candidate = searchParams.get("next") ?? "";
+    return candidate.startsWith("/") && !candidate.startsWith("//") && candidate !== "/login"
+      ? candidate
+      : "/dashboard";
+  }, [searchParams]);
+
   const successMessage = useMemo(() => {
     if (searchParams.get("registered") === "true") {
       return "Account verified. You can now sign in directly with your email and password.";
@@ -109,10 +116,25 @@ function LoginPageContent() {
   }, [dark]);
 
   useEffect(() => {
-    if (user) {
-      router.replace("/dashboard");
+    if (authLoading || !user) {
+      return;
     }
-  }, [router, user]);
+
+    let cancelled = false;
+
+    const goToNextPath = async () => {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!cancelled && token) {
+        router.replace(nextPath);
+      }
+    };
+
+    void goToNextPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, backendToken, nextPath, router, syncBackendSession, user]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -145,7 +167,7 @@ function LoginPageContent() {
         window.localStorage.removeItem("rememberedEmail");
       }
 
-      router.replace("/dashboard");
+      router.replace(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
       setLoading(false);

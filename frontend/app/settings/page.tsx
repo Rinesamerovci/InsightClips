@@ -22,6 +22,7 @@ import {
   submitFeedback,
   submitSupportRequest,
   type UserMessageCategory,
+  type UserMessageResponse,
   type UserMessageType,
 } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
@@ -37,7 +38,7 @@ const CSS = `
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
+  const { user, backendToken, loading: authLoading, syncBackendSession } = useAuth();
 
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [dark, setDark] = useState(() => {
@@ -64,6 +65,7 @@ export default function SettingsPage() {
     support: ["technical_support", "billing", "bug", "general"],
     contact: ["general", "feature_request", "billing"],
   };
+  const signedInEmail = user?.email?.trim() ?? "";
 
   useEffect(() => {
     window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
@@ -94,6 +96,12 @@ export default function SettingsPage() {
       active = false;
     };
   }, [authLoading, backendToken, router, syncBackendSession]);
+
+  useEffect(() => {
+    if (signedInEmail) {
+      setContactEmail(signedInEmail);
+    }
+  }, [signedInEmail]);
 
   const palette = useMemo(() => {
     const base = getStudioTheme(dark);
@@ -147,6 +155,15 @@ export default function SettingsPage() {
       return;
     }
 
+    const cleanedMessage = messageBody.trim();
+    if (cleanedMessage.length < 10) {
+      setMessageFeedback({
+        tone: "error",
+        message: "Please write at least 10 characters before submitting.",
+      });
+      return;
+    }
+
     setMessageSending(true);
     setMessageFeedback({
       tone: "info",
@@ -165,32 +182,39 @@ export default function SettingsPage() {
         return;
       }
 
+      const resolvedContactEmail = signedInEmail || contactEmail.trim();
       const payload = {
         category: messageCategory,
         subject: messageSubject.trim() || null,
-        message: messageBody.trim(),
-        contact_email: contactEmail.trim() || null,
+        message: cleanedMessage,
+        contact_email: resolvedContactEmail || null,
       };
 
+      let response: UserMessageResponse;
       if (messageType === "support") {
-        await submitSupportRequest(payload, token);
+        response = await submitSupportRequest(payload, token);
       } else if (messageType === "contact") {
-        await submitContactMessage(payload, token);
+        response = await submitContactMessage(payload, token);
       } else {
-        await submitFeedback(payload, token);
+        response = await submitFeedback(payload, token);
       }
 
       setMessageSubject("");
       setMessageBody("");
-      setContactEmail("");
+      setContactEmail(resolvedContactEmail);
       setMessageFeedback({
         tone: "success",
-        message:
+        message: `${
           messageType === "support"
-            ? "Support request submitted. We captured it successfully."
+            ? "Support request submitted."
             : messageType === "contact"
-              ? "Contact message submitted successfully."
-              : "Feedback submitted successfully.",
+              ? "Contact message submitted."
+              : "Feedback submitted."
+        } ${
+          response.email_notification_sent
+            ? "Email notification was sent to the team inbox."
+            : "It was saved in Supabase, but email notification is not configured or could not be sent from this environment."
+        }`,
       });
     } catch (error) {
       setMessageFeedback({
@@ -722,9 +746,10 @@ export default function SettingsPage() {
                   Contact email
                 </div>
                 <input
-                  value={contactEmail}
-                  onChange={(event) => setContactEmail(event.target.value)}
-                  placeholder="Optional if we should reply"
+                  value={signedInEmail || contactEmail}
+                  readOnly
+                  aria-readonly="true"
+                  placeholder="Loaded from your signed-in account"
                   style={{
                     width: "100%",
                     borderRadius: 14,
@@ -732,8 +757,12 @@ export default function SettingsPage() {
                     background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.88)",
                     color: palette.text,
                     padding: "13px 14px",
+                    cursor: "not-allowed",
                   }}
                 />
+                <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: palette.muted }}>
+                  We use the email from your signed-in account so the team can reply to the correct user.
+                </div>
               </label>
             </div>
 
@@ -765,7 +794,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => void handleSubmitMessage()}
-                disabled={messageSending || messageBody.trim().length < 10}
+                disabled={messageSending}
                 style={{
                   border: "none",
                   borderRadius: 999,
@@ -776,8 +805,8 @@ export default function SettingsPage() {
                   alignItems: "center",
                   gap: 8,
                   fontWeight: 700,
-                  cursor: messageSending || messageBody.trim().length < 10 ? "default" : "pointer",
-                  opacity: messageSending || messageBody.trim().length < 10 ? 0.72 : 1,
+                  cursor: messageSending ? "default" : "pointer",
+                  opacity: messageSending ? 0.72 : 1,
                   whiteSpace: "nowrap",
                   boxShadow: "0 14px 32px rgba(90,158,58,.22)",
                 }}

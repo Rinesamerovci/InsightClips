@@ -11,6 +11,7 @@ import {
   Loader2,
   Play,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 type Podcast = {
@@ -302,6 +303,7 @@ export function PodcastCard({
   analysis,
   analysisLoading = false,
   onAnalyze,
+  onDelete,
   generatedClipsCount = 0,
   dark = false,
 }: {
@@ -309,6 +311,7 @@ export function PodcastCard({
   analysis?: AnalysisSummary | null;
   analysisLoading?: boolean;
   onAnalyze?: () => void;
+  onDelete?: () => void;
   generatedClipsCount?: number;
   dark?: boolean;
 }) {
@@ -662,7 +665,7 @@ export function PodcastCard({
                   </span>
 
                   <Link
-                    href={`/clips?podcastId=${podcast.id}`}
+                    href={hasGeneratedVideos ? `/clips/generated?podcastId=${podcast.id}` : `/clips?podcastId=${podcast.id}`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -679,7 +682,7 @@ export function PodcastCard({
                       flexShrink: 0,
                     }}
                   >
-                    Open clips <ChevronRight size={10} />
+                    {hasGeneratedVideos ? "Open clips" : "Generate clips"} <ChevronRight size={10} />
                   </Link>
                 </div>
               </div>
@@ -898,6 +901,34 @@ export function PodcastCard({
             >
               <Play size={11} strokeWidth={2.5} fill={theme.buttonText} />
               Analyze episode
+            </button>
+          ) : null}
+
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="ic-btn"
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                marginTop: 10,
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: dark ? "1px solid rgba(239, 134, 134, .22)" : "1px solid rgba(196, 64, 64, .18)",
+                background: dark ? "rgba(239, 134, 134, .08)" : "rgba(196, 64, 64, .07)",
+                fontSize: 11,
+                fontWeight: 800,
+                color: dark ? "#f6b6b6" : "#8a2424",
+                cursor: "pointer",
+                fontFamily: "'DM Sans',sans-serif",
+              }}
+            >
+              <Trash2 size={12} strokeWidth={2.4} />
+              Delete podcast
             </button>
           ) : null}
         </div>

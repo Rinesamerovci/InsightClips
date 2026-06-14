@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 import re
+import tempfile
 
+from app.config import get_settings
 from app.database import service_supabase
 from app.dependencies.auth import AuthenticatedUser
 from app.models.upload import (
@@ -21,7 +23,12 @@ from app.models.upload import (
 from app.models.export_settings import ExportSettings
 from app.services.media_service import inspect_staged_media
 from app.services.podcast_service import create_imported_podcast_record
-from app.services.profile_service import get_profile_by_id, mark_free_trial_used
+from app.services.profile_service import (
+    get_free_trial_remaining_seconds,
+    get_profile_by_id,
+    record_free_trial_usage,
+)
+from app.services.source_storage_service import SourceStorageError, source_media_path, upload_source_media
 from app.utils.media import validate_media_type
 
 FREE_TRIAL_MAX_MINUTES = 30
@@ -30,7 +37,26 @@ MAX_UPLOAD_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024
 SHORT_UPLOAD_PRICE = 1.0
 MEDIUM_UPLOAD_PRICE = 2.0
 LONG_UPLOAD_PRICE = 4.0
-YOUTUBE_IMPORT_DIR = Path(".generated") / "youtube-imports"
+
+
+def get_youtube_import_dir() -> Path:
+    """Get YouTube import directory, preferring persistent storage when configured."""
+    try:
+        configured_dir = get_settings().upload_storage_dir.strip()
+        import_dir = (
+            Path(configured_dir) / "youtube-imports"
+            if configured_dir
+            else Path(tempfile.gettempdir()) / "insightclips-youtube"
+        )
+        import_dir.mkdir(parents=True, exist_ok=True)
+        return import_dir
+    except Exception:
+        fallback = Path(".") / ".generated" / "youtube-imports"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+YOUTUBE_IMPORT_DIR = get_youtube_import_dir()
 YOUTUBE_VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
 YOUTUBE_HOSTS = {
     "youtube.com",
@@ -86,7 +112,23 @@ def _get_latest_free_trial_state(current_user: AuthenticatedUser) -> bool:
     return current_user.free_trial_used
 
 
-def determine_upload_price(duration_minutes: float, free_trial_used: bool) -> UploadPriceDecision:
+def _get_free_trial_remaining_for_user(current_user: AuthenticatedUser) -> float:
+    try:
+        profile = get_profile_by_id(current_user.id)
+    except Exception:
+        return 0.0 if current_user.free_trial_used else FREE_TRIAL_MAX_MINUTES * 60
+    if profile:
+        profile_id = str(getattr(profile, "id", current_user.id) or current_user.id)
+        email = str(getattr(profile, "email", current_user.email) or current_user.email)
+        return get_free_trial_remaining_seconds(profile_id, email)
+    return 0.0 if current_user.free_trial_used else FREE_TRIAL_MAX_MINUTES * 60
+
+
+def determine_upload_price(
+    duration_minutes: float,
+    free_trial_used: bool,
+    free_trial_remaining_seconds: float | None = None,
+) -> UploadPriceDecision:
     if duration_minutes > ABSOLUTE_MAX_MINUTES:
         return UploadPriceDecision(
             status="blocked",
@@ -95,13 +137,20 @@ def determine_upload_price(duration_minutes: float, free_trial_used: bool) -> Up
             message="Videos longer than 120 minutes are blocked in Sprint 2.",
         )
 
+    duration_seconds = max(0.0, duration_minutes * 60)
+    remaining_seconds = (
+        max(0.0, float(free_trial_remaining_seconds))
+        if free_trial_remaining_seconds is not None
+        else (0.0 if free_trial_used else FREE_TRIAL_MAX_MINUTES * 60)
+    )
+
     if duration_minutes <= FREE_TRIAL_MAX_MINUTES:
-        if not free_trial_used:
+        if remaining_seconds >= duration_seconds:
             return UploadPriceDecision(
                 status="free_ready",
                 price=0.0,
                 free_trial_available=True,
-                message="This upload qualifies for the one-time free trial.",
+                message="This upload fits within your remaining 30-minute free allowance.",
             )
 
         return UploadPriceDecision(
@@ -153,11 +202,15 @@ def calculate_upload_price(
     detected_format = validate_media_type(payload.filename, payload.mime_type)
 
     if payload.storage_path:
-        inspection = inspect_staged_media(
-            payload.storage_path,
-            filename=payload.filename,
-            mime_type=payload.mime_type,
-        )
+        try:
+            with source_media_path(payload.storage_path, filename=payload.filename) as local_media_path:
+                inspection = inspect_staged_media(
+                    str(local_media_path),
+                    filename=payload.filename,
+                    mime_type=payload.mime_type,
+                )
+        except SourceStorageError as exc:
+            raise UploadWorkflowError(exc.detail, status_code=exc.status_code, code="source_storage_error") from exc
         duration_seconds = inspection.duration_seconds
         duration_minutes = inspection.duration_minutes
         validation_flags = inspection.validation_flags
@@ -177,7 +230,8 @@ def calculate_upload_price(
         )
 
     free_trial_used = _get_latest_free_trial_state(current_user)
-    price_decision = determine_upload_price(duration_minutes, free_trial_used)
+    remaining_seconds = _get_free_trial_remaining_for_user(current_user)
+    price_decision = determine_upload_price(duration_minutes, free_trial_used, remaining_seconds)
 
     return UploadCalculatePriceResponse(
         duration_seconds=duration_seconds,
@@ -254,10 +308,12 @@ def import_youtube_podcast(
         )
     resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else ExportSettings()
     download_result = _download_youtube_media(source, current_user.id)
+    download_result = _persist_youtube_source_media(download_result, current_user.id)
     title = payload.title or download_result.title
     duration_minutes = round(download_result.duration_seconds / 60, 2)
     free_trial_used = _get_latest_free_trial_state(current_user)
-    price_decision = determine_upload_price(duration_minutes, free_trial_used)
+    remaining_seconds = _get_free_trial_remaining_for_user(current_user)
+    price_decision = determine_upload_price(duration_minutes, free_trial_used, remaining_seconds)
     if price_decision.status == "blocked":
         raise UploadWorkflowError(
             price_decision.message,
@@ -284,8 +340,8 @@ def import_youtube_podcast(
         podcast_id = create_imported_podcast_record(insert_payload)
     except Exception as exc:
         raise UploadWorkflowError("YouTube import could not be saved.", status_code=500) from exc
-    if price_decision.status == "free_ready" and not _get_latest_free_trial_state(current_user):
-        mark_free_trial_used(current_user.id)
+    if price_decision.status == "free_ready":
+        record_free_trial_usage(current_user.id, download_result.duration_seconds)
 
     return YouTubeImportResponse(
         podcast_id=podcast_id,
@@ -356,8 +412,10 @@ def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownl
             if not downloaded_path:
                 downloaded_path = str(info.get("filepath") or downloader.prepare_filename(info))
     except Exception as exc:
+        import logging
+        logging.exception("YouTube download failed")
         raise UploadWorkflowError(
-            "YouTube media could not be imported. Check that the video is public and try again.",
+            f"YouTube media could not be imported: {str(exc)}. Check that the video is public and try again.",
             status_code=502,
             code="youtube_import_failed",
         ) from exc
@@ -399,6 +457,48 @@ def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownl
         mime_type="video/mp4",
         detected_format=detected_format,
         metadata={key: value for key, value in metadata.items() if value is not None},
+    )
+
+
+def _persist_youtube_source_media(
+    download_result: YouTubeDownloadResult,
+    user_id: str,
+) -> YouTubeDownloadResult:
+    local_path = Path(download_result.storage_path)
+    if not local_path.exists():
+        return download_result
+
+    try:
+        stored_source = upload_source_media(
+            local_path,
+            user_id=user_id,
+            filename=download_result.filename,
+            content_type=download_result.mime_type,
+        )
+    except SourceStorageError as exc:
+        raise UploadWorkflowError(exc.detail, status_code=exc.status_code, code="source_storage_error") from exc
+
+    if stored_source is None:
+        return download_result
+
+    try:
+        local_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    return YouTubeDownloadResult(
+        title=download_result.title,
+        storage_path=stored_source.storage_path,
+        duration_seconds=download_result.duration_seconds,
+        filename=download_result.filename,
+        filesize_bytes=download_result.filesize_bytes,
+        mime_type=download_result.mime_type,
+        detected_format=download_result.detected_format,
+        metadata={
+            **download_result.metadata,
+            "source_storage_bucket": stored_source.bucket,
+            "source_storage_key": stored_source.key,
+        },
     )
 
 
@@ -493,7 +593,8 @@ def prepare_upload(
 
         duration_minutes = round(payload.duration_seconds / 60, 2)
         free_trial_used = _get_latest_free_trial_state(current_user)
-        price_decision = determine_upload_price(duration_minutes, free_trial_used)
+        remaining_seconds = _get_free_trial_remaining_for_user(current_user)
+        price_decision = determine_upload_price(duration_minutes, free_trial_used, remaining_seconds)
         calculated_response = UploadCalculatePriceResponse(
             duration_seconds=round(payload.duration_seconds, 2),
             duration_minutes=duration_minutes,
@@ -558,8 +659,8 @@ def prepare_upload(
     if not rows:
         raise UploadWorkflowError("Podcast record could not be created.", status_code=500)
 
-    if final_status == "free_ready" and not _get_latest_free_trial_state(current_user):
-        mark_free_trial_used(current_user.id)
+    if final_status == "free_ready":
+        record_free_trial_usage(current_user.id, calculated_response.duration_seconds)
 
     return UploadPrepareResponse(
         podcast_id=str(rows[0]["id"]),

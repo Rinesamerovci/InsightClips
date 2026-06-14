@@ -14,6 +14,7 @@ import app.services.podcast_service as podcast_service_module  # noqa: E402
 from app.database import UnconfiguredSupabaseClient  # noqa: E402
 from app.services.podcast_service import (  # noqa: E402
     create_imported_podcast_record,
+    delete_podcast_for_user,
     get_podcasts_for_user,
     get_user_podcast_analytics,
     update_podcast_status_for_user,
@@ -60,6 +61,34 @@ class FakeTable:
         return FakeSelectQuery(self._rows)
 
 
+class FakeDeleteQuery:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self._rows = rows
+
+    def eq(self, _: str, __: object) -> "FakeDeleteQuery":
+        return self
+
+    def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows)
+
+
+class FakeDeleteTable(FakeTable):
+    def delete(self) -> FakeDeleteQuery:
+        return FakeDeleteQuery(self._rows)
+
+
+class FakeStorageBucket:
+    def __init__(self, listings: dict[str, list[dict[str, object]]] | None = None) -> None:
+        self.listings = listings or {}
+        self.removed: list[list[str]] = []
+
+    def list(self, path: str) -> list[dict[str, object]]:
+        return self.listings.get(path, [])
+
+    def remove(self, paths: list[str]) -> None:
+        self.removed.append(paths)
+
+
 class FakeAnalyticsSupabase:
     def __init__(
         self,
@@ -78,6 +107,50 @@ class FakeAnalyticsSupabase:
 
 
 class PodcastServiceTests(unittest.TestCase):
+    def test_delete_podcast_for_user_removes_owned_database_and_storage_records(self) -> None:
+        podcast_row = {
+            "id": "pod-1",
+            "user_id": "user-123",
+            "title": "Launch Show",
+            "duration": 1200,
+            "status": "done",
+            "storage_path": "supabase://podcast-sources/user-123/sources/source.mp4",
+            "created_at": "2026-05-01T10:00:00+00:00",
+            "updated_at": "2026-05-01T10:00:00+00:00",
+        }
+        podcast_sources = FakeStorageBucket()
+        clips = FakeStorageBucket(
+            {
+                "pod-1": [{"name": "clip-01.mp4", "id": "clip-object-1", "metadata": {}}],
+                "pod-1/clip-01.mp4": [],
+            }
+        )
+        storage = SimpleNamespace(
+            from_=MagicMock(side_effect=lambda bucket: podcast_sources if bucket == "podcast-sources" else clips)
+        )
+        tables = {
+            "podcasts": FakeDeleteTable([podcast_row]),
+            "clip_publications": FakeDeleteTable([{"id": "pub-1"}]),
+            "clip_overlays": FakeDeleteTable([]),
+            "scores": FakeDeleteTable([{"id": "score-1"}]),
+            "clips": FakeDeleteTable([{"id": "clip-1"}]),
+        }
+        fake_supabase = SimpleNamespace(
+            table=MagicMock(side_effect=lambda name: tables[name]),
+            storage=storage,
+        )
+
+        with patch.object(podcast_service_module, "service_supabase", fake_supabase):
+            result = delete_podcast_for_user("pod-1", "user-123")
+
+        self.assertTrue(result.deleted)
+        self.assertEqual(result.podcast_id, "pod-1")
+        self.assertEqual(result.source_objects_removed, 1)
+        self.assertEqual(result.clip_objects_removed, 1)
+        self.assertGreaterEqual(result.database_rows_removed, 4)
+        self.assertIn(["user-123/sources/source.mp4"], podcast_sources.removed)
+        self.assertIn(["pod-1/clip-01.mp4"], clips.removed)
+
     def test_get_podcasts_for_user_returns_real_empty_list_when_user_has_no_rows(self) -> None:
         service_supabase_mock = MagicMock()
         query = MagicMock()

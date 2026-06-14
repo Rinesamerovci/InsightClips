@@ -131,6 +131,25 @@ export type UserMessageResponse = {
   contact_email?: string | null;
   status: "received" | "triaged";
   created_at?: string | null;
+  email_notification_sent?: boolean;
+};
+
+export type DeleteAccountResponse = {
+  deleted: boolean;
+  user_id: string;
+  podcasts_deleted: number;
+  source_objects_removed: number;
+  clip_objects_removed: number;
+  auth_user_deleted: boolean;
+  email_notification_sent: boolean;
+};
+
+export type DeletePodcastResponse = {
+  deleted: boolean;
+  podcast_id: string;
+  source_objects_removed: number;
+  clip_objects_removed: number;
+  database_rows_removed: number;
 };
 
 export type UploadPriceRequest = {
@@ -447,7 +466,7 @@ export type UserPodcastAnalytics = {
 };
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "PUT";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: JsonRecord;
   token?: string | null;
 };
@@ -729,6 +748,10 @@ export async function patchJson<T>(path: string, body: JsonRecord, token?: strin
   return requestJson<T>(path, { method: "PATCH", body, token });
 }
 
+export async function deleteJson<T>(path: string, body: JsonRecord, token?: string | null): Promise<T> {
+  return requestJson<T>(path, { method: "DELETE", body, token });
+}
+
 export async function getUserProfile(token?: string | null): Promise<ProfileResponse> {
   return getJson<ProfileResponse>("/users/profile", token);
 }
@@ -738,6 +761,24 @@ export async function updateUserProfile(
   token?: string | null,
 ): Promise<ProfileResponse> {
   return patchJson<ProfileResponse>("/users/profile", payload, token);
+}
+
+export async function deleteUserAccount(
+  confirmationEmail: string,
+  token?: string | null,
+): Promise<DeleteAccountResponse> {
+  return deleteJson<DeleteAccountResponse>(
+    "/users/account",
+    { confirmation_email: confirmationEmail },
+    token,
+  );
+}
+
+export async function deletePodcast(
+  podcastId: string,
+  token?: string | null,
+): Promise<DeletePodcastResponse> {
+  return deleteJson<DeletePodcastResponse>(`/podcasts/${podcastId}`, {}, token);
 }
 
 export async function getUserExportSettings(

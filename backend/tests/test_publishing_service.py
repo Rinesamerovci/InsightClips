@@ -361,8 +361,12 @@ class PublishingServiceTests(unittest.TestCase):
         self.assertFalse(bool(rows[0]["published"]))
         self.assertIsNone(rows[0]["download_url"])
         self.assertIsNone(rows[0]["published_at"])
-        self.assertEqual(fake_supabase.publication_rows[0]["status"], "pending")
-        self.assertEqual(fake_supabase.publication_rows[0]["metadata"], {"revoked": True})
+        self.assertEqual(storage.remove_calls, [["podcast-123/clip-01.mp4"]])
+        self.assertEqual(fake_supabase.publication_rows[0]["status"], "revoked")
+        self.assertEqual(
+            fake_supabase.publication_rows[0]["metadata"],
+            {"revoked": True, "storage_removed": True},
+        )
 
     def test_publish_clips_surfaces_upload_errors(self) -> None:
         case_dir = self._workspace_case_dir("publishing-error")

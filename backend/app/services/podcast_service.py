@@ -1,14 +1,19 @@
 from datetime import UTC, datetime
+from dataclasses import dataclass
+from pathlib import Path
 
+from app.config import ROOT_DIR
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.export_settings import ExportSettings, coerce_persisted_export_settings
 from app.models.podcast import (
+    DeletePodcastResponse,
     PodcastAnalyticsSummary,
     PodcastRecord,
     PodcastResponse,
     TopPerformingClip,
     UserPodcastAnalytics,
 )
+from app.services.source_storage_service import is_source_storage_path, parse_source_storage_path
 
 PODCAST_COLUMNS = (
     "id,user_id,title,duration,status,price,payment_status,storage_path,export_mode,crop_mode,"
@@ -22,6 +27,21 @@ CLIP_ANALYTICS_COLUMNS_WITH_METRICS = (
 CLIP_ANALYTICS_COLUMNS_FALLBACK = (
     "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,status,published,published_at"
 )
+
+
+class PodcastDeletionError(Exception):
+    def __init__(self, detail: str, *, status_code: int = 400) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class PodcastDeletionResult:
+    podcast_id: str
+    source_objects_removed: int
+    clip_objects_removed: int
+    database_rows_removed: int
 
 
 def _mock_podcasts(user_id: str) -> list[PodcastRecord]:
@@ -151,6 +171,32 @@ def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -
         return None
 
 
+def delete_podcast_for_user(podcast_id: str, user_id: str) -> DeletePodcastResponse:
+    cleaned_podcast_id = podcast_id.strip()
+    cleaned_user_id = user_id.strip()
+    if not cleaned_podcast_id or not cleaned_user_id:
+        raise PodcastDeletionError("Podcast id and user id are required.")
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        raise PodcastDeletionError("Supabase must be configured before a podcast can be deleted.", status_code=503)
+
+    podcast = get_podcast_for_user(cleaned_podcast_id, cleaned_user_id)
+    if podcast is None:
+        raise PodcastDeletionError("Podcast not found for the current user.", status_code=404)
+
+    source_objects_removed = _remove_podcast_source_object(podcast)
+    clip_objects_removed = _remove_podcast_clip_objects(cleaned_podcast_id)
+    _remove_local_generated_clip_dir(cleaned_podcast_id)
+    database_rows_removed = _delete_podcast_database_rows(cleaned_podcast_id, cleaned_user_id)
+
+    return DeletePodcastResponse(
+        deleted=True,
+        podcast_id=cleaned_podcast_id,
+        source_objects_removed=source_objects_removed,
+        clip_objects_removed=clip_objects_removed,
+        database_rows_removed=database_rows_removed,
+    )
+
+
 def get_user_podcast_analytics(user_id: str) -> UserPodcastAnalytics:
     cleaned_user_id = user_id.strip()
     if not cleaned_user_id:
@@ -211,6 +257,101 @@ def get_user_podcast_analytics(user_id: str) -> UserPodcastAnalytics:
         return get_podcast_for_user(podcast_id, user_id)
     except Exception:
         return None
+
+
+def _remove_podcast_source_object(podcast: PodcastRecord) -> int:
+    storage_path = (podcast.storage_path or "").strip()
+    if not is_source_storage_path(storage_path):
+        return 0
+    try:
+        bucket, key = parse_source_storage_path(storage_path)
+        service_supabase.storage.from_(bucket).remove([key])
+    except Exception:
+        return 0
+    return 1
+
+
+def _remove_podcast_clip_objects(podcast_id: str) -> int:
+    keys = _list_storage_paths("clips", podcast_id)
+    if not keys:
+        return 0
+    removed = 0
+    storage = service_supabase.storage.from_("clips")
+    for chunk in _chunked(sorted(keys), 100):
+        try:
+            storage.remove(chunk)
+            removed += len(chunk)
+        except Exception:
+            continue
+    return removed
+
+
+def _list_storage_paths(bucket: str, prefix: str) -> set[str]:
+    storage = service_supabase.storage.from_(bucket)
+    found: set[str] = set()
+    visited: set[str] = set()
+
+    def walk(path: str, depth: int = 0) -> None:
+        if depth > 6 or path in visited:
+            return
+        visited.add(path)
+        try:
+            entries = storage.list(path)
+        except Exception:
+            return
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            child_path = f"{path.rstrip('/')}/{name}" if path else name
+            if entry.get("metadata") is not None or entry.get("id"):
+                found.add(child_path)
+            walk(child_path, depth + 1)
+
+    walk(prefix.strip("/"))
+    return found
+
+
+def _remove_local_generated_clip_dir(podcast_id: str) -> None:
+    generated_root = (ROOT_DIR / ".generated" / "clips").resolve()
+    candidate = (generated_root / podcast_id).resolve()
+    if generated_root in candidate.parents and candidate.exists():
+        import shutil
+
+        shutil.rmtree(candidate, ignore_errors=True)
+
+
+def _delete_podcast_database_rows(podcast_id: str, user_id: str) -> int:
+    deleted = 0
+    for table_name in ("clip_publications", "clip_overlays", "scores", "clips"):
+        deleted += _delete_optional_rows(table_name, "podcast_id", podcast_id)
+
+    try:
+        response = (
+            service_supabase.table("podcasts")
+            .delete()
+            .eq("id", podcast_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        deleted += len(response.data or []) or 1
+    except Exception as exc:
+        raise PodcastDeletionError(f"Podcast could not be deleted: {exc}", status_code=502) from exc
+    return deleted
+
+
+def _delete_optional_rows(table_name: str, column: str, value: str) -> int:
+    try:
+        response = service_supabase.table(table_name).delete().eq(column, value).execute()
+    except Exception:
+        return 0
+    return len(response.data or [])
+
+
+def _chunked(items: list[str], size: int) -> list[list[str]]:
+    return [items[index : index + size] for index in range(0, len(items), size)]
 
 
 def _select_podcast_rows_for_user(user_id: str):

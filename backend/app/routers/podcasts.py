@@ -11,7 +11,13 @@ from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.publishing import ContentCalendarResponse
-from app.models.podcast import PodcastResponse, PodcastsResponse, UpdatePaymentStatusRequest, UserPodcastAnalytics
+from app.models.podcast import (
+    DeletePodcastResponse,
+    PodcastResponse,
+    PodcastsResponse,
+    UpdatePaymentStatusRequest,
+    UserPodcastAnalytics,
+)
 from app.models.search import RecommendationResult
 from app.services.analysis_service import (
     AnalysisError,
@@ -47,6 +53,8 @@ from app.services.recommendation_service import RecommendationServiceError, reco
 from app.services.profile_service import get_profile_for_analytics
 from app.services.profile_service import get_user_export_settings, update_user_export_settings
 from app.services.podcast_service import (
+    PodcastDeletionError,
+    delete_podcast_for_user,
     get_podcast_for_user,
     get_podcasts_for_user,
     get_user_podcast_analytics,
@@ -258,6 +266,17 @@ async def get_podcast_analysis(
             detail="No analysis saved yet for this podcast.",
         )
     return summary
+
+
+@router.delete("/{podcast_id}", response_model=DeletePodcastResponse)
+async def delete_podcast(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> DeletePodcastResponse:
+    try:
+        return delete_podcast_for_user(podcast_id, current_user.id)
+    except PodcastDeletionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/{podcast_id}/generate-clips", response_model=ClipGenerationResult)

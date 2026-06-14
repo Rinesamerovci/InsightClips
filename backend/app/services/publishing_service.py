@@ -195,6 +195,11 @@ def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
     if not rows:
         raise PublishingError("Clip not found.", status_code=404)
 
+    row = rows[0]
+    storage_key = _try_resolve_storage_key(row)
+    if storage_key:
+        _remove_storage_object(storage_key)
+
     service_supabase.table("clips").update(
         {
             "published": False,
@@ -204,12 +209,12 @@ def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
     ).eq("id", cleaned_clip_id).execute()
     _persist_publication_record(
         clip_id=cleaned_clip_id,
-        podcast_id=str(rows[0].get("podcast_id") or ""),
+        podcast_id=str(row.get("podcast_id") or ""),
         destination="download",
-        status="pending",
+        status="revoked",
         download_url=None,
         published_at=None,
-        metadata={"revoked": True},
+        metadata={"revoked": True, "storage_removed": bool(storage_key)},
     )
 
     return ClipRevocationResult(
@@ -596,6 +601,23 @@ def _resolve_storage_key(row: dict[str, Any]) -> str:
     if clip_number <= 0:
         raise PublishingError("Clip storage metadata is incomplete.", status_code=500)
     return f"{podcast_id}/clip-{clip_number:02d}.mp4"
+
+
+def _try_resolve_storage_key(row: dict[str, Any]) -> str | None:
+    try:
+        return _resolve_storage_key(row)
+    except PublishingError:
+        return None
+
+
+def _remove_storage_object(storage_key: str) -> None:
+    try:
+        storage = service_supabase.storage.from_(CLIP_STORAGE_BUCKET)
+        storage.remove([storage_key])
+    except Exception:
+        # Revocation must still clear DB access even if the remote object was
+        # already gone or storage is temporarily unavailable.
+        return
 
 
 def _resolve_local_clip_path(row: dict[str, Any]) -> Path | None:

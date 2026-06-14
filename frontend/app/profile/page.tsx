@@ -14,13 +14,15 @@ import {
   Shield,
   Sparkles,
   SunMedium,
+  Trash2,
   UserRound,
 } from "lucide-react";
 
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { useAuth } from "@/context/AuthContext";
-import { getUserProfile, updateUserProfile, type ProfileResponse } from "@/lib/api";
+import { deleteUserAccount, getUserProfile, updateUserProfile, type ProfileResponse } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
+import { getPasswordPolicyError } from "@/lib/password-policy";
 import { formatExportMode } from "@/lib/subtitle-style";
 import { supabase } from "@/lib/supabase";
 
@@ -95,7 +97,7 @@ function SignalCard({
 export default function ProfilePage() {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
+  const { backendToken, loading: authLoading, syncBackendSession, signOut } = useAuth();
 
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [form, setForm] = useState<ProfileForm>({
@@ -120,6 +122,12 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordFeedback, setPasswordFeedback] = useState<{
     tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [deleteConfirmationEmail, setDeleteConfirmationEmail] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteFeedback, setDeleteFeedback] = useState<{
+    tone: "success" | "error" | "info";
     message: string;
   } | null>(null);
 
@@ -193,6 +201,10 @@ export default function ProfilePage() {
       errorBg: base.errorBg,
       errorBorder: base.errorBd,
       errorText: base.errorText,
+      deleteBg: dark ? "rgba(90,158,58,.1)" : "rgba(241,249,235,.92)",
+      deleteBorder: dark ? "rgba(130,205,110,.26)" : "rgba(130,205,110,.38)",
+      deleteText: dark ? "#bfe4ab" : "#3f7f25",
+      deleteButton: dark ? "#3c7627" : "#5a9e3a",
     };
   }, [dark]);
 
@@ -263,18 +275,11 @@ export default function ProfilePage() {
 
     setPasswordFeedback(null);
 
-    if (newPassword.length < 8) {
+    const passwordError = getPasswordPolicyError(newPassword);
+    if (passwordError) {
       setPasswordFeedback({
         tone: "error",
-        message: "New password must be at least 8 characters.",
-      });
-      return;
-    }
-
-    if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
-      setPasswordFeedback({
-        tone: "error",
-        message: "Password must include letters and numbers.",
+        message: passwordError,
       });
       return;
     }
@@ -354,6 +359,64 @@ export default function ProfilePage() {
     reader.readAsDataURL(file);
   };
 
+  const handleDeleteAccount = async () => {
+    if (!profile || deleteLoading) {
+      return;
+    }
+
+    const expectedEmail = profile.email.toLowerCase();
+    if (deleteConfirmationEmail.trim().toLowerCase() !== expectedEmail) {
+      setDeleteFeedback({
+        tone: "error",
+        message: "Type your account email exactly before deleting this account.",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      [
+        "Are you sure you want to permanently delete this account?",
+        "",
+        "This removes your profile, podcasts, source media, generated clips, and sign-in access.",
+        "Your one-time free upload usage will not be restored for this email.",
+      ].join("\n"),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteFeedback({
+      tone: "info",
+      message: "Deleting account data, generated clips, source media, and auth access...",
+    });
+
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      await deleteUserAccount(deleteConfirmationEmail.trim(), token);
+      setDeleteFeedback({
+        tone: "success",
+        message: "Account deleted successfully. Signing out...",
+      });
+      await signOut();
+    } catch (error) {
+      setDeleteFeedback({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to delete this account right now.",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   if (loading || authLoading) {
     return (
       <div
@@ -404,6 +467,24 @@ export default function ProfilePage() {
           border: palette.errorBorder,
           color: palette.errorText,
         };
+  const deleteStyles =
+    deleteFeedback?.tone === "success"
+      ? {
+          background: palette.successBg,
+          border: palette.successBorder,
+          color: palette.successText,
+        }
+      : deleteFeedback?.tone === "error"
+        ? {
+            background: palette.deleteBg,
+            border: palette.deleteBorder,
+            color: palette.deleteText,
+          }
+        : {
+            background: palette.chip,
+            border: palette.subBorder,
+            color: palette.text,
+          };
 
   return (
     <div
@@ -979,6 +1060,94 @@ export default function ProfilePage() {
               >
                 <Sparkles size={15} color={palette.accent} />
                 Password changes stay in this panel so profile edits and security tasks never get mixed together.
+              </div>
+            </section>
+
+            <section
+              className="a-up ic-premium-card"
+              style={{
+                borderRadius: 24,
+                background: palette.card,
+                border: `1px solid ${palette.deleteBorder}`,
+                padding: 20,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                <Trash2 size={18} color={palette.deleteText} />
+                <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.deleteText }}>
+                  Account deletion
+                </div>
+              </div>
+
+              <div
+                style={{
+                  borderRadius: 16,
+                  border: `1px solid ${palette.deleteBorder}`,
+                  background: palette.deleteBg,
+                  padding: "12px 14px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                  color: palette.deleteText,
+                }}
+              >
+                Delete account permanently removes your profile, podcasts, generated clips, source media, messages, and sign-in access.
+              </div>
+
+              {deleteFeedback ? (
+                <div
+                  style={{
+                    marginBottom: 12,
+                    borderRadius: 16,
+                    padding: "12px 14px",
+                    background: deleteStyles.background,
+                    border: `1px solid ${deleteStyles.border}`,
+                    color: deleteStyles.color,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {deleteFeedback.message}
+                </div>
+              ) : null}
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <input
+                  type="email"
+                  value={deleteConfirmationEmail}
+                  onChange={(event) => setDeleteConfirmationEmail(event.target.value)}
+                  placeholder={`Type ${profile?.email ?? "your email"} to confirm`}
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${palette.subBorder}`,
+                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
+                    color: palette.text,
+                    padding: "14px 16px",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteAccount()}
+                  disabled={deleteLoading || !profile}
+                  style={{
+                    border: "none",
+                    borderRadius: 16,
+                    background: palette.deleteButton,
+                    color: "#fff",
+                    padding: "12px 16px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    fontWeight: 700,
+                    cursor: deleteLoading || !profile ? "default" : "pointer",
+                    opacity: deleteLoading || !profile ? 0.72 : 1,
+                  }}
+                >
+                  {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {deleteLoading ? "Deleting..." : "Delete account permanently"}
+                </button>
               </div>
             </section>
           </aside>

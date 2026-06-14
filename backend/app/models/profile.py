@@ -98,3 +98,4 @@ class UserMessageResponse(BaseModel):
     contact_email: EmailStr | None = None
     status: Literal["received", "triaged"] = "received"
     created_at: datetime | None = None
+    email_notification_sent: bool = False

@@ -83,7 +83,7 @@ function NavItem({ icon: Icon, label, href, active, t, collapsed }:
         <span style={{
           fontSize: 13, fontWeight: active ? 600 : 400,
           color: active ? t.text : t.textSub,
-          letterSpacing: "-.01em",
+          letterSpacing: "0",
         }}>{label}</span>
       )}
       {active && !collapsed && (
@@ -102,7 +102,7 @@ function StatCard({ icon: Icon, label, value, sub, accent, t, delay }:
   { icon: React.ElementType; label: string; value: string|number; sub: string; accent: string; t: DashboardTheme; delay: number }) {
   return (
     <div style={{
-      padding: "22px 24px", borderRadius: 18,
+      padding: "18px 20px", borderRadius: 14,
       border: `1px solid ${t.border}`,
       background: t.card,
       backdropFilter: "blur(20px)",
@@ -110,24 +110,18 @@ function StatCard({ icon: Icon, label, value, sub, accent, t, delay }:
       animation: `slideUp .55s ${delay}s cubic-bezier(.22,1,.36,1) both`,
     }}>
       <div style={{
-        position: "absolute", top: -30, right: -30,
-        width: 100, height: 100, borderRadius: "50%",
-        background: `${accent}18`, filter: "blur(24px)",
-        pointerEvents: "none",
-      }}/>
-      <div style={{
-        width: 38, height: 38, borderRadius: 11,
+        width: 36, height: 36, borderRadius: 10,
         background: `${accent}16`,
         border: `1px solid ${accent}28`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        marginBottom: 16,
+        marginBottom: 14,
       }}>
         <Icon size={17} color={accent} strokeWidth={1.8}/>
       </div>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>{label}</div>
       <div style={{
         fontFamily: "'DM Serif Display', serif",
-        fontSize: 32, fontStyle: "italic",
+        fontSize: 30, fontStyle: "italic",
         color: t.text, lineHeight: 1, marginBottom: 4,
       }}>{value}</div>
       <div style={{ fontSize: 12, color: t.textSub }}>{sub}</div>
@@ -174,7 +168,7 @@ function SignalPill({
 ═══════════════════════════════════════════════════════════ */
 export default function DashboardPage() {
   const router  = useRouter();
-  const { backendToken, loading: authLoading, signOut, syncBackendSession } = useAuth();
+  const { backendToken, loading: authLoading, signOut, syncBackendSession, user } = useAuth();
 
   const [profile,   setProfile]   = useState<ProfileResponse | null>(null);
   const [podcasts,  setPodcasts]  = useState<Podcast[]>([]);
@@ -223,7 +217,15 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
-        if (!token) { router.replace("/login"); return; }
+        if (!token) {
+          if (!user) {
+            router.replace("/login");
+            return;
+          }
+
+          setError("Your session is still syncing. Please wait a moment and the dashboard will finish loading.");
+          return;
+        }
         const [p, pod, overview] = await Promise.all([
           getJson<ProfileResponse>("/users/profile", token),
           getJson<PodcastsResponse>("/podcasts", token),
@@ -246,7 +248,7 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     };
     void load();
-  }, [authLoading, backendToken, router, syncBackendSession]);
+  }, [authLoading, backendToken, router, syncBackendSession, user]);
 
   const safePodcasts = Array.isArray(podcasts) ? podcasts : [];
 
@@ -335,7 +337,7 @@ export default function DashboardPage() {
           description: `${podcast.title} has ${analysis.total_scored_segments} scored moments ready for clips.`,
           tone: "success",
           ctaHref: `/clips?podcastId=${podcast.id}`,
-          ctaLabel: "Open clips",
+          ctaLabel: "Generate clips",
         });
       }
     });
@@ -380,7 +382,13 @@ export default function DashboardPage() {
       );
       setError("");
       const token = backendToken ?? (await syncBackendSession());
-      if (!token) { router.replace("/login"); return; }
+      if (!token) {
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+        throw new Error("Session is still syncing.");
+      }
       const result = await analyzePodcast(podcastId, {}, token);
       setPodcasts((current) =>
         current.map((podcast) =>
@@ -450,17 +458,17 @@ export default function DashboardPage() {
         .pc   { animation: slideUp .5s calc(var(--i)*.07s + .35s) cubic-bezier(.22,1,.36,1) both; }
 
         .nav-link:hover { background: rgba(90,158,58,.08) !important; }
-        .icon-btn:hover { background: rgba(90,158,58,.1) !important; transform: scale(1.06); }
+        .icon-btn:hover { background: rgba(90,158,58,.1) !important; transform: translateY(-1px); }
         .icon-btn { transition: all .2s cubic-bezier(.34,1.56,.64,1) !important; }
 
-        .stat-card:hover { transform: translateY(-4px) !important; box-shadow: 0 16px 44px rgba(0,0,0,.13) !important; }
+        .stat-card:hover { transform: translateY(-2px) !important; box-shadow: 0 14px 34px rgba(0,0,0,.1) !important; }
         .stat-card { transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s !important; }
 
         .pod-item { transition: transform .28s cubic-bezier(.22,1,.36,1), box-shadow .28s; }
-        .pod-item:hover { transform: translateY(-4px); box-shadow: 0 14px 36px rgba(0,0,0,.12); }
+        .pod-item:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.1); }
 
         .sidebar-link { transition: all .2s; }
-        .sidebar-link:hover { background: rgba(90,158,58,.08) !important; transform: translateX(3px); }
+        .sidebar-link:hover { background: rgba(90,158,58,.08) !important; transform: translateX(1px); }
 
         .upload-btn {
           transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s;
@@ -472,7 +480,7 @@ export default function DashboardPage() {
           background-size:250%; background-position:200%;
           transition: background-position .5s;
         }
-        .upload-btn:hover { transform: translateY(-3px); box-shadow: 0 18px 40px rgba(90,158,58,.38) !important; }
+        .upload-btn:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(90,158,58,.26) !important; }
         .upload-btn:hover::after { background-position:-50%; }
         .upload-btn:active { transform: scale(.97); }
 
@@ -542,7 +550,7 @@ export default function DashboardPage() {
         )}
 
         <aside style={{
-          width: isMobile ? 240 : (collapsed ? 68 : 240),
+          width: isMobile ? 236 : (collapsed ? 68 : 236),
           minHeight: "100vh",
           position: "fixed", top: 0, left: 0, zIndex: 50,
           background: t.sidebar,
@@ -551,11 +559,11 @@ export default function DashboardPage() {
           transition: "width .35s cubic-bezier(.22,1,.36,1), transform .3s cubic-bezier(.22,1,.36,1)",
           overflow: "hidden",
           transform: isMobile ? (mobileNavOpen ? "translateX(0)" : "translateX(-100%)") : "translateX(0)",
-          boxShadow: isMobile && mobileNavOpen ? "0 24px 60px rgba(0,0,0,.24)" : "none",
+          boxShadow: isMobile && mobileNavOpen ? "0 18px 42px rgba(0,0,0,.22)" : "none",
         }}>
           {/* Logo */}
           <div style={{
-            padding: collapsed ? "22px 14px" : "24px 20px",
+            padding: collapsed ? "20px 14px" : "22px 18px",
             borderBottom: `1px solid ${t.borderSub}`,
             display: "flex", alignItems: "center",
             gap: 12, justifyContent: collapsed ? "center" : "flex-start",
@@ -569,7 +577,7 @@ export default function DashboardPage() {
               style={{
                 width: 34,
                 height: 34,
-                borderRadius: 10,
+                borderRadius: 8,
                 flexShrink: 0,
                 boxShadow: `0 4px 16px ${t.accentGlow}`,
               }}
@@ -583,7 +591,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Nav */}
-          <nav style={{ flex: 1, padding: "16px 10px", display: "flex", flexDirection:"column", gap: 3 }}>
+          <nav style={{ flex: 1, padding: "14px 10px", display: "flex", flexDirection:"column", gap: 4 }}>
             <NavItem icon={LayoutDashboard} label="Overview"  href="/dashboard" active t={t} collapsed={collapsed}/>
             <NavItem icon={Library}         label="Library"   href="/podcasts"  t={t} collapsed={collapsed}/>
             <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
@@ -594,7 +602,7 @@ export default function DashboardPage() {
 
           {/* Profile + sign out */}
           <div style={{
-            padding: collapsed ? "16px 10px" : "16px 14px",
+            padding: collapsed ? "14px 10px" : "14px 12px",
             borderTop: `1px solid ${t.borderSub}`,
             display: "flex", flexDirection:"column", gap: 10,
           }}>
@@ -602,8 +610,8 @@ export default function DashboardPage() {
             {!collapsed && profile && (
               <div style={{
                 display:"flex", alignItems:"center", gap: 10,
-                padding: "10px 12px", borderRadius: 12,
-                background: `rgba(90,158,58,.06)`,
+                padding: "9px 10px", borderRadius: 10,
+                background: `rgba(90,158,58,.05)`,
                 border: `1px solid ${t.borderSub}`,
               }}>
                 <div style={{
@@ -627,8 +635,9 @@ export default function DashboardPage() {
             <button onClick={() => void signOut()} style={{
               display:"flex", alignItems:"center", justifyContent: collapsed?"center":"flex-start", gap: 8,
               padding: "9px 12px", borderRadius: 10,
-              background:"transparent", border:`1px solid ${t.redBord}`,
-              color: t.red, fontSize: 13, fontWeight: 500, cursor:"pointer",
+              background: dark ? "rgba(90,158,58,.04)" : "rgba(255,255,255,.42)",
+              border:`1px solid ${t.borderSub}`,
+              color: t.textSub, fontSize: 13, fontWeight: 600, cursor:"pointer",
               fontFamily:"'DM Sans',sans-serif",
               transition: "all .2s",
             }}>
@@ -640,7 +649,7 @@ export default function DashboardPage() {
 
         {/* ═══════════════════════ MAIN AREA ═══════════════════════ */}
         <div style={{
-          marginLeft: isMobile ? 0 : (collapsed ? 68 : 240),
+          marginLeft: isMobile ? 0 : (collapsed ? 68 : 236),
           flex: 1, minHeight:"100vh",
           display:"flex", flexDirection:"column",
           transition:"margin-left .35s cubic-bezier(.22,1,.36,1)",
@@ -879,20 +888,20 @@ export default function DashboardPage() {
           </header>
 
           {/* ── PAGE CONTENT ── */}
-          <main style={{ padding: isMobile ? "20px 16px 40px" : "32px 32px 60px", flex:1 }}>
+          <main style={{ padding: isMobile ? "18px 14px 38px" : "28px 28px 56px", flex:1 }}>
 
             {/* Welcome row */}
             <section
               className="ic-premium-card"
               style={{
-                marginBottom: 28,
-                borderRadius: 28,
+                marginBottom: 22,
+                borderRadius: 22,
                 border: `1px solid ${t.border}`,
                 background: dark
                   ? "linear-gradient(135deg, rgba(18,30,14,.96), rgba(12,18,10,.92))"
                   : "linear-gradient(135deg, rgba(255,255,255,.96), rgba(244,248,236,.98))",
-                padding: isMobile ? "22px 18px" : "28px",
-                boxShadow: dark ? "0 28px 70px rgba(0,0,0,.2)" : "0 28px 70px rgba(90,158,58,.08)",
+                padding: isMobile ? "20px 16px" : "24px",
+                boxShadow: dark ? "0 18px 46px rgba(0,0,0,.18)" : "0 18px 46px rgba(90,158,58,.07)",
                 animation: "slideUp .55s .08s cubic-bezier(.22,1,.36,1) both",
               }}
             >
@@ -929,7 +938,7 @@ export default function DashboardPage() {
                     <h1 style={{
                       fontFamily: "'DM Serif Display', serif",
                       fontSize: "clamp(30px, 3.6vw, 46px)",
-                      fontStyle: "italic", letterSpacing: "-.045em",
+                      fontStyle: "italic", letterSpacing: "0",
                       lineHeight: 1.04, marginBottom: 10,
                     }}>
                       {firstName ? (
@@ -938,7 +947,7 @@ export default function DashboardPage() {
                         <span className="shimmer-name">Welcome to InsightClips</span>
                       )}
                     </h1>
-                    <p style={{ fontSize: 15, color: t.textSub, lineHeight: 1.75, maxWidth: 680 }}>
+                    <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.7, maxWidth: 680 }}>
                       {workspaceEpisodes > 0
                         ? analytics && analytics.total_clips > 0
                           ? `${analytics.total_clips} generated clip${analytics.total_clips !== 1 ? "s" : ""} across ${analytics.total_podcasts} tracked episode${analytics.total_podcasts !== 1 ? "s" : ""}, with ${analytics.published_clips} already published and ${visibilityTotal} total reach.`
@@ -1008,7 +1017,7 @@ export default function DashboardPage() {
             <section
               className="ic-premium-card"
               style={{
-                marginBottom: 28,
+                marginBottom: 22,
                 borderRadius: 22,
                 border: `1px solid ${t.border}`,
                 background: dark ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.76)",
@@ -1066,7 +1075,7 @@ export default function DashboardPage() {
             <div style={{
               display:"grid",
               gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,190px),1fr))",
-              gap: 16, marginBottom: 28,
+              gap: 14, marginBottom: 22,
             }}>
               <div className="stat-card">
                 <StatCard icon={Mic2}       label="Podcasts"   value={analytics?.total_podcasts ?? safePodcasts.length} sub="total uploaded"          accent="#5a9e3a"  t={t} delay={.10}/>
@@ -1173,9 +1182,9 @@ export default function DashboardPage() {
                   {[
                     { id:"upload",    icon:Plus,      label:"Upload or import",  sub:"File upload or YouTube link",      href:"/upload" },
                     { id:"podcasts",  icon:Library,   label:"Browse podcasts", sub:"Search your library",  href:"/podcasts" },
-                    { id:"clips",     icon:Play,      label:"View clips",      sub:"Open discovery flow",  href:"/clips" },
+                    { id:"clips",     icon:Play,      label:"Generate clips",  sub:"Choose options first", href:"/clips" },
                     { id:"analytics", icon:BarChart2, label:"View analytics",  sub:"Performance summary",  href:"/analytics" },
-                    { id:"planning",  icon:Sparkles,  label:"Open planning",   sub:"Calendar and hashtags", href:"/clips" },
+                    { id:"planning",  icon:Sparkles,  label:"Open results",    sub:"Generated videos",     href:"/clips/generated" },
                     { id:"feedback",  icon:Settings,  label:"Share feedback",  sub:"Support and contact",  href:"/settings" },
                   ].map(({ id, icon:Icon, label, sub, href }) => (
                     <Link key={id} href={href} className="sidebar-link ic-premium-card" style={{
@@ -1244,16 +1253,6 @@ export default function DashboardPage() {
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:8, width:isMobile ? "100%" : "auto", justifyContent:isMobile ? "space-between" : "flex-end" }}>
                       <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:isMobile ? "space-between" : "flex-end" }}>
-                        <button onClick={() => router.push("/upload")} className="upload-btn" style={{
-                        display:"flex", alignItems:"center", gap:6,
-                        padding:"8px 18px", borderRadius:100, border:"none",
-                        background:`linear-gradient(135deg,${dark?"#3d6e24":"#4a8e2a"},${t.accent})`,
-                        color:"#fff", fontSize:12, fontWeight:600,
-                        cursor:"pointer", fontFamily:"'DM Sans',sans-serif",
-                        boxShadow:`0 4px 16px ${t.accentGlow}`,
-                      }}>
-                          <Plus size={13} strokeWidth={2.5}/> Upload file
-                        </button>
                         <Link href="/upload/youtube" style={{
                           display:"inline-flex", alignItems:"center", gap:6,
                           padding:"8px 14px", borderRadius:100,

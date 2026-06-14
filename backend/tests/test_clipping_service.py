@@ -140,6 +140,9 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("libx264", command)
         self.assertIn("aac", command)
         self.assertIn("+faststart", command)
+        self.assertEqual(command[command.index("-preset") + 1], "veryfast")
+        self.assertEqual(command[command.index("-crf") + 1], "22")
+        self.assertEqual(command[command.index("-threads") + 1], "1")
         self.assertIn("subtitles=", command[command.index("-vf") + 1])
         self.assertIn("-af", command)
         self.assertIn("loudnorm=I=-16.0:TP=-1.5:LRA=11.0", command)
@@ -172,6 +175,27 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("scale=1080:1920:force_original_aspect_ratio=decrease", filters)
         self.assertIn("pad=1080:1920:(ow-iw)/2:(oh-ih)/2", filters)
         self.assertIn("subtitles=", filters)
+
+    def test_build_ffmpeg_clip_command_uses_configured_fast_render_settings(self) -> None:
+        settings = SimpleNamespace(
+            clip_ffmpeg_preset="ultrafast",
+            clip_ffmpeg_crf=24,
+            clip_ffmpeg_threads=2,
+            clip_ffmpeg_timeout_seconds=120,
+        )
+
+        with patch.object(clipping_service_module, "get_settings", return_value=settings):
+            command = build_ffmpeg_clip_command(
+                Path("input.mp4"),
+                Path("output.mp4"),
+                None,
+                start_seconds=0,
+                duration_seconds=10,
+            )
+
+        self.assertEqual(command[command.index("-preset") + 1], "ultrafast")
+        self.assertEqual(command[command.index("-crf") + 1], "24")
+        self.assertEqual(command[command.index("-threads") + 1], "2")
 
     def test_build_ffmpeg_clip_command_uses_filter_complex_when_overlay_is_enabled(self) -> None:
         overlay = OverlayDecision(

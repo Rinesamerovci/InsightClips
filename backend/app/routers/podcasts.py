@@ -252,11 +252,6 @@ async def generate_podcast_clips(
     _assert_podcast_can_process(podcast_id, current_user.id)
 
     existing_result = get_clips_for_podcast(podcast_id)
-    if existing_result is not None and existing_result.clips:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Clips have already been generated for this podcast. Review the existing clips instead of generating them again.",
-        )
 
     preferred_export_settings = (
         get_user_export_settings(current_user.id)
@@ -274,6 +269,15 @@ async def generate_podcast_clips(
         else None
     )
     generation_settings = payload.resolve_generation_settings(preferred_generation_settings)
+    if (
+        existing_result is not None
+        and existing_result.clips
+        and len(existing_result.clips) >= generation_settings.number_of_clips
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Clips have already been generated for this podcast. Review the existing clips instead of generating them again.",
+        )
     if payload.save_generation_settings and preferred_export_settings is not None:
         update_user_export_settings(
             current_user.id,

@@ -38,6 +38,7 @@ import {
   type UploadPriceResponse,
   type UploadState,
   type YouTubeImportResponse,
+  shouldUseMockUploadFlow,
 } from "@/lib/api";
 import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 import {
@@ -55,7 +56,6 @@ import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v"];
 const ACCEPTED_EXT = [".mp4", ".mov", ".webm", ".m4v"];
-const PREFLIGHT_MODE = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE ?? "real";
 const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const YOUTUBE_HOSTS = new Set([
   "youtube.com",
@@ -440,30 +440,86 @@ export default function UploadWorkspace({
     token: string | null,
     mock: boolean,
   ) => {
-    const duration = await getDuration(selectedFile);
-    const formData = new FormData();
-    formData.set("file", selectedFile);
-    formData.set("filename", selectedFile.name);
-    if (selectedFile.type) formData.set("mime_type", selectedFile.type);
-    formData.set("detected_duration_seconds", String(duration));
-    if (mock) formData.set("mock", "true");
+    if (mock) {
+      const duration = await getDuration(selectedFile);
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("filename", selectedFile.name);
+      if (selectedFile.type) formData.set("mime_type", selectedFile.type);
+      formData.set("detected_duration_seconds", String(duration));
+      formData.set("mock", "true");
 
-    const response = await fetch("/api/upload/preflight", {
+      const response = await fetch("/api/upload/preflight", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to inspect file.");
+      }
+
+      const typed = payload as UploadPriceResponse & { upload_reference?: string };
+      if (!typed.upload_reference) {
+        throw new Error("Upload staging failed. No upload reference was returned.");
+      }
+      setUploadReference(typed.upload_reference);
+      return typed as UploadPriceResponse;
+    }
+
+    // REAL MODE: Upload directly to Render backend
+    const backendUrl =
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+
+    const uploadFormData = new FormData();
+    uploadFormData.append("file", selectedFile);
+
+    const uploadResponse = await fetch(`${backendUrl}/upload/file`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
+      body: uploadFormData,
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to inspect file.");
+
+    if (!uploadResponse.ok) {
+      const errorPayload = await uploadResponse.json().catch(() => ({}));
+      throw new Error(
+        typeof errorPayload.detail === "string"
+          ? errorPayload.detail
+          : "Failed to upload file to backend."
+      );
     }
 
-    const typed = payload as UploadPriceResponse & { upload_reference?: string };
-    if (!typed.upload_reference) {
-      throw new Error("Upload staging failed. No upload reference was returned.");
+    const uploadData = (await uploadResponse.json()) as {
+      storage_path: string;
+      filesize_bytes: number;
+    };
+
+    const priceResponse = await fetch(`${backendUrl}/upload/calculate-price`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        filename: selectedFile.name,
+        filesize_bytes: uploadData.filesize_bytes,
+        mime_type: selectedFile.type || undefined,
+        storage_path: uploadData.storage_path,
+      }),
+    });
+
+    if (!priceResponse.ok) {
+      const errorPayload = await priceResponse.json().catch(() => ({}));
+      throw new Error(
+        typeof errorPayload.detail === "string"
+          ? errorPayload.detail
+          : "Failed to calculate upload price."
+      );
     }
-    setUploadReference(typed.upload_reference);
-    return typed as UploadPriceResponse;
+
+    const priceData = (await priceResponse.json()) as UploadPriceResponse;
+    setUploadReference(uploadData.storage_path);
+    return priceData;
   };
 
   const runServerPrepare = async (
@@ -476,7 +532,38 @@ export default function UploadWorkspace({
       throw new Error("Upload staging is missing. Please run the pre-flight check again.");
     }
 
-    const response = await fetch("/api/upload/prepare", {
+    if (mock) {
+      const response = await fetch("/api/upload/prepare", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          title: titleFrom(selectedFile.name),
+          filename: selectedFile.name,
+          filesize_bytes: selectedFile.size,
+          mime_type: selectedFile.type || undefined,
+          duration_seconds: quote.duration_seconds,
+          price: quote.price,
+          status: quote.status,
+          upload_reference: uploadReference,
+          mock,
+          export_settings: exportSettings,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to create record.");
+      }
+      return payload as PrepareUploadResponse;
+    }
+
+    // REAL MODE: Call prepare directly on backend
+    const backendUrl =
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+
+    const response = await fetch(`${backendUrl}/upload/prepare`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -490,11 +577,11 @@ export default function UploadWorkspace({
         duration_seconds: quote.duration_seconds,
         price: quote.price,
         status: quote.status,
-        upload_reference: uploadReference,
-        mock,
+        storage_path: uploadReference,
         export_settings: exportSettings,
       }),
     });
+
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(typeof payload.detail === "string" ? payload.detail : "Unable to create record.");
@@ -524,7 +611,7 @@ export default function UploadWorkspace({
     setUploadReference(null);
 
     try {
-      const mock = PREFLIGHT_MODE === "mock";
+      const mock = shouldUseMockUploadFlow();
       const token = backendToken ?? (await syncBackendSession());
       if (!token && !mock) {
         router.replace("/login");
@@ -589,7 +676,7 @@ export default function UploadWorkspace({
     setPreparing(true);
     setErr("");
     try {
-      const mock = PREFLIGHT_MODE === "mock";
+      const mock = shouldUseMockUploadFlow();
       const token = backendToken ?? (await syncBackendSession());
       if (!token && !mock) {
         router.replace("/login");
@@ -656,7 +743,7 @@ export default function UploadWorkspace({
     setErr("");
 
     try {
-      const mock = PREFLIGHT_MODE === "mock";
+      const mock = shouldUseMockUploadFlow();
       const token = backendToken ?? (await syncBackendSession());
       if (!token && !mock) {
         router.replace("/login");
@@ -691,7 +778,7 @@ export default function UploadWorkspace({
     setYoutubeAnalyzing(true);
     setErr("");
     try {
-      const mock = PREFLIGHT_MODE === "mock";
+      const mock = shouldUseMockUploadFlow();
       const token = backendToken ?? (await syncBackendSession());
       if (!token && !mock) {
         router.replace("/login");

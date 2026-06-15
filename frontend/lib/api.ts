@@ -97,6 +97,7 @@ export type GenerationSettings = {
 };
 
 export type GenerateClipsPayload = {
+  score_segments?: ScoreSegment[];
   generation_settings?: GenerationSettings;
   export_settings?: ExportSettings;
   visual_output_mode?: VisualOutputMode;
@@ -928,6 +929,9 @@ export async function generateClips(
       : maybeToken;
 
   const requestBody: JsonRecord = {};
+  if (payload?.score_segments) {
+    requestBody.score_segments = payload.score_segments;
+  }
   if (payload?.generation_settings) {
     requestBody.generation_settings = payload.generation_settings;
   }

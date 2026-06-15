@@ -221,7 +221,21 @@ async def analyze_podcast(
     background_tasks: BackgroundTasks,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> AnalysisResult:
-    _assert_podcast_can_process(podcast_id, current_user.id)
+    podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is already being analyzed.",
+        )
+    if podcast.status == "done":
+        existing_segments = get_scored_segments_for_podcast(podcast_id)
+        if existing_segments:
+            return build_analysis_result(
+                podcast_id,
+                existing_segments,
+                processing_time_seconds=0.0,
+            )
+
     started_at = time.perf_counter()
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
     try:

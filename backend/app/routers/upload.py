@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from urllib.parse import urlencode
 from pathlib import Path
 
 import stripe
@@ -181,7 +182,8 @@ async def create_checkout(
     frontend_origin = (settings.frontend_origins or [])[0] if settings.frontend_origins else ""
     if not frontend_origin:
         frontend_origin = ""
-    success_url = f"{frontend_origin}/upload?payment=success&podcast_id={podcast_id}"
+    success_query = urlencode({"payment": "success", "podcast_id": podcast_id})
+    success_url = f"{frontend_origin}/upload/complete?{success_query}"
     cancel_url = f"{frontend_origin}/upload?payment=cancelled"
 
     try:

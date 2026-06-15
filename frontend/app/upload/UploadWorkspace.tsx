@@ -27,6 +27,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import {
   analyzePodcast,
+  confirmMockPayment,
   importYouTubePodcast,
     createCheckoutSession,
   type AudioEnhancementSettings,
@@ -722,6 +723,7 @@ export default function UploadWorkspace({
           try {
             const token = backendToken ?? (await syncBackendSession());
             if (!token) return;
+            await confirmMockPayment(podcastId, "paid", token);
             await analyzePodcast(podcastId, {}, token);
             router.push(`/clips?podcastId=${encodeURIComponent(podcastId)}`);
           } catch (err) {

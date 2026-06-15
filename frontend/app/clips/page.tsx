@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ import {
   buildAuthenticatedBackendUrl,
   getContentCalendar,
   downloadClip,
+  analyzePodcast,
   generateClips,
   getBackendBaseUrl,
   getClips,
@@ -46,6 +47,7 @@ import {
   type GenerationTemplateId,
   type Podcast,
   type PodcastsResponse,
+  type ScoreSegment,
   type VisualOutputMode,
 } from "@/lib/api";
 import {
@@ -389,6 +391,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     useState<ExportSettings | null>(null);
   const [visualOutputMode, setVisualOutputMode] =
     useState<VisualOutputMode>("original_people");
+  const autoGenerateRequested = searchParams.get("autogen") === "1";
+  const pendingAutoGenerateScoreSegmentsRef = useRef<ScoreSegment[] | null>(null);
+  const autoGenerateStartedRef = useRef(false);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -822,7 +827,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     });
   };
 
-  const handleGenerateClips = async () => {
+  const handleGenerateClips = useCallback(async () => {
     if (!selectedPodcastId) {
       setActionFeedback({
         tone: "error",
@@ -856,6 +861,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       const generated = await generateClips(
         selectedPodcastId,
         {
+          score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
           generation_settings: buildGenerationRequestPayload(generationSettings),
           export_settings:
             generationExportSettings ??
@@ -915,8 +921,98 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       });
     } finally {
       setGenerating(false);
+      pendingAutoGenerateScoreSegmentsRef.current = null;
     }
-  };
+  }, [
+    backendToken,
+    generationExportSettings,
+    generationSettings,
+    selectedPodcast,
+    selectedPodcastId,
+    hasCompleteClipSet,
+    mode,
+    resultsPath,
+    router,
+    syncBackendSession,
+    visualOutputMode,
+  ]);
+
+  useEffect(() => {
+    if (!autoGenerateRequested || mode !== "results") {
+      return;
+    }
+    if (!selectedPodcastId || !selectedPodcast || loading || authLoading || generating) {
+      return;
+    }
+    if (clips.length > 0 || autoGenerateStartedRef.current) {
+      return;
+    }
+
+    autoGenerateStartedRef.current = true;
+    const storageKey = `insightclips:analysis-segments:${selectedPodcastId}`;
+    let cancelled = false;
+
+    const runAutoGenerate = async () => {
+      setGenerating(true);
+      setError("");
+      setActionFeedback({
+        tone: "info",
+        message: "Preparing the podcast, then rendering clips automatically.",
+      });
+
+      try {
+        const token = backendToken ?? (await syncBackendSession());
+        if (!token || cancelled) {
+          return;
+        }
+
+        try {
+          const stored = window.sessionStorage.getItem(storageKey);
+          pendingAutoGenerateScoreSegmentsRef.current = stored ? (JSON.parse(stored) as ScoreSegment[]) : null;
+          window.sessionStorage.removeItem(storageKey);
+        } catch {
+          pendingAutoGenerateScoreSegmentsRef.current = null;
+        }
+
+        if (!pendingAutoGenerateScoreSegmentsRef.current) {
+          const analysis = await analyzePodcast(selectedPodcastId, {}, token);
+          if (cancelled) {
+            return;
+          }
+          pendingAutoGenerateScoreSegmentsRef.current = analysis.top_scoring_segments ?? [];
+        }
+
+        await handleGenerateClips();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setGenerating(false);
+        setActionFeedback({
+          tone: "error",
+          message: error instanceof Error ? error.message : "Unable to start automated clip rendering.",
+        });
+      }
+    };
+
+    void runAutoGenerate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authLoading,
+    autoGenerateRequested,
+    backendToken,
+    clips.length,
+    generating,
+    handleGenerateClips,
+    loading,
+    mode,
+    selectedPodcast,
+    selectedPodcastId,
+    syncBackendSession,
+  ]);
 
   const handleCopyPlanning = async (text: string, label: string) => {
     const value = text.trim();

@@ -299,7 +299,12 @@ async def generate_podcast_clips(
     payload: GenerateClipsRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ClipGenerationResult:
-    _assert_podcast_can_process(podcast_id, current_user.id)
+    podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is already being processed.",
+        )
 
     existing_result = get_clips_for_podcast(podcast_id)
 

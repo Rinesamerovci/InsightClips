@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   LogOut, Moon, Plus, SunMedium, Mic2, Download,
-  Sparkles, Settings, Bell, ChevronRight, Play,
+  Sparkles, Settings, Bell, ChevronRight, Play, CreditCard,
   Activity, Zap, TrendingUp,
   Radio, LayoutDashboard, Library, BarChart2,
   User, ArrowUpRight,
@@ -168,7 +168,7 @@ function SignalPill({
 ═══════════════════════════════════════════════════════════ */
 export default function DashboardPage() {
   const router  = useRouter();
-  const { backendToken, loading: authLoading, signOut, syncBackendSession } = useAuth();
+  const { backendToken, loading: authLoading, signOut, syncBackendSession, user } = useAuth();
 
   const [profile,   setProfile]   = useState<ProfileResponse | null>(null);
   const [podcasts,  setPodcasts]  = useState<Podcast[]>([]);
@@ -217,7 +217,15 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
-        if (!token) { router.replace("/login"); return; }
+        if (!token) {
+          if (!user) {
+            router.replace("/login");
+            return;
+          }
+
+          setError("Your session is still syncing. Please wait a moment and the dashboard will finish loading.");
+          return;
+        }
         const [p, pod, overview] = await Promise.all([
           getJson<ProfileResponse>("/users/profile", token),
           getJson<PodcastsResponse>("/podcasts", token),
@@ -240,7 +248,7 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     };
     void load();
-  }, [authLoading, backendToken, router, syncBackendSession]);
+  }, [authLoading, backendToken, router, syncBackendSession, user]);
 
   const safePodcasts = Array.isArray(podcasts) ? podcasts : [];
 
@@ -374,7 +382,13 @@ export default function DashboardPage() {
       );
       setError("");
       const token = backendToken ?? (await syncBackendSession());
-      if (!token) { router.replace("/login"); return; }
+      if (!token) {
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+        throw new Error("Session is still syncing.");
+      }
       const result = await analyzePodcast(podcastId, {}, token);
       setPodcasts((current) =>
         current.map((podcast) =>
@@ -583,6 +597,7 @@ export default function DashboardPage() {
             <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
+            <NavItem icon={CreditCard}       label="Billing"   href="/settings/billing"  t={t} collapsed={collapsed}/>
           </nav>
 
           {/* Profile + sign out */}

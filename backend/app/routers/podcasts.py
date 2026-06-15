@@ -11,7 +11,13 @@ from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.publishing import ContentCalendarResponse
-from app.models.podcast import DeletePodcastResponse, PodcastsResponse, UserPodcastAnalytics
+from app.models.podcast import (
+    DeletePodcastResponse,
+    PodcastResponse,
+    PodcastsResponse,
+    UpdatePaymentStatusRequest,
+    UserPodcastAnalytics,
+)
 from app.models.search import RecommendationResult
 from app.services.analysis_service import (
     AnalysisError,
@@ -52,6 +58,7 @@ from app.services.podcast_service import (
     get_podcast_for_user,
     get_podcasts_for_user,
     get_user_podcast_analytics,
+    update_podcast_payment_status_for_user,
     update_podcast_status_for_user,
 )
 
@@ -178,6 +185,35 @@ async def get_podcast_analytics(
     return get_user_podcast_analytics(current_user.id)
 
 
+@router.patch("/{podcast_id}/payment", response_model=PodcastResponse)
+async def update_payment_status(
+    podcast_id: str,
+    payload: UpdatePaymentStatusRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PodcastResponse:
+    """
+    Mock payment confirmation endpoint.
+    INTEGRATION POINT: In production this endpoint should NOT be called by the client.
+    Instead it should be triggered exclusively by your payment provider's webhook
+    (e.g. POST /webhooks/stripe) after verifying the webhook signature.
+    The client-side checkout page currently calls this directly for simulation purposes only.
+    """
+    _get_owned_podcast_or_404(podcast_id, current_user.id)
+    next_status = "ready_for_processing" if payload.payment_status == "paid" else "blocked"
+    updated_podcast = update_podcast_payment_status_for_user(
+        podcast_id,
+        current_user.id,
+        payment_status=payload.payment_status,
+        status=next_status,
+    )
+    if updated_podcast is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    return updated_podcast
+
+
 @router.post("/{podcast_id}/analyze", response_model=AnalysisResult)
 async def analyze_podcast(
     podcast_id: str,
@@ -185,7 +221,21 @@ async def analyze_podcast(
     background_tasks: BackgroundTasks,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> AnalysisResult:
-    _assert_podcast_can_process(podcast_id, current_user.id)
+    podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is already being analyzed.",
+        )
+    if podcast.status == "done":
+        existing_segments = get_scored_segments_for_podcast(podcast_id)
+        if existing_segments:
+            return build_analysis_result(
+                podcast_id,
+                existing_segments,
+                processing_time_seconds=0.0,
+            )
+
     started_at = time.perf_counter()
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
     try:

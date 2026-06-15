@@ -97,6 +97,7 @@ export type GenerationSettings = {
 };
 
 export type GenerateClipsPayload = {
+  score_segments?: ScoreSegment[];
   generation_settings?: GenerationSettings;
   export_settings?: ExportSettings;
   visual_output_mode?: VisualOutputMode;
@@ -320,6 +321,8 @@ export type Podcast = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type PodcastResponse = Podcast;
 
 export type PodcastsResponse = {
   podcasts: Podcast[];
@@ -888,6 +891,14 @@ export async function importYouTubePodcast(
   return postJson<YouTubeImportResponse>("/upload/youtube", payload as JsonRecord, options.token);
 }
 
+export async function createCheckoutSession(
+  podcastId: string,
+  price: number,
+  token?: string | null,
+): Promise<{ checkout_url: string }> {
+  return postJson<{ checkout_url: string }>("/upload/checkout-session", { podcast_id: podcastId, price }, token);
+}
+
 export async function analyzePodcast(
   podcastId: string,
   payload: AnalyzePodcastPayload,
@@ -918,6 +929,9 @@ export async function generateClips(
       : maybeToken;
 
   const requestBody: JsonRecord = {};
+  if (payload?.score_segments) {
+    requestBody.score_segments = payload.score_segments;
+  }
   if (payload?.generation_settings) {
     requestBody.generation_settings = payload.generation_settings;
   }
@@ -984,6 +998,19 @@ export async function revokeClipDownload(
   token?: string | null,
 ): Promise<ClipRevocationResult> {
   return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
+}
+
+// INTEGRATION POINT: In production, payment status should be set by backend webhook, not client
+export async function confirmMockPayment(
+  podcastId: string,
+  paymentStatus: "paid" | "failed",
+  token: string,
+): Promise<PodcastResponse> {
+  return patchJson<PodcastResponse>(
+    `/podcasts/${podcastId}/payment`,
+    { payment_status: paymentStatus },
+    token,
+  );
 }
 
 function normalizeCalendarText(value: string): string {

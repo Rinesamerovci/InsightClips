@@ -72,7 +72,7 @@ function MetricChip({
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { syncBackendSession, user } = useAuth();
+  const { backendToken, loading: authLoading, syncBackendSession, user } = useAuth();
 
   const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
@@ -116,10 +116,25 @@ function LoginPageContent() {
   }, [dark]);
 
   useEffect(() => {
-    if (user) {
-      router.replace(nextPath);
+    if (authLoading || !user) {
+      return;
     }
-  }, [nextPath, router, user]);
+
+    let cancelled = false;
+
+    const goToNextPath = async () => {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!cancelled && token) {
+        router.replace(nextPath);
+      }
+    };
+
+    void goToNextPath();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, backendToken, nextPath, router, syncBackendSession, user]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

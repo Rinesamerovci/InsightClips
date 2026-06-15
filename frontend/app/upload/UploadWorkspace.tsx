@@ -27,7 +27,9 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import {
   analyzePodcast,
+  confirmMockPayment,
   importYouTubePodcast,
+    createCheckoutSession,
   type AudioEnhancementSettings,
   type ExportMode,
   type ExportSettings,
@@ -690,6 +692,47 @@ export default function UploadWorkspace({
       setPreparing(false);
     }
   };
+
+  const handleStartCheckout = async (podcastId: string, amount: number) => {
+    setErr("");
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+      const resp = await createCheckoutSession(podcastId, amount, token);
+      if (resp?.checkout_url) {
+        window.location.href = resp.checkout_url;
+      } else {
+        setErr("Unable to start checkout.");
+      }
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Unable to start checkout.");
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const payment = params.get("payment");
+      const podcastId = params.get("podcast_id");
+      if (payment === "success" && podcastId) {
+        (async () => {
+          setErr("");
+          try {
+            const token = backendToken ?? (await syncBackendSession());
+            if (!token) return;
+            await confirmMockPayment(podcastId, "paid", token);
+            await analyzePodcast(podcastId, {}, token);
+            router.push(`/clips?podcastId=${encodeURIComponent(podcastId)}`);
+          } catch (err) {
+            setErr(err instanceof Error ? err.message : "Payment succeeded but processing failed.");
+          }
+        })();
+      }
+    } catch {}
+  }, [backendToken, router, syncBackendSession]);
 
   const submitYouTubeImport = async () => {
     const normalizedImport = normalizeYouTubeImportUrl(youtubeUrl);
@@ -1975,6 +2018,28 @@ export default function UploadWorkspace({
                       <div style={{ opacity: 0.72, marginTop: 4 }}>Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})</div>
                       <div style={{ opacity: 0.72, marginTop: 4 }}>{selectedAudioFeedback.description}</div>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                        {prep.checkout_required ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStartCheckout(prep.podcast_id, result.price)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              borderRadius: 999,
+                              padding: "10px 16px",
+                              background: "#9e8a20",
+                              border: "1px solid rgba(255,255,255,.24)",
+                              color: "#fff",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <CreditCard size={13} />
+                            Pay & Unlock
+                          </button>
+                        ) : null}
                         <Link
                           href={`/clips?podcastId=${prep.podcast_id}`}
                           style={{
@@ -2066,26 +2131,51 @@ export default function UploadWorkspace({
                       {preparing ? "Saving..." : `Create ${exportDetails.label.toLowerCase()} record`}
                     </button>
                     {prep ? (
-                      <Link
-                        href={`/clips?podcastId=${prep.podcast_id}`}
-                        className="ic-premium-card"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          borderRadius: 14,
-                          padding: "12px 18px",
-                          border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                          background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
-                          color: text,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          textDecoration: "none",
-                        }}
-                      >
-                        <Play size={14} />
-                        Go to clips generation
-                      </Link>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {prep.checkout_required ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStartCheckout(prep.podcast_id, result.price)}
+                            className="ic-premium-card"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 8,
+                              borderRadius: 14,
+                              padding: "12px 18px",
+                              border: "1px solid rgba(158,138,32,.38)",
+                              background: "#9e8a20",
+                              color: "#fff",
+                              fontSize: 13,
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <CreditCard size={14} />
+                            Pay & Unlock
+                          </button>
+                        ) : null}
+                        <Link
+                          href={`/clips?podcastId=${prep.podcast_id}`}
+                          className="ic-premium-card"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 14,
+                            padding: "12px 18px",
+                            border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
+                            background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
+                            color: text,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            textDecoration: "none",
+                          }}
+                        >
+                          <Play size={14} />
+                          Go to clips generation
+                        </Link>
+                      </div>
                     ) : null}
                   </div>
                 </section>

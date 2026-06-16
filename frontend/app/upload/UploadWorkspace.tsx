@@ -1488,7 +1488,7 @@ export default function UploadWorkspace({
                   <div style={{ display: "grid", gap: 10 }}>
                     {[
                       "Choose the source, target platform, and framing here.",
-                      "Open Clips after analysis to tune prompt, subtitles, timing, and final visual feel.",
+                      "Open Clips after analysis to tune format, subtitles, timing, and final visual feel.",
                       "This keeps the first step fast for every age and every device.",
                     ].map((step) => (
                       <div
@@ -1581,9 +1581,7 @@ export default function UploadWorkspace({
                   {
                     label: "Clip setup",
                     value: generationSummary,
-                    detail: generationSettings.topic_focus.trim()
-                      ? generationSettings.topic_focus
-                      : "No extra topic focus yet. You can add it in Clips.",
+                    detail: "Clip count, duration, and subtitles are ready for Clips.",
                   },
                   {
                     label: "Subtitle starter",
@@ -1790,9 +1788,7 @@ export default function UploadWorkspace({
                       {
                         label: "Clip generation",
                         value: generationSummary,
-                        detail: generationSettings.topic_focus.trim()
-                          ? generationSettings.topic_focus
-                          : "No extra topic focus yet. These defaults carry into the clips page.",
+                        detail: "Clip count, duration, and subtitles carry into the clips page.",
                       },
                       {
                         label: "Audio leveling",

@@ -385,6 +385,18 @@ export default function ProfilePage() {
       return;
     }
 
+    const finalConfirmed = window.confirm(
+      [
+        "Final confirmation required.",
+        "",
+        "Do you really want to delete this account permanently?",
+        "This action cannot be undone.",
+      ].join("\n"),
+    );
+    if (!finalConfirmed) {
+      return;
+    }
+
     setDeleteLoading(true);
     setDeleteFeedback({
       tone: "info",

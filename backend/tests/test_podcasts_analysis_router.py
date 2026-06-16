@@ -4,7 +4,7 @@ import asyncio
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi import BackgroundTasks, HTTPException
 
@@ -46,17 +46,40 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
             )
         )
 
+        # Patch get_podcast_for_user so _assert_podcast_can_process / _get_owned_podcast_or_404
+        # succeed by default.  Individual tests can override self.mock_get_podcast.return_value.
+        from app.models.podcast import PodcastRecord
+        _default_podcast = PodcastRecord(
+            id="podcast-123",
+            user_id="user-123",
+            title="Mock Podcast",
+            duration=300,
+            status="ready_for_processing",
+            payment_status="paid",
+            import_metadata={},
+        )
+        self._get_podcast_patcher = patch(
+            "app.routers.podcasts.get_podcast_for_user",
+            return_value=_default_podcast,
+        )
+        self.mock_get_podcast = self._get_podcast_patcher.start()
+
+    def tearDown(self) -> None:
+        self._get_podcast_patcher.stop()
+
     @patch("app.routers.podcasts.generate_clips")
     @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.analyze_and_score")
+    @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_generate_podcast_clips_returns_generated_assets(
         self,
         podcast_belongs_mock,
         update_status_mock,
+        get_clips_for_podcast_mock,
         analyze_and_score_mock,
         build_analysis_result_mock,
         persist_analysis_result_mock,
@@ -116,7 +139,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertIsInstance(result, ClipGenerationResult)
         self.assertEqual(result.total_clips_generated, 1)
         self.assertEqual(result.export_settings.export_mode, "portrait")
-        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        self.mock_get_podcast.assert_called_once_with("podcast-123", "user-123")
         update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         generate_clips_mock.assert_called_once()
@@ -192,7 +215,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertEqual(result.total_clips_generated, 1)
         generate_clips_mock.assert_called_once()
-        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        self.mock_get_podcast.assert_called_once_with("podcast-123", "user-123")
         update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
 
@@ -202,12 +225,14 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.build_analysis_result")
     @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
     @patch("app.routers.podcasts.get_scored_segments_for_podcast")
+    @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_generate_podcast_clips_reuses_existing_scores_without_retranscribing(
         self,
         podcast_belongs_mock,
         update_status_mock,
+        get_clips_for_podcast_mock,
         get_scored_segments_mock,
         transcribe_podcast_mock,
         build_analysis_result_mock,
@@ -263,12 +288,14 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.analyze_and_score")
     @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
     @patch("app.routers.podcasts.get_scored_segments_for_podcast")
+    @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_generate_podcast_clips_refreshes_oversized_segments(
         self,
         podcast_belongs_mock,
         update_status_mock,
+        get_clips_for_podcast_mock,
         get_scored_segments_mock,
         transcribe_podcast_mock,
         analyze_and_score_mock,
@@ -335,12 +362,14 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
     @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.generate_clips")
     @patch("app.routers.podcasts.get_scored_segments_for_podcast")
+    @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.update_podcast_status_for_user")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
     def test_generate_podcast_clips_reuses_and_saves_generation_settings(
         self,
         podcast_belongs_mock,
         update_status_mock,
+        get_clips_for_podcast_mock,
         get_scored_segments_mock,
         generate_clips_mock,
         get_user_export_settings_mock,
@@ -415,7 +444,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         generate_clips_mock.assert_called_once()
         self.assertEqual(generate_clips_mock.call_args.args[4].topic_focus, "product launch")
         update_user_export_settings_mock.assert_called_once()
-        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        self.mock_get_podcast.assert_called_once_with("podcast-123", "user-123")
 
     @patch("app.routers.podcasts.persist_analysis_result")
     @patch("app.routers.podcasts.build_analysis_result")
@@ -470,7 +499,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         )
 
         self.assertEqual(result.podcast_id, "podcast-123")
-        podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
+        self.mock_get_podcast.assert_called_once_with("podcast-123", "user-123")
         update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
         analyze_and_score_mock.assert_called_once()
@@ -517,14 +546,90 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertEqual(result.podcast_id, "podcast-123")
         update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
         update_status_mock.assert_any_call("podcast-123", "user-123", "done")
-        transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
+        transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base", language=None)
         analyze_and_score_mock.assert_called_once()
         self.assertEqual(len(background_tasks.tasks), 1)
         asyncio.run(background_tasks.tasks[0]())
         persist_analysis_result_mock.assert_called_once()
 
-    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=False)
-    def test_analyze_podcast_returns_404_for_missing_podcast(self, podcast_belongs_mock) -> None:
+    def test_analyze_podcast_raises_409_if_already_processing(self) -> None:
+        from app.models.podcast import PodcastRecord
+        self.mock_get_podcast.return_value = PodcastRecord(
+            id="podcast-123",
+            user_id="user-123",
+            title="Mock Podcast",
+            duration=300,
+            status="processing",
+            payment_status="paid",
+            import_metadata={},
+        )
+        background_tasks = BackgroundTasks()
+
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(
+                analyze_podcast(
+                    "podcast-123",
+                    AnalyzePodcastRequest(),
+                    background_tasks,
+                    self.user,
+                )
+            )
+
+        self.assertEqual(exc_info.exception.status_code, 409)
+        self.assertIn("already being analyzed", exc_info.exception.detail)
+
+    @patch("app.routers.podcasts.persist_analysis_result")
+    @patch("app.routers.podcasts.build_analysis_result")
+    @patch("app.routers.podcasts.analyze_and_score")
+    @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
+    @patch("app.routers.podcasts.update_podcast_status_for_user")
+    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
+    def test_analyze_podcast_bypasses_409_if_already_processing_with_force(
+        self,
+        podcast_belongs_mock,
+        update_status_mock,
+        transcribe_podcast_mock,
+        analyze_and_score_mock,
+        build_analysis_result_mock,
+        persist_analysis_result_mock,
+    ) -> None:
+        from app.models.podcast import PodcastRecord
+        self.mock_get_podcast.return_value = PodcastRecord(
+            id="podcast-123",
+            user_id="user-123",
+            title="Mock Podcast",
+            duration=300,
+            status="processing",
+            payment_status="paid",
+            import_metadata={},
+        )
+        transcribe_podcast_mock.return_value = self.payload.transcription
+        analyze_and_score_mock.return_value = []
+        build_analysis_result_mock.return_value = AnalysisResult(
+            podcast_id="podcast-123",
+            total_segments_analyzed=0,
+            top_scoring_segments=[],
+            average_score=0,
+            processing_time_seconds=0.2,
+        )
+
+        background_tasks = BackgroundTasks()
+        result = asyncio.run(
+            analyze_podcast(
+                "podcast-123",
+                AnalyzePodcastRequest(force=True),
+                background_tasks,
+                self.user,
+            )
+        )
+
+        self.assertEqual(result.podcast_id, "podcast-123")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "processing")
+        update_status_mock.assert_any_call("podcast-123", "user-123", "done")
+
+    def test_analyze_podcast_returns_404_for_missing_podcast(self) -> None:
+        # Override the default mock to return None (podcast not found)
+        self.mock_get_podcast.return_value = None
         background_tasks = BackgroundTasks()
 
         with self.assertRaises(HTTPException) as exc_info:
@@ -539,7 +644,6 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
         self.assertEqual(exc_info.exception.status_code, 404)
         self.assertIn("Podcast not found", exc_info.exception.detail)
-        podcast_belongs_mock.assert_called_once_with("podcast-404", "user-123")
 
     @patch("app.routers.podcasts.get_analysis_summary_for_podcast")
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)
@@ -559,8 +663,9 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         podcast_belongs_mock.assert_called_once_with("podcast-123", "user-123")
         get_summary_mock.assert_called_once_with("podcast-123")
 
-    @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=False)
-    def test_generate_podcast_clips_returns_404_for_missing_podcast(self, podcast_belongs_mock) -> None:
+    def test_generate_podcast_clips_returns_404_for_missing_podcast(self) -> None:
+        # Override the default mock to return None (podcast not found)
+        self.mock_get_podcast.return_value = None
         with self.assertRaises(HTTPException) as exc_info:
             asyncio.run(
                 generate_podcast_clips(
@@ -571,7 +676,6 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
             )
 
         self.assertEqual(exc_info.exception.status_code, 404)
-        podcast_belongs_mock.assert_called_once_with("podcast-404", "user-123")
 
     @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.podcast_belongs_to_user", return_value=True)

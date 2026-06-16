@@ -49,7 +49,6 @@ import {
   type VisualOutputMode,
 } from "@/lib/api";
 import {
-  applyGenerationTemplate,
   buildGenerationRequestPayload,
   buildDefaultGenerationSettings,
   describeGenerationSettings,
@@ -327,7 +326,7 @@ function formatGenerationFailureMessage(error: unknown): string {
   const normalized = baseMessage.toLowerCase();
 
   if (normalized.includes("topic_focus")) {
-    return "Topic focus only supports letters, numbers, spaces, and simple punctuation.";
+    return "Generation settings only support letters, numbers, spaces, and simple punctuation.";
   }
   if (normalized.includes("ffmpeg")) {
     return `${baseMessage} Try Quick setup first with fewer clips, 15s or 30s length, and Original People mode.`;
@@ -389,6 +388,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     useState<ExportSettings | null>(null);
   const [visualOutputMode, setVisualOutputMode] =
     useState<VisualOutputMode>("original_people");
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -437,7 +437,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     [generationSettings],
   );
   const hasCompleteClipSet = clips.length >= generationSettings.number_of_clips;
-  const topicFocusSummary = generationSettings.topic_focus.trim();
+  const projectPromptSummary = generationSettings.topic_focus.trim();
   const selectedVisualModeSummary =
     VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode) ?? VISUAL_OUTPUT_MODES[0];
 
@@ -608,12 +608,20 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
 
     let cancelled = false;
+    const startedAt = generationStartedAt ?? Date.now();
+    const generationTimeoutMs = 8 * 60 * 1000;
 
     const refreshGeneratedClips = async () => {
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token || cancelled) {
           return;
+        }
+
+        if (Date.now() - startedAt > generationTimeoutMs) {
+          throw new Error(
+            "Clip generation timed out after 8 minutes. The backend may be stuck on rendering or waiting on storage.",
+          );
         }
 
         const result = await getClips(selectedPodcastId, token);
@@ -627,7 +635,18 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         }
         setWorkspaceView("results");
       } catch {
-        // The main generation request still owns the final error message.
+        if (!cancelled && Date.now() - startedAt > generationTimeoutMs) {
+          setGenerating(false);
+          setGenerationStartedAt(null);
+          setError(
+            "Clip generation timed out after 8 minutes. Try fewer clips, a shorter duration, or rerun generation.",
+          );
+          setActionFeedback({
+            tone: "error",
+            message:
+              "Clip generation timed out after 8 minutes. Try fewer clips, a shorter duration, or rerun generation.",
+          });
+        }
       }
     };
 
@@ -643,6 +662,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   }, [
     authLoading,
     backendToken,
+    generationStartedAt,
     generating,
     selectedPodcast,
     selectedPodcastId,
@@ -768,13 +788,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     );
   };
 
-  const handleGenerationTemplateChange = (templateId: GenerationTemplateId) => {
-    const next = applyGenerationTemplate(templateId, generationExportSettings);
-    setGenerationTemplateId(templateId);
-    setGenerationSettings(next.generationSettings);
-    setGenerationExportSettings(next.exportSettings);
-  };
-
   const handleVisualOutputModeChange = (mode: VisualOutputMode) => {
     setVisualOutputMode(mode);
     if (mode === "stylized_animated") {
@@ -839,6 +852,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
 
     setGenerating(true);
+    setGenerationStartedAt(Date.now());
     setError("");
     setActionFeedback({
       tone: "info",
@@ -915,6 +929,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       });
     } finally {
       setGenerating(false);
+      setGenerationStartedAt(null);
     }
   };
 
@@ -1738,9 +1753,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                 <>
                   <GenerationSettingsPanel
                     dark={dark}
-                    templateId={generationTemplateId}
                     settings={generationSettings}
-                    onTemplateChange={handleGenerationTemplateChange}
                     onSettingsChange={handleGenerationSettingsChange}
                     storageHint="These preferences are reused across the upload and clips workflow on this device."
                     palette={{
@@ -2049,81 +2062,30 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
-                    gap: 10,
-                    alignItems: "stretch",
+                    gap: 8,
                     marginBottom: 16,
+                    fontSize: 13,
+                    lineHeight: 1.7,
+                    color: t.textSub,
                   }}
                 >
-                  {[
-                    {
-                      label: "Generation setup",
-                      value: generationSummary,
-                      detail: "Shared with the upload flow so your clip defaults stay consistent.",
-                    },
-                    {
-                      label: "Topic focus",
-                      value: topicFocusSummary || "No topic focus yet",
-                      detail: topicFocusSummary
-                        ? "This guidance shapes what moments the generator should prioritize."
-                        : "Add topic focus above if you want planning suggestions to follow a clearer angle.",
-                    },
-                    {
-                      label: "Hashtag pool",
-                      value:
-                        planningHashtagPreview.length > 0
-                          ? planningHashtagPreview.join(" ")
-                          : "Waiting for hashtags",
-                      detail:
-                        planningHashtagPreview.length > 0
-                          ? "Shared tags collected from the current planning suggestions."
-                          : "Hashtags appear here once the content calendar has enough clip data.",
-                    },
-                    {
-                      label: "Visual mode",
-                      value: selectedVisualModeSummary.label,
-                      detail: selectedVisualModeSummary.title,
-                    },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        borderRadius: 16,
-                        border: `1px solid ${t.borderSub}`,
-                        background: t.cardAlt,
-                        padding: "14px 15px",
-                        minHeight: 168,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 10,
-                          letterSpacing: ".18em",
-                          textTransform: "uppercase",
-                          color: t.textFaint,
-                          marginBottom: 6,
-                        }}
-                      >
-                        {item.label}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: t.text,
-                          lineHeight: 1.5,
-                          marginBottom: 6,
-                        }}
-                      >
-                        {item.value}
-                      </div>
-                      <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6, marginTop: "auto" }}>
-                        {item.detail}
-                      </div>
-                    </div>
-                  ))}
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <strong style={{ color: t.text }}>Generation setup:</strong> {generationSummary}.
+                  </div>
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <strong style={{ color: t.text }}>Video topic:</strong>{" "}
+                    {projectPromptSummary || "Not set yet."}
+                  </div>
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <strong style={{ color: t.text }}>Hashtags:</strong>{" "}
+                    {planningHashtagPreview.length > 0
+                      ? planningHashtagPreview.join(" ")
+                      : "Waiting for hashtags."}
+                  </div>
+                  <div style={{ overflowWrap: "anywhere" }}>
+                    <strong style={{ color: t.text }}>Visual mode:</strong>{" "}
+                    {selectedVisualModeSummary.label} - {selectedVisualModeSummary.title}.
+                  </div>
                 </div>
 
                 {loadingCalendar ? (
@@ -2471,7 +2433,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     {generating
                       ? "The backend is creating the MP4 files now. The first ready clips will appear here automatically when rendering finishes."
                       : clips.length === 0
-                        ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, topic focus, and subtitle behavior first."
+                        ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, visual format, and subtitle behavior first."
                       : "Try another search or filter to surface different clip candidates."}
                   </p>
                   {clips.length > 0 && activeSearch ? (

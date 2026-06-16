@@ -23,6 +23,7 @@ type Podcast = {
   payment_status?: string;
   created_at: string | null;
   source_type?: "upload" | "youtube";
+  import_metadata?: Record<string, any>;
 };
 
 type AnalysisSummary = {
@@ -310,17 +311,19 @@ export function PodcastCard({
   podcast: Podcast;
   analysis?: AnalysisSummary | null;
   analysisLoading?: boolean;
-  onAnalyze?: () => void;
+  onAnalyze?: (language?: string, force?: boolean) => void;
   onDelete?: () => void;
   generatedClipsCount?: number;
   dark?: boolean;
 }) {
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("auto");
   const theme = getTheme(dark);
   const hasAnalysis = Boolean(analysis && analysis.total_scored_segments > 0);
   const hasGeneratedVideos = generatedClipsCount > 0;
   const needsPayment = podcast.status === "awaiting_payment" && podcast.payment_status === "pending";
   const statusChip = badge(podcast.status, dark);
   const stages = STAGES(podcast.duration);
+  const hasCachedTranscription = Boolean(podcast.import_metadata?.transcription_data);
 
   const sourceBadge =
     podcast.source_type === "youtube"
@@ -878,30 +881,75 @@ export function PodcastCard({
           ) : null}
 
           {!hasAnalysis && !analysisLoading && !needsPayment && onAnalyze ? (
-            <button
-              type="button"
-              onClick={onAnalyze}
-              className="ic-btn"
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 7,
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: `1px solid ${theme.buttonBorder}`,
-                background: theme.buttonBg,
-                fontSize: 11,
-                fontWeight: 800,
-                color: theme.buttonText,
-                cursor: "pointer",
-                fontFamily: "'DM Sans',sans-serif",
-              }}
-            >
-              <Play size={11} strokeWidth={2.5} fill={theme.buttonText} />
-              Analyze episode
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {!hasCachedTranscription && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      letterSpacing: ".1em",
+                      textTransform: "uppercase",
+                      color: theme.textSoft,
+                    }}
+                  >
+                    Spoken Language
+                  </label>
+                  <select
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: `1px solid ${theme.buttonBorder}`,
+                      background: theme.buttonSurface,
+                      color: theme.buttonText,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="auto" style={{ background: theme.buttonSurface, color: theme.text }}>Auto-detect language</option>
+                    <option value="sq" style={{ background: theme.buttonSurface, color: theme.text }}>Albanian (Shqip)</option>
+                    <option value="en" style={{ background: theme.buttonSurface, color: theme.text }}>English</option>
+                    <option value="de" style={{ background: theme.buttonSurface, color: theme.text }}>German (Deutsch)</option>
+                    <option value="it" style={{ background: theme.buttonSurface, color: theme.text }}>Italian (Italiano)</option>
+                    <option value="fr" style={{ background: theme.buttonSurface, color: theme.text }}>French (Français)</option>
+                    <option value="es" style={{ background: theme.buttonSurface, color: theme.text }}>Spanish (Español)</option>
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onAnalyze(
+                  selectedLanguage === "auto" ? undefined : selectedLanguage,
+                  podcast.status === "processing" || podcast.status === "queued"
+                )}
+                className="ic-btn"
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 7,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${theme.buttonBorder}`,
+                  background: theme.buttonBg,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: theme.buttonText,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans',sans-serif",
+                }}
+              >
+                <Play size={11} strokeWidth={2.5} fill={theme.buttonText} />
+                {hasCachedTranscription ? "Continue analysis" : "Analyze episode"}
+              </button>
+            </div>
           ) : null}
 
           {onDelete ? (

@@ -159,7 +159,7 @@ function LoginPageContent() {
       });
 
       storeBackendToken(backendAuth.access_token);
-      await syncBackendSession();
+      void syncBackendSession();
 
       if (rememberMe) {
         window.localStorage.setItem("rememberedEmail", normalizedEmail);

@@ -108,6 +108,10 @@ export default function PodcastsPage() {
 
         const analysisEntries = await Promise.all(
           podcastsResponse.podcasts.map(async (podcast) => {
+            if (!["done", "completed"].includes(podcast.status)) {
+              return [podcast.id, null] as const;
+            }
+
             try {
               const summary = await getPodcastAnalysis(podcast.id, token);
               return [podcast.id, summary] as const;
@@ -185,7 +189,7 @@ export default function PodcastsPage() {
         (analysisByPodcast[a.id]?.highest_score ?? 0),
     )[0];
 
-  const runAnalysis = async (podcastId: string) => {
+  const runAnalysis = async (podcastId: string, language?: string, force?: boolean) => {
     try {
       setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: true }));
       setPodcasts((current) =>
@@ -201,7 +205,7 @@ export default function PodcastsPage() {
         return;
       }
 
-      const result = await analyzePodcast(podcastId, {}, token);
+      const result = await analyzePodcast(podcastId, { language, force }, token);
       setAnalysisByPodcast((current) => ({
         ...current,
         [podcastId]: {
@@ -647,7 +651,7 @@ export default function PodcastsPage() {
                   podcast={podcast}
                   analysis={analysisByPodcast[podcast.id]}
                   analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
-                  onAnalyze={() => void runAnalysis(podcast.id)}
+                  onAnalyze={(lang, force) => void runAnalysis(podcast.id, lang, force)}
                   onDelete={
                     deletingByPodcast[podcast.id]
                       ? undefined

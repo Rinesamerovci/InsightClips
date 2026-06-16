@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -50,21 +51,37 @@ export function AuthScaffold({
   children,
   footerLabel,
 }: AuthScaffoldProps) {
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, []);
+
   return (
     <div
       className="auth-stage"
       style={{
-        minHeight: "100vh",
+        height: "100vh",
         background: shell.bg,
         color: shell.text,
         fontFamily: "var(--font-sans)",
+        overflow: "hidden",
       }}
     >
       <section
         className="auth-showcase ic-premium-card"
         style={{
+          height: "100%",
           background: shell.showcase,
           borderRight: `1px solid ${shell.border}`,
+          overflow: "hidden",
         }}
       >
         <div
@@ -169,7 +186,9 @@ export function AuthScaffold({
       <section
         className="auth-panel"
         style={{
+          height: "100%",
           background: dark ? "rgba(13,16,8,.94)" : "rgba(245,248,238,.96)",
+          overflow: "hidden",
         }}
       >
         <div
@@ -179,6 +198,7 @@ export function AuthScaffold({
             display: "flex",
             flexDirection: "column",
             minHeight: "100%",
+            overflow: "hidden",
           }}
         >
           <div

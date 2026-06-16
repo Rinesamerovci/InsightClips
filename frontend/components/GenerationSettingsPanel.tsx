@@ -1,16 +1,13 @@
-import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
+import type { GenerationSettings } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
-  GENERATION_TEMPLATES,
-  MAX_TOPIC_FOCUS_LENGTH,
+  MAX_TOPIC_LENGTH,
 } from "@/lib/generation-settings";
 
 type GenerationSettingsPanelProps = {
   dark: boolean;
-  templateId: GenerationTemplateId;
   settings: GenerationSettings;
-  onTemplateChange: (templateId: GenerationTemplateId) => void;
   onSettingsChange: (changes: Partial<GenerationSettings>) => void;
   palette: {
     border: string;
@@ -26,13 +23,11 @@ type GenerationSettingsPanelProps = {
 
 export default function GenerationSettingsPanel({
   dark,
-  templateId,
   settings,
-  onTemplateChange,
   onSettingsChange,
   palette,
   title = "Plan the clips before generation starts",
-  description = "Choose a template, set clip length and count, decide whether subtitles stay on, and guide the model with a focused prompt.",
+  description = "Use Topic to guide clip selection from this video. Keep fixed output settings in the controls below.",
   storageHint = null,
 }: GenerationSettingsPanelProps) {
   return (
@@ -161,162 +156,6 @@ export default function GenerationSettingsPanel({
           ) : null}
         </div>
 
-        <div
-          style={{
-            borderRadius: 18,
-            border: `1px solid ${palette.subBorder}`,
-            background: dark ? "rgba(11,18,9,.92)" : "rgba(247,252,243,.96)",
-            padding: "14px 14px 13px",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              letterSpacing: ".2em",
-              textTransform: "uppercase",
-              color: palette.hi2,
-              fontWeight: 700,
-              marginBottom: 10,
-            }}
-          >
-            Current focus
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: dark ? "#dff0d8" : "#1e3418",
-              marginBottom: 6,
-            }}
-          >
-            {settings.topic_focus.trim() || "No extra topic guidance yet"}
-          </div>
-          <div style={{ fontSize: 12, color: palette.muted, lineHeight: 1.65 }}>
-            Add a short instruction if you want the generator to prioritize a theme, angle, or type
-            of moment.
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,180px),1fr))",
-          gap: 10,
-          marginTop: 18,
-          marginBottom: 18,
-        }}
-      >
-        {GENERATION_TEMPLATES.map((template) => {
-          const active = template.id === templateId;
-
-          return (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => onTemplateChange(template.id)}
-              style={{
-                textAlign: "left",
-                borderRadius: 18,
-                padding: "15px 15px 14px",
-                border: `1px solid ${active ? palette.hi : palette.subBorder}`,
-                background: active
-                  ? dark
-                    ? "rgba(90,158,58,.16)"
-                    : "rgba(90,158,58,.1)"
-                  : dark
-                    ? "rgba(11,18,9,.55)"
-                    : "rgba(248,252,245,.82)",
-                color: dark ? "#e8f5df" : "#152412",
-                cursor: "pointer",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  marginBottom: 10,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: ".16em",
-                    textTransform: "uppercase",
-                    color: active ? "#dff0d8" : palette.hi2,
-                  }}
-                >
-                  {template.label}
-                </div>
-                <div
-                  style={{
-                    borderRadius: 999,
-                    padding: "4px 8px",
-                    border: `1px solid ${active ? "rgba(255,255,255,.22)" : palette.subBorder}`,
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: ".14em",
-                    textTransform: "uppercase",
-                    color: active ? "#dff0d8" : palette.hi2,
-                  }}
-                >
-                  {template.badge}
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: active ? (dark ? "#dff0d8" : "#285019") : palette.hi2,
-                  marginBottom: 6,
-                }}
-              >
-                {template.title}
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  color: active
-                    ? dark
-                      ? "rgba(232,245,223,.82)"
-                      : "rgba(21,36,18,.8)"
-                    : palette.muted,
-                  marginBottom: 10,
-                }}
-              >
-                {template.description}
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <span
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${active ? "rgba(255,255,255,.18)" : palette.subBorder}`,
-                    padding: "4px 8px",
-                    fontSize: 10,
-                    color: active ? "#dff0d8" : palette.muted,
-                  }}
-                >
-                  {template.generationSettings.clip_duration_seconds}s
-                </span>
-                <span
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${active ? "rgba(255,255,255,.18)" : palette.subBorder}`,
-                    padding: "4px 8px",
-                    fontSize: 10,
-                    color: active ? "#dff0d8" : palette.muted,
-                  }}
-                >
-                  {template.generationSettings.number_of_clips} clips
-                </span>
-              </div>
-            </button>
-          );
-        })}
       </div>
 
       <div
@@ -543,23 +382,23 @@ export default function GenerationSettingsPanel({
               fontWeight: 700,
             }}
           >
-            Topic focus
+            Topic
           </div>
           <div style={{ fontSize: 11, color: palette.muted }}>
-            {settings.topic_focus.trim().length}/{MAX_TOPIC_FOCUS_LENGTH}
+            {settings.topic_focus.trim().length}/{MAX_TOPIC_LENGTH}
           </div>
         </div>
         <textarea
           value={settings.topic_focus}
           onChange={(event) =>
             onSettingsChange({
-              topic_focus: event.target.value.slice(0, MAX_TOPIC_FOCUS_LENGTH),
+              topic_focus: event.target.value.slice(0, MAX_TOPIC_LENGTH),
             })
           }
           onKeyDownCapture={(event) => {
             event.stopPropagation();
           }}
-          placeholder="Example: Prioritize moments about audience growth, retention, or clear tactical advice."
+          placeholder="Example: audience growth, strong hooks, expert takeaways, or the most interesting moments from this video."
           rows={3}
           spellCheck={false}
           style={{
@@ -576,7 +415,12 @@ export default function GenerationSettingsPanel({
             outline: "none",
           }}
         />
+        <div style={{ marginTop: 8, fontSize: 12, color: palette.muted, lineHeight: 1.6 }}>
+          Use this to tell InsightClips what to look for inside this video. Put the theme, hook style,
+          story angle, or exact moments you want surfaced.
+        </div>
       </label>
+
     </section>
   );
 }

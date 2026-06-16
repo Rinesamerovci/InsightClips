@@ -15,7 +15,7 @@ export const GENERATION_SETTINGS_STORAGE_KEY = "insightclips-generation-settings
 
 export const CLIP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
 export const CLIP_COUNT_OPTIONS = [2, 3, 4, 5, 6] as const;
-export const MAX_TOPIC_FOCUS_LENGTH = 120;
+export const MAX_TOPIC_LENGTH = 500;
 
 type GenerationTemplateDefinition = {
   id: GenerationTemplateId;
@@ -38,7 +38,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     generationSettings: {
       clip_duration_seconds: 30,
       number_of_clips: 4,
-      topic_focus: "Prioritize strong opening hooks and clear payoff lines.",
+      topic_focus: "",
       subtitles_enabled: true,
     },
     exportMode: "portrait",
@@ -46,7 +46,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       ...buildSubtitleStyleFromPreset("bold"),
       font_family: "DM Sans",
       font_size: 26,
-      position: "center",
+      position: "bottom",
     },
   },
   {
@@ -58,7 +58,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     generationSettings: {
       clip_duration_seconds: 45,
       number_of_clips: 3,
-      topic_focus: "Keep setup and payoff together so each clip feels complete.",
+      topic_focus: "",
       subtitles_enabled: true,
     },
     exportMode: "portrait",
@@ -78,7 +78,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     generationSettings: {
       clip_duration_seconds: 20,
       number_of_clips: 5,
-      topic_focus: "Surface concise expert takeaways and memorable one-liners.",
+      topic_focus: "",
       subtitles_enabled: true,
     },
     exportMode: "landscape",
@@ -106,8 +106,7 @@ export function normalizeGenerationSettings(
   const fallback = buildDefaultGenerationSettings();
   const clipDuration = Number(settings?.clip_duration_seconds);
   const numberOfClips = Number(settings?.number_of_clips);
-  const topicFocus = typeof settings?.topic_focus === "string" ? settings.topic_focus : "";
-
+  const projectPrompt = typeof settings?.topic_focus === "string" ? settings.topic_focus : "";
   return {
     clip_duration_seconds: CLIP_DURATION_OPTIONS.includes(clipDuration as (typeof CLIP_DURATION_OPTIONS)[number])
       ? clipDuration
@@ -115,7 +114,7 @@ export function normalizeGenerationSettings(
     number_of_clips: CLIP_COUNT_OPTIONS.includes(numberOfClips as (typeof CLIP_COUNT_OPTIONS)[number])
       ? numberOfClips
       : fallback.number_of_clips,
-    topic_focus: topicFocus.trim().slice(0, MAX_TOPIC_FOCUS_LENGTH),
+    topic_focus: projectPrompt.trim().slice(0, MAX_TOPIC_LENGTH),
     subtitles_enabled:
       typeof settings?.subtitles_enabled === "boolean"
         ? settings.subtitles_enabled

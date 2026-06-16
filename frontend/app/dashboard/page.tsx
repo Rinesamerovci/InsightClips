@@ -592,9 +592,19 @@ export default function DashboardPage() {
 
           {/* Nav */}
           <nav style={{ flex: 1, padding: "14px 10px", display: "flex", flexDirection:"column", gap: 4 }}>
+            {!collapsed && (
+              <div style={{ padding: "6px 10px 8px", fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint }}>
+                Workspace
+              </div>
+            )}
             <NavItem icon={LayoutDashboard} label="Overview"  href="/dashboard" active t={t} collapsed={collapsed}/>
             <NavItem icon={Library}         label="Library"   href="/podcasts"  t={t} collapsed={collapsed}/>
             <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
+            {!collapsed && (
+              <div style={{ padding: "14px 10px 8px", fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint }}>
+                Account
+              </div>
+            )}
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
             <NavItem icon={CreditCard}       label="Billing"   href="/settings/billing"  t={t} collapsed={collapsed}/>

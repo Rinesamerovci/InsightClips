@@ -562,7 +562,34 @@ def _select_segments(
             item.segment_start_seconds,
         ),
     )
-    return sorted_segments[:min(settings.number_of_clips, MAX_GENERATED_CLIPS)]
+    target_count = min(settings.number_of_clips, MAX_GENERATED_CLIPS)
+    selected: list[ScoreSegment] = []
+
+    for segment in sorted_segments:
+        if all(not _segments_substantially_overlap(segment, existing) for existing in selected):
+            selected.append(segment)
+        if len(selected) >= target_count:
+            return selected
+
+    for segment in sorted_segments:
+        if segment not in selected:
+            selected.append(segment)
+        if len(selected) >= target_count:
+            break
+
+    return selected
+
+
+def _segments_substantially_overlap(left: ScoreSegment, right: ScoreSegment) -> bool:
+    overlap_start = max(left.segment_start_seconds, right.segment_start_seconds)
+    overlap_end = min(left.segment_end_seconds, right.segment_end_seconds)
+    overlap = max(0.0, overlap_end - overlap_start)
+    if overlap <= 0:
+        return False
+
+    left_duration = max(0.1, left.segment_end_seconds - left.segment_start_seconds)
+    right_duration = max(0.1, right.segment_end_seconds - right.segment_start_seconds)
+    return overlap / min(left_duration, right_duration) >= 0.55
 
 
 def _score_segment_for_generation(segment: ScoreSegment, topic_focus: str | None) -> float:
@@ -615,11 +642,17 @@ def _resolve_clip_window(
             end,
             max_duration=transcription.duration_seconds,
         )
-        return _apply_requested_duration(
+        adjusted_start, adjusted_end = _apply_requested_duration(
             expanded_start,
             expanded_end,
             max_duration=transcription.duration_seconds,
             target_duration_seconds=target_duration_seconds,
+        )
+        return _snap_clip_window_to_words(
+            adjusted_start,
+            adjusted_end,
+            transcription.words,
+            max_duration=transcription.duration_seconds,
         )
 
     expanded_start, expanded_end = _expand_clip_window(
@@ -633,11 +666,17 @@ def _resolve_clip_window(
         clip_end_seconds=expanded_end,
     ):
         return expanded_start, expanded_end
-    return _apply_requested_duration(
+    adjusted_start, adjusted_end = _apply_requested_duration(
         expanded_start,
         expanded_end,
         max_duration=transcription.duration_seconds,
         target_duration_seconds=target_duration_seconds,
+    )
+    return _snap_clip_window_to_words(
+        adjusted_start,
+        adjusted_end,
+        transcription.words,
+        max_duration=transcription.duration_seconds,
     )
 
 
@@ -663,6 +702,36 @@ def _apply_requested_duration(
     if adjusted_end - adjusted_start < min(target_duration, max_duration):
         adjusted_start = max(0.0, adjusted_end - target_duration)
     return round(adjusted_start, 3), round(adjusted_end, 3)
+
+
+def _snap_clip_window_to_words(
+    start_seconds: float,
+    end_seconds: float,
+    words: list[TranscriptWord],
+    *,
+    max_duration: float,
+) -> tuple[float, float]:
+    if not words:
+        return round(start_seconds, 3), round(end_seconds, 3)
+
+    sorted_words = sorted(words, key=lambda item: (item.start, item.end))
+    snapped_start = start_seconds
+    snapped_end = end_seconds
+
+    for word in sorted_words:
+        if word.start <= start_seconds < word.end:
+            snapped_start = max(0.0, word.start)
+            break
+
+    for word in sorted_words:
+        if word.start < end_seconds <= word.end:
+            snapped_end = min(max_duration, word.end)
+            break
+
+    if snapped_end <= snapped_start:
+        return round(start_seconds, 3), round(end_seconds, 3)
+
+    return round(snapped_start, 3), round(snapped_end, 3)
 
 
 def _match_segment_snippet_window(

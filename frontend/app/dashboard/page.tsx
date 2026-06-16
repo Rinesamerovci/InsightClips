@@ -235,6 +235,10 @@ export default function DashboardPage() {
         setProfile(p); setPodcasts(loadedPodcasts); setIsMock(Boolean(pod?.is_mock)); setAnalytics(overview);
         const analysisEntries = await Promise.all(
           loadedPodcasts.map(async (podcast) => {
+            if (!["done", "completed"].includes(podcast.status)) {
+              return [podcast.id, null] as const;
+            }
+
             try {
               const summary = await getPodcastAnalysis(podcast.id, token);
               return [podcast.id, summary] as const;
@@ -372,7 +376,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, [notificationsOpen]);
 
-  const runAnalysis = async (podcastId: string) => {
+  const runAnalysis = async (podcastId: string, language?: string, force?: boolean) => {
     try {
       setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: true }));
       setPodcasts((current) =>
@@ -389,7 +393,7 @@ export default function DashboardPage() {
         }
         throw new Error("Session is still syncing.");
       }
-      const result = await analyzePodcast(podcastId, {}, token);
+      const result = await analyzePodcast(podcastId, { language, force }, token);
       setPodcasts((current) =>
         current.map((podcast) =>
           podcast.id === podcastId ? { ...podcast, status: "done" } : podcast
@@ -1364,7 +1368,7 @@ export default function DashboardPage() {
                             podcast={podcast}
                             analysis={analysisByPodcast[podcast.id]}
                             analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
-                            onAnalyze={() => void runAnalysis(podcast.id)}
+                            onAnalyze={(lang, force) => void runAnalysis(podcast.id, lang, force)}
                             generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
                             dark={dark}
                           />

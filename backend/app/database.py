@@ -25,7 +25,7 @@ def _create_supabase_client(url: str, key: str) -> Client | UnconfiguredSupabase
     return create_client(
         url,
         key,
-        ClientOptions(httpx_client=httpx.Client(trust_env=False)),
+        ClientOptions(httpx_client=httpx.Client(trust_env=False, timeout=600.0)),
     )
 
 service_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(

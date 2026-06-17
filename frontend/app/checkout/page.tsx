@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { confirmMockPayment } from "@/lib/api";
+import { confirmMockPayment, isMockPodcastId } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 type FieldName = "name" | "cardNumber" | "expiry" | "cvv";
@@ -174,7 +174,7 @@ export default function CheckoutPage() {
 
       await Promise.all([
         wait(1800),
-        confirmMockPayment(podcastId, "paid", token),
+        isMockPodcastId(podcastId) ? Promise.resolve() : confirmMockPayment(podcastId, "paid", token),
       ]);
       setSuccess(true);
     } catch {
@@ -285,7 +285,7 @@ export default function CheckoutPage() {
                 Your podcast is now queued for AI processing. Clips will be ready shortly.
               </p>
               <Link
-                href={`/clips?podcastId=${encodeURIComponent(podcastId)}`}
+                href={`/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`}
                 style={{
                   width: "100%",
                   display: "inline-flex",

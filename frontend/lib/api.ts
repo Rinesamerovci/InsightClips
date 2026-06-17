@@ -38,6 +38,10 @@ export function shouldUseMockUploadFlow(): boolean {
   return FRONTEND_UPLOAD_PREFLIGHT_MODE === "mock";
 }
 
+export function isMockPodcastId(podcastId: string): boolean {
+  return podcastId === "mock-podcast-id" || podcastId === "mock-youtube-import";
+}
+
 type JsonRecord = Record<string, unknown>;
 
 export type UploadState =

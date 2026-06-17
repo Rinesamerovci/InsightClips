@@ -910,17 +910,26 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
             tone: "info",
             message: `Showing ${partialResult.clips.length} clip${partialResult.clips.length === 1 ? "" : "s"} that finished rendering. The rest may still need another generation run.`,
           });
+          setGenerating(false);
           return;
         }
       }
       const message = formatGenerationFailureMessage(generationError);
+      if (message.includes("already being processed") || message.includes("Failed to fetch")) {
+        setActionFeedback({
+          tone: "info",
+          message: "Clips are rendering in the background. This usually takes a few minutes. Please wait...",
+        });
+        // Do not setGenerating(false) so the polling effect takes over
+        return;
+      }
       setError(message);
       setActionFeedback({
         tone: "error",
         message,
       });
-    } finally {
       setGenerating(false);
+    } finally {
       pendingAutoGenerateScoreSegmentsRef.current = null;
     }
   }, [
@@ -941,7 +950,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     if (!autoGenerateRequested || mode !== "results") {
       return;
     }
-    if (!selectedPodcastId || !selectedPodcast || loading || authLoading || generating) {
+    if (!selectedPodcastId || !selectedPodcast || loading || authLoading) {
       return;
     }
     if (clips.length > 0 || autoGenerateStartedRef.current) {
@@ -950,7 +959,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
     autoGenerateStartedRef.current = true;
     const storageKey = `insightclips:analysis-segments:${selectedPodcastId}`;
-    let cancelled = false;
 
     const runAutoGenerate = async () => {
       setGenerating(true);
@@ -962,7 +970,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
       try {
         const token = backendToken ?? (await syncBackendSession());
-        if (!token || cancelled) {
+        if (!token) {
           return;
         }
 
@@ -976,42 +984,61 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
         if (!pendingAutoGenerateScoreSegmentsRef.current) {
           const analysis = await analyzePodcast(selectedPodcastId, {}, token);
-          if (cancelled) {
-            return;
-          }
           pendingAutoGenerateScoreSegmentsRef.current = analysis.top_scoring_segments ?? [];
         }
 
-        await handleGenerateClips();
+        const generated = await generateClips(
+          selectedPodcastId,
+          {
+            score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
+            generation_settings: buildGenerationRequestPayload(generationSettings),
+            export_settings:
+              generationExportSettings ??
+              normalizeExportSettings(selectedPodcast.export_settings ?? null),
+            visual_output_mode: visualOutputMode,
+            save_generation_settings: true,
+            use_preferred_generation_settings: true,
+          },
+          token,
+        );
+
+        setClips(generated.clips);
+        setSearchResults(toDiscoveryClips(generated.clips, selectedPodcast));
+        setWorkspaceView("results");
+        setActionFeedback({
+          tone: "success",
+          message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast.title}.`,
+        });
+        setGenerating(false);
       } catch (error) {
-        if (cancelled) {
+        const message = error instanceof Error ? error.message : "Unable to start automated clip rendering.";
+        if (message.includes("already being processed") || message.includes("Failed to fetch")) {
+          setActionFeedback({
+            tone: "info",
+            message: "Clips are rendering in the background. This usually takes a few minutes. Please wait...",
+          });
+          // Do not setGenerating(false) so the polling effect takes over
           return;
         }
-        setGenerating(false);
         setActionFeedback({
           tone: "error",
-          message: error instanceof Error ? error.message : "Unable to start automated clip rendering.",
+          message,
         });
+        setGenerating(false);
+      } finally {
+        pendingAutoGenerateScoreSegmentsRef.current = null;
       }
     };
 
     void runAutoGenerate();
-
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     authLoading,
     autoGenerateRequested,
-    backendToken,
     clips.length,
-    generating,
-    handleGenerateClips,
     loading,
     mode,
-    selectedPodcast,
     selectedPodcastId,
-    syncBackendSession,
   ]);
 
   const handleCopyPlanning = async (text: string, label: string) => {

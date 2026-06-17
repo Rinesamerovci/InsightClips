@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Moon, Sparkles, SunMedium } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { confirmMockPayment } from "@/lib/api";
+import { confirmMockPayment, isMockPodcastId } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 type CompletionPhase = "loading" | "processing" | "redirect" | "error";
@@ -81,19 +81,16 @@ export default function UploadCompletePage() {
           return;
         }
 
-        setDetail("Marking the episode as paid.");
-        await confirmMockPayment(podcastId, "paid", token);
+        if (!isMockPodcastId(podcastId)) {
+          setDetail("Marking the episode as paid.");
+          await confirmMockPayment(podcastId, "paid", token);
+        }
 
         if (!cancelled) {
           if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
           setDetail("Payment confirmed! Redirecting to your clips…");
           setPhase("redirect");
-          // Small delay so the user sees the success state, then navigate
-          setTimeout(() => {
-            if (!cancelled) {
-              router.replace(clipsUrl);
-            }
-          }, 800);
+          router.replace(clipsUrl);
         }
       } catch (err) {
         if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
@@ -110,6 +107,7 @@ export default function UploadCompletePage() {
 
     return () => {
       cancelled = true;
+      finalizeStartedRef.current = false;
       if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     };
   }, [authLoading, backendToken, initialError, podcastId, router, syncBackendSession]);

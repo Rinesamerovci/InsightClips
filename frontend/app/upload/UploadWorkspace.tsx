@@ -29,6 +29,7 @@ import {
   analyzePodcast,
   confirmMockPayment,
   importYouTubePodcast,
+  isMockPodcastId,
     createCheckoutSession,
   type AudioEnhancementSettings,
   type ExportMode,
@@ -723,9 +724,11 @@ export default function UploadWorkspace({
           try {
             const token = backendToken ?? (await syncBackendSession());
             if (!token) return;
-            await confirmMockPayment(podcastId, "paid", token);
+            if (!isMockPodcastId(podcastId)) {
+              await confirmMockPayment(podcastId, "paid", token);
+            }
             await analyzePodcast(podcastId, {}, token);
-            router.push(`/clips?podcastId=${encodeURIComponent(podcastId)}`);
+            router.push(`/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`);
           } catch (err) {
             setErr(err instanceof Error ? err.message : "Payment succeeded but processing failed.");
           }

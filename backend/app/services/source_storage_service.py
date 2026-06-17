@@ -79,6 +79,8 @@ def upload_source_media(
             {"content-type": content_type, "upsert": "true"},
         )
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         status_code, detail = _map_storage_upload_error(exc)
         raise SourceStorageError(detail, status_code=status_code) from exc
 

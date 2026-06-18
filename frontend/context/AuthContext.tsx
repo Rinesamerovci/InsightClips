@@ -147,9 +147,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setBackendToken(getStoredBackendToken())
 
       if (session?.access_token) {
-        try {
-          await syncBackendSession()
-        } catch {
+        if (active) {
+          setLoading(false)
+        }
+
+        void syncBackendSession().catch(() => {
           const cachedToken = getStoredBackendToken()
           if (cachedToken) {
             setBackendToken(cachedToken)
@@ -158,7 +160,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setBackendToken(null)
             setProfile(null)
           }
-        }
+        })
+        return
       }
 
       if (active) {

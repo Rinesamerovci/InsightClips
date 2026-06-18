@@ -780,12 +780,20 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const handleGenerationSettingsChange = (
     changes: Partial<GenerationSettings>,
   ) => {
-    setGenerationSettings((current) =>
-      normalizeGenerationSettings({
+    setGenerationSettings((current) => {
+      const normalized = normalizeGenerationSettings({
         ...current,
         ...changes,
-      }),
-    );
+      });
+
+      return {
+        ...normalized,
+        topic_focus:
+          typeof changes.topic_focus === "string"
+            ? changes.topic_focus
+            : normalized.topic_focus,
+      };
+    });
   };
 
   const handleVisualOutputModeChange = (mode: VisualOutputMode) => {

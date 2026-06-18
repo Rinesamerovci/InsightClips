@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = Field(default="", validation_alias=AliasChoices("SMTP_FROM_EMAIL", "SMTP_SENDER_EMAIL"))
     smtp_from_name: str = Field(default="InsightClips", validation_alias=AliasChoices("SMTP_FROM_NAME"))
     smtp_use_tls: bool = Field(default=True, validation_alias=AliasChoices("SMTP_USE_TLS"))
+    resend_api_key: str = Field(default="", validation_alias=AliasChoices("RESEND_API_KEY"))
     groq_api_key: str = Field(default="", validation_alias=AliasChoices("GROQ_API_KEY"))
     transcription_api_base_url: str = Field(
         default="",

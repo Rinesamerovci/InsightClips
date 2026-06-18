@@ -197,7 +197,13 @@ def podcast_belongs_to_user(podcast_id: str, user_id: str) -> bool:
     return get_podcast_for_user(podcast_id, user_id) is not None
 
 
-def transcribe_podcast_media_for_user(podcast_id: str, user_id: str, *, model: str = "base") -> TranscriptionResult:
+def transcribe_podcast_media_for_user(
+    podcast_id: str,
+    user_id: str,
+    *,
+    model: str = "base",
+    language: str | None = None,
+) -> TranscriptionResult:
     podcast = get_podcast_for_user(podcast_id, user_id)
     if podcast is None:
         raise AnalysisError("Podcast not found for the current user.", status_code=404)
@@ -209,7 +215,7 @@ def transcribe_podcast_media_for_user(podcast_id: str, user_id: str, *, model: s
     source_filename = _resolve_podcast_source_filename(podcast)
     try:
         with source_media_path(podcast.storage_path, filename=source_filename) as local_media_path:
-            return transcribe_media(local_media_path, model=model)
+            return transcribe_media(local_media_path, model=model, language=language)
     except SourceStorageError as exc:
         raise AnalysisError(exc.detail, status_code=exc.status_code) from exc
     except TranscriptionError as exc:

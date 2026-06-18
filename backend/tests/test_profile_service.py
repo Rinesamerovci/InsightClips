@@ -373,15 +373,13 @@ class ProfileServiceTests(unittest.TestCase):
         )
         insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
         service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
-        smtp_client = MagicMock()
-        smtp_context = MagicMock()
-        smtp_context.__enter__.return_value = smtp_client
         settings = SimpleNamespace(
             support_inbox_email="team@insightclips.dev",
             smtp_host="smtp.resend.com",
             smtp_port=587,
             smtp_username="resend",
             smtp_password="secret",
+            resend_api_key="secret-resend-key",
             smtp_from_email="noreply@insightclips.dev",
             smtp_from_name="InsightClips",
             smtp_use_tls=True,
@@ -395,18 +393,86 @@ class ProfileServiceTests(unittest.TestCase):
             contact_email="creator@example.com",
         )
 
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
         with (
             patch.object(profile_service_module, "service_supabase", service_supabase_mock),
             patch.object(profile_service_module, "get_settings", return_value=settings),
-            patch.object(profile_service_module.smtplib, "SMTP", return_value=smtp_context),
+            patch("httpx.post", return_value=mock_response) as mock_post,
         ):
             response = submit_user_message("user-123", payload)
 
         self.assertEqual(response.id, "message-3")
         self.assertTrue(response.email_notification_sent)
-        smtp_client.starttls.assert_called_once()
-        smtp_client.login.assert_called_once_with("resend", "secret")
-        smtp_client.send_message.assert_called_once()
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args.kwargs
+        self.assertEqual(call_kwargs["headers"]["Authorization"], "Bearer secret-resend-key")
+        self.assertEqual(call_kwargs["json"]["to"], ["team@insightclips.dev"])
+
+    def test_submit_user_message_falls_back_to_onboarding_resend_dev(self) -> None:
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(
+            return_value=SimpleNamespace(
+                data=[
+                    {
+                        "id": "message-4",
+                        "user_id": "user-123",
+                        "message_type": "support",
+                        "category": "technical_support",
+                        "subject": "Fallback Test",
+                        "message": "Fallback flow should be tested.",
+                        "contact_email": "creator@example.com",
+                        "status": "received",
+                        "created_at": None,
+                    }
+                ]
+            )
+        )
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table = MagicMock(return_value=SimpleNamespace(insert=insert_mock))
+
+        settings = SimpleNamespace(
+            support_inbox_email="team@insightclips.dev",
+            smtp_host="smtp.resend.com",
+            smtp_port=587,
+            smtp_username="resend",
+            smtp_password="secret",
+            resend_api_key="secret-resend-key",
+            smtp_from_email="noreply@unverified-domain.dev",
+            smtp_from_name="InsightClips",
+            smtp_use_tls=True,
+        )
+
+        payload = UserMessageRequest(
+            message_type="support",
+            category="technical_support",
+            subject="Fallback Test",
+            message="Fallback flow should be tested.",
+            contact_email="creator@example.com",
+        )
+
+        mock_response_fail = MagicMock()
+        mock_response_fail.status_code = 400
+        mock_response_success = MagicMock()
+        mock_response_success.status_code = 200
+
+        with (
+            patch.object(profile_service_module, "service_supabase", service_supabase_mock),
+            patch.object(profile_service_module, "get_settings", return_value=settings),
+            patch("httpx.post", side_effect=[mock_response_fail, mock_response_success]) as mock_post,
+        ):
+            response = submit_user_message("user-123", payload)
+
+        self.assertEqual(response.id, "message-4")
+        self.assertTrue(response.email_notification_sent)
+        self.assertEqual(mock_post.call_count, 2)
+        
+        first_call_json = mock_post.call_args_list[0].kwargs["json"]
+        self.assertEqual(first_call_json["from"], "InsightClips <noreply@unverified-domain.dev>")
+
+        second_call_json = mock_post.call_args_list[1].kwargs["json"]
+        self.assertEqual(second_call_json["from"], "InsightClips <onboarding@resend.dev>")
 
     def test_user_message_request_rejects_short_messages(self) -> None:
         with self.assertRaises(ValueError):

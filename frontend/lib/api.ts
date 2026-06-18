@@ -279,6 +279,8 @@ export type AnalyzePodcastPayload = {
     processing_time_seconds: number;
   };
   transcription_model?: string;
+  language?: string;
+  force?: boolean;
 };
 
 export type ScoreSegment = {

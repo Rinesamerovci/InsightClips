@@ -71,6 +71,10 @@ export default function ForgotPasswordPage() {
   }, [dark]);
 
   const sendRecoveryCode = async () => {
+    if (!normalizedEmail) {
+      throw new Error("Enter your email address before requesting a recovery code.");
+    }
+
     const { error: otpError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
       redirectTo: recoveryRedirectTo,
     });

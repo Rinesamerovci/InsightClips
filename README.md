@@ -95,6 +95,8 @@ JWT_SECRET=
 GROQ_API_KEY=
 FRONTEND_ORIGINS=http://localhost:3000,https://insightclips.dev
 
+SUPPORT_INBOX_EMAIL=
+RESEND_API_KEY=
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=587
 SMTP_USERNAME=resend

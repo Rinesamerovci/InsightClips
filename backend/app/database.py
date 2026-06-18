@@ -80,6 +80,11 @@ def run_db_healthcheck() -> bool:
 async def lifespan(_: object) -> Iterator[None]:
     open_db_pool()
     try:
+        if not isinstance(service_supabase, UnconfiguredSupabaseClient):
+            service_supabase.table("podcasts").update({"status": "ready_for_processing"}).eq("status", "processing").execute()
+    except Exception:
+        pass
+    try:
         yield
     finally:
         close_db_pool()

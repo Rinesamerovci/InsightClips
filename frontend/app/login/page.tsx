@@ -123,9 +123,15 @@ function LoginPageContent() {
     let cancelled = false;
 
     const goToNextPath = async () => {
-      const token = backendToken ?? (await syncBackendSession());
-      if (!cancelled && token) {
-        router.replace(nextPath);
+      try {
+        const token = backendToken ?? (await syncBackendSession());
+        if (!cancelled && token) {
+          router.replace(nextPath);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to reach the backend.");
+        }
       }
     };
 
@@ -159,7 +165,7 @@ function LoginPageContent() {
       });
 
       storeBackendToken(backendAuth.access_token);
-      await syncBackendSession();
+      void syncBackendSession().catch(() => {});
 
       if (rememberMe) {
         window.localStorage.setItem("rememberedEmail", normalizedEmail);

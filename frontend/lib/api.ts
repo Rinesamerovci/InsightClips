@@ -11,7 +11,9 @@ import {
 } from "./clip-insights";
 
 const configuredBackendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+  "http://localhost:8000";
 const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "real";
 const BACKEND_IS_LOCAL = (() => {
   try {
@@ -283,6 +285,8 @@ export type AnalyzePodcastPayload = {
     processing_time_seconds: number;
   };
   transcription_model?: string;
+  language?: string;
+  force?: boolean;
 };
 
 export type ScoreSegment = {
@@ -536,10 +540,16 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
   return headers;
 }
 
+function buildBackendConnectionErrorMessage(path: string, candidates: string[]): string {
+  const targets = candidates.join(" or ");
+  return `Unable to reach the backend at ${targets} while requesting ${path}. Start the FastAPI server on port 8000, or set NEXT_PUBLIC_BACKEND_URL to the correct API URL.`;
+}
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let lastError: Error | null = null;
+  const candidates = buildBackendCandidates();
 
-  for (const backendUrl of buildBackendCandidates()) {
+  for (const backendUrl of candidates) {
     try {
       const response = await fetch(`${backendUrl}${path}`, {
         method: options.method ?? "GET",
@@ -555,11 +565,15 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
       return payload as T;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Request failed.");
       if (error instanceof ApiRequestError) {
         throw error;
       }
+      lastError = error instanceof Error ? error : new Error("Request failed.");
     }
+  }
+
+  if (lastError?.name === "TypeError" || /failed to fetch/i.test(lastError?.message ?? "")) {
+    throw new Error(buildBackendConnectionErrorMessage(path, candidates));
   }
 
   throw lastError ?? new Error("Request failed.");
@@ -567,8 +581,9 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
 async function requestBlob(path: string, token?: string | null): Promise<Blob> {
   let lastError: Error | null = null;
+  const candidates = buildBackendCandidates();
 
-  for (const backendUrl of buildBackendCandidates()) {
+  for (const backendUrl of candidates) {
     try {
       const response = await fetch(`${backendUrl}${path}`, {
         method: "GET",
@@ -583,11 +598,15 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
 
       return await response.blob();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Download failed.");
       if (error instanceof ApiRequestError) {
         throw error;
       }
+      lastError = error instanceof Error ? error : new Error("Download failed.");
     }
+  }
+
+  if (lastError?.name === "TypeError" || /failed to fetch/i.test(lastError?.message ?? "")) {
+    throw new Error(buildBackendConnectionErrorMessage(path, candidates));
   }
 
   throw lastError ?? new Error("Download failed.");

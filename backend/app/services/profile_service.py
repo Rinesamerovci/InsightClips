@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import html
 from email.message import EmailMessage
 
 from app.config import get_settings
@@ -243,11 +244,11 @@ def update_user_export_settings(
 
 def _send_user_message_notification(record: dict[str, object]) -> bool:
     settings = get_settings()
-    recipient = settings.support_inbox_email.strip()
-    smtp_host = settings.smtp_host.strip()
-    sender_email = settings.smtp_from_email.strip() or settings.smtp_username.strip()
+    recipient = getattr(settings, "support_inbox_email", "").strip()
+    resend_api_key = getattr(settings, "resend_api_key", "").strip() or getattr(settings, "smtp_password", "").strip()
 
-    if not recipient or not smtp_host or not sender_email:
+    if not recipient or not resend_api_key:
+        logger.warning("Resend API notification skipped: missing recipient or API key")
         return False
 
     message_type = str(record.get("message_type") or "message")
@@ -255,47 +256,313 @@ def _send_user_message_notification(record: dict[str, object]) -> bool:
     subject = str(record.get("subject") or f"New {message_type} message")
     contact_email = str(record.get("contact_email") or "").strip()
 
-    email_message = EmailMessage()
-    email_message["Subject"] = f"[InsightClips {message_type}] {subject}"
-    email_message["From"] = f"{settings.smtp_from_name} <{sender_email}>"
-    email_message["To"] = recipient
-    if contact_email:
-        email_message["Reply-To"] = contact_email
-    email_message.set_content(
-        "\n".join(
-            [
-                "A new InsightClips user message was submitted.",
-                "",
-                f"Type: {message_type}",
-                f"Category: {category}",
-                f"User id: {record.get('user_id') or ''}",
-                f"Contact email: {contact_email or 'Not provided'}",
-                f"Subject: {subject}",
-                "",
-                "Message:",
-                str(record.get("message") or ""),
-            ]
-        )
+    sender_email = getattr(settings, "smtp_from_email", "").strip() or getattr(settings, "smtp_username", "").strip()
+    resend_from = sender_email if "@" in sender_email else "onboarding@resend.dev"
+    sender_name = getattr(settings, "smtp_from_name", "").strip() or "InsightClips"
+
+    user_id = str(record.get("user_id") or "").strip()
+    profile_email = "Not available"
+    profile_name = "Not provided"
+    if user_id:
+        try:
+            profile = get_profile_by_id(user_id)
+            if profile:
+                profile_email = profile.email
+                profile_name = profile.full_name or "Not provided"
+        except Exception:
+            pass
+
+    from datetime import datetime, timezone
+    submitted_at = datetime.now(timezone.utc).strftime("%B %d, %Y - %H:%M UTC")
+
+    body_text = "\n".join(
+        [
+            "A new InsightClips user message was submitted.",
+            "",
+            f"Type: {message_type}",
+            f"Category: {category}",
+            f"User id: {user_id}",
+            f"Sender Name: {profile_name}",
+            f"Account Email: {profile_email}",
+            f"Contact Email: {contact_email or 'Not provided'}",
+            f"Subject: {subject}",
+            f"Submitted at: {submitted_at}",
+            "",
+            "Message:",
+            str(record.get("message") or ""),
+        ]
     )
 
+    # Construct the beautiful HTML template matching the premium green/dark brand
+    html_template = """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InsightClips Support Ticket</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f4f8f3;
+      color: #112410;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      padding: 40px 20px;
+      background-color: #f4f8f3;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 16px;
+      border: 1px solid rgba(130, 201, 116, 0.22);
+      box-shadow: 0 10px 30px rgba(18, 43, 17, 0.04);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #112410, #1b3d19);
+      padding: 32px 24px;
+      text-align: center;
+      position: relative;
+    }
+    .header h1 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .header p {
+      margin: 8px 0 0;
+      color: #82c974;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .content {
+      padding: 36px 32px;
+    }
+    .badge-container {
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 4px;
+    }
+    .badge-type {
+      background-color: #e2f4dd;
+      color: #2b6121;
+      border: 1px solid rgba(43, 97, 33, 0.12);
+    }
+    .badge-category {
+      background-color: #f5f9f3;
+      color: #4a753f;
+      border: 1px solid rgba(74, 117, 63, 0.12);
+    }
+    .grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      background-color: #fcfdfc;
+      border-radius: 12px;
+      border: 1px solid rgba(130, 201, 116, 0.12);
+      overflow: hidden;
+    }
+    .grid td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(130, 201, 116, 0.08);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+    .grid tr:last-child td {
+      border-bottom: none;
+    }
+    .grid td.label {
+      font-weight: 700;
+      color: #1b3d19;
+      width: 30%;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+    }
+    .grid td.value {
+      color: #333333;
+      word-break: break-all;
+    }
+    .message-card {
+      background-color: #fafdf9;
+      border-left: 4px solid #82c974;
+      border-radius: 4px 12px 12px 4px;
+      padding: 24px;
+      margin: 24px 0;
+      box-shadow: inset 0 0 12px rgba(130, 201, 116, 0.02);
+    }
+    .message-title {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #2b6121;
+      margin-bottom: 12px;
+    }
+    .message-text {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #1a2a17;
+      white-space: pre-wrap;
+      margin: 0;
+    }
+    .button-container {
+      text-align: center;
+      margin-top: 32px;
+      margin-bottom: 8px;
+    }
+    .button {
+      display: inline-block;
+      background-color: #1b3d19;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      box-shadow: 0 8px 20px rgba(27, 61, 25, 0.15);
+    }
+    .footer {
+      background-color: #fafdfa;
+      padding: 20px;
+      text-align: center;
+      font-size: 11px;
+      color: #8fa68a;
+      border-top: 1px solid rgba(130, 201, 116, 0.08);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>InsightClips Hub</h1>
+        <p>User Support Ticket</p>
+      </div>
+      <div class="content">
+        <div class="badge-container">
+          <span class="badge badge-type">{{message_type}}</span>
+          <span class="badge badge-category">{{category}}</span>
+        </div>
+        
+        <table class="grid">
+          <tr>
+            <td class="label">Date / Time</td>
+            <td class="value">{{submitted_at}}</td>
+          </tr>
+          <tr>
+            <td class="label">User Name</td>
+            <td class="value" style="font-weight: 600; color: #112410;">{{profile_name}}</td>
+          </tr>
+          <tr>
+            <td class="label">Account Email</td>
+            <td class="value">
+              <a href="mailto:{{profile_email}}" style="color: #2b6121; text-decoration: none; font-weight: 600;">{{profile_email}}</a>
+            </td>
+          </tr>
+          <tr>
+            <td class="label">Contact Email</td>
+            <td class="value">
+              <a href="mailto:{{contact_email}}" style="color: #2b6121; text-decoration: none; font-weight: 600;">{{contact_email}}</a>
+            </td>
+          </tr>
+          <tr>
+            <td class="label">User ID</td>
+            <td class="value" style="font-family: monospace; font-size: 12px; color: #555555;">{{user_id}}</td>
+          </tr>
+          <tr>
+            <td class="label">Subject</td>
+            <td class="value" style="font-weight: 600; color: #112410;">{{subject}}</td>
+          </tr>
+        </table>
+        
+        <div class="message-card">
+          <div class="message-title">Message Details</div>
+          <p class="message-text">{{message_body}}</p>
+        </div>
+        
+        <div class="button-container">
+          <a href="mailto:{{reply_email}}?subject=Re: {{subject}}" class="button">Reply directly by email</a>
+        </div>
+      </div>
+      <div class="footer">
+        This is an automated operational notification sent from the InsightClips Platform.
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    reply_email = contact_email or (profile_email if "@" in profile_email else "") or recipient
+    html_body = (
+        html_template.replace("{{message_type}}", html.escape(message_type))
+        .replace("{{category}}", html.escape(category.replace("_", " ")))
+        .replace("{{user_id}}", html.escape(user_id))
+        .replace("{{profile_name}}", html.escape(profile_name))
+        .replace("{{profile_email}}", html.escape(profile_email))
+        .replace("{{contact_email}}", html.escape(contact_email or "Not provided"))
+        .replace("{{subject}}", html.escape(subject))
+        .replace("{{message_body}}", html.escape(str(record.get("message") or "")))
+        .replace("{{submitted_at}}", html.escape(submitted_at))
+        .replace("{{reply_email}}", html.escape(reply_email))
+    )
+
+    headers = {
+        "Authorization": f"Bearer {resend_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "from": f"{sender_name} <{resend_from}>",
+        "to": [recipient],
+        "subject": f"[InsightClips {message_type}] {subject}",
+        "text": body_text,
+        "html": html_body,
+    }
+    if reply_email:
+        payload["reply_to"] = reply_email
+
     try:
-        if settings.smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_host, settings.smtp_port, timeout=15) as smtp:
-                if settings.smtp_username and settings.smtp_password:
-                    smtp.login(settings.smtp_username, settings.smtp_password)
-                smtp.send_message(email_message)
-        else:
-            with smtplib.SMTP(smtp_host, settings.smtp_port, timeout=15) as smtp:
-                if settings.smtp_use_tls:
-                    smtp.starttls()
-                if settings.smtp_username and settings.smtp_password:
-                    smtp.login(settings.smtp_username, settings.smtp_password)
-                smtp.send_message(email_message)
+        import httpx
+        url = "https://api.resend.com/emails"
+        response = httpx.post(url, headers=headers, json=payload, timeout=15)
+        
+        # Fallback if domain is unverified / invalid domain on DO or localhost
+        if response.status_code >= 400 and resend_from != "onboarding@resend.dev":
+            logger.warning(
+                "Resend API error %d. Retrying with onboarding@resend.dev as fallback...",
+                response.status_code
+            )
+            fallback_payload = dict(payload)
+            fallback_payload["from"] = f"{sender_name} <onboarding@resend.dev>"
+            response = httpx.post(url, headers=headers, json=fallback_payload, timeout=15)
+            
+        if response.status_code >= 400:
+            logger.warning("Resend API response error: %d - %s", response.status_code, response.text)
+            return False
+        return True
     except Exception as exc:
-        logger.warning("Unable to send user message notification email: %s", exc)
+        logger.warning("Unable to send user message notification via Resend API: %s", exc)
         return False
 
-    return True
 
 
 def submit_user_message(profile_id: str, payload: UserMessageRequest) -> UserMessageResponse:

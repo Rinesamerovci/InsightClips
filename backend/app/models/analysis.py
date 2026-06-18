@@ -72,6 +72,9 @@ class AnalyzePodcastRequest(BaseModel):
 
     transcription: TranscriptionResult | None = None
     transcription_model: str = "base"
+    language: str | None = None
+    force: bool = False
+
 
 
 class AnalysisSummary(BaseModel):

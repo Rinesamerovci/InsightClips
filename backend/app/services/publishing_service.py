@@ -207,15 +207,20 @@ def revoke_clip_download(clip_id: str) -> ClipRevocationResult:
             "published_at": None,
         }
     ).eq("id", cleaned_clip_id).execute()
-    _persist_publication_record(
-        clip_id=cleaned_clip_id,
-        podcast_id=str(row.get("podcast_id") or ""),
-        destination="download",
-        status="revoked",
-        download_url=None,
-        published_at=None,
-        metadata={"revoked": True, "storage_removed": bool(storage_key)},
-    )
+    try:
+        _persist_publication_record(
+            clip_id=cleaned_clip_id,
+            podcast_id=str(row.get("podcast_id") or ""),
+            destination="download",
+            status="revoked",
+            download_url=None,
+            published_at=None,
+            metadata={"revoked": True, "storage_removed": bool(storage_key)},
+        )
+    except Exception:
+        # Older databases may not have the revoked publication status yet. The
+        # important access-control state is already cleared on the clip row.
+        pass
 
     return ClipRevocationResult(
         clip_id=cleaned_clip_id,

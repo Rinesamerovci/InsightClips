@@ -398,19 +398,52 @@ def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownl
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios", "android"]
+            }
+        }
     }
 
+    import os
+    from app.config import ROOT_DIR, BACKEND_DIR
+    env_cookies = os.environ.get("YOUTUBE_COOKIES_PATH")
+    if env_cookies and Path(env_cookies).exists():
+        options["cookiefile"] = str(Path(env_cookies).resolve())
+    else:
+        cookie_found = False
+        for candidate_dir in [ROOT_DIR, BACKEND_DIR, Path(".")]:
+            candidate_file = candidate_dir / "cookies.txt"
+            if candidate_file.exists():
+                options["cookiefile"] = str(candidate_file.resolve())
+                cookie_found = True
+                break
+        if not cookie_found:
+            # Automatic browser cookies lookup using Chrome as the default
+            options["cookiesfrombrowser"] = ("chrome",)
+
     try:
-        with YoutubeDL(options) as downloader:
-            info = downloader.extract_info(source.normalized_url, download=True)
-            requested_downloads = info.get("requested_downloads") or []
-            downloaded_path = ""
-            for item in requested_downloads:
-                downloaded_path = str(item.get("filepath") or item.get("_filename") or "")
-                if downloaded_path:
-                    break
-            if not downloaded_path:
-                downloaded_path = str(info.get("filepath") or downloader.prepare_filename(info))
+        try:
+            with YoutubeDL(options) as downloader:
+                info = downloader.extract_info(source.normalized_url, download=True)
+        except Exception as cookie_exc:
+            if "cookiesfrombrowser" in options:
+                import logging
+                logging.warning("Failed downloading with browser cookies (%s). Retrying without cookies.", cookie_exc)
+                options.pop("cookiesfrombrowser", None)
+                with YoutubeDL(options) as downloader:
+                    info = downloader.extract_info(source.normalized_url, download=True)
+            else:
+                raise
+
+        requested_downloads = info.get("requested_downloads") or []
+        downloaded_path = ""
+        for item in requested_downloads:
+            downloaded_path = str(item.get("filepath") or item.get("_filename") or "")
+            if downloaded_path:
+                break
+        if not downloaded_path:
+            downloaded_path = str(info.get("filepath") or downloader.prepare_filename(info))
     except Exception as exc:
         import logging
         logging.exception("YouTube download failed")
@@ -464,6 +497,10 @@ def _persist_youtube_source_media(
     download_result: YouTubeDownloadResult,
     user_id: str,
 ) -> YouTubeDownloadResult:
+    # Skip uploading to Supabase Storage in development or local fallback mode to avoid slow uploads/timeouts
+    if get_settings().allow_local_source_fallback or get_settings().environment == "development":
+        return download_result
+
     local_path = Path(download_result.storage_path)
     if not local_path.exists():
         return download_result

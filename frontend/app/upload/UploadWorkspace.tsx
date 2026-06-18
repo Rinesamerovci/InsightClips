@@ -471,7 +471,9 @@ export default function UploadWorkspace({
 
     // REAL MODE: Upload directly to Render backend
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+      "http://localhost:8000";
 
     const uploadFormData = new FormData();
     uploadFormData.append("file", selectedFile);
@@ -563,7 +565,9 @@ export default function UploadWorkspace({
 
     // REAL MODE: Call prepare directly on backend
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+      "http://localhost:8000";
 
     const response = await fetch(`${backendUrl}/upload/prepare`, {
       method: "POST",

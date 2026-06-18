@@ -343,7 +343,7 @@ function AnalyticsPageContent() {
                 Track clip performance and ranking by podcast.
               </h1>
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
-                This analytics board shows the selected podcast&apos;s views, downloads, click trend, and top clip performance so publishing decisions stay visible.
+                This analytics board shows the selected podcast&apos;s downloads, click trend, and top clip performance so publishing decisions stay visible.
               </p>
             </div>
 
@@ -360,7 +360,7 @@ function AnalyticsPageContent() {
             >
               {[
                 { label: "Podcasts", value: podcasts.length, sub: "available in analytics" },
-                { label: "Top Views", value: topClip?.views ?? 0, sub: "best clip reach" },
+                { label: "Top Downloads", value: topClip?.downloads ?? 0, sub: "best clip reach" },
                 { label: "Downloads", value: metrics?.total_downloads ?? 0, sub: "selected podcast total" },
                 { label: "Trend", value: formatAnalyticsChange(metrics?.average_click_trend ?? 0), sub: "average click change" },
               ].map((item) => (
@@ -523,7 +523,7 @@ function AnalyticsPageContent() {
                   </h2>
                   <p style={{ marginTop: 8, color: t.textSub }}>
                     {metrics
-                      ? `${metrics.total_clips} total clips / ${metrics.published_clips} published / ${metrics.total_views} views`
+                    ? `${metrics.total_clips} total clips / ${metrics.published_clips} published / ${metrics.total_downloads} downloads`
                       : "Select a podcast and load metrics to begin."}
                   </p>
                 </div>

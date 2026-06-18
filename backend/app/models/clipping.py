@@ -82,7 +82,7 @@ class GenerateClipsRequest(BaseModel):
     generation_settings: GenerationSettingsInput | None = None
     clip_duration_seconds: int | None = Field(default=None, ge=8, le=90)
     number_of_clips: int | None = Field(default=None, ge=1, le=10)
-    topic_focus: str | None = Field(default=None, max_length=120)
+    topic_focus: str | None = Field(default=None, max_length=500)
     subtitles_enabled: bool | None = None
     visual_output_mode: VisualOutputMode = "original_people"
     save_generation_settings: bool = False

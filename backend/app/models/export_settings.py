@@ -162,7 +162,7 @@ class GenerationSettings(BaseModel):
 
     clip_duration_seconds: int = Field(default=30, ge=8, le=90)
     number_of_clips: int = Field(default=5, ge=1, le=10)
-    topic_focus: str | None = Field(default=None, max_length=120)
+    topic_focus: str | None = Field(default=None, max_length=500)
     subtitles_enabled: bool = True
 
     @field_validator("topic_focus")
@@ -183,7 +183,7 @@ class GenerationSettingsInput(BaseModel):
 
     clip_duration_seconds: int | None = Field(default=None, ge=8, le=90)
     number_of_clips: int | None = Field(default=None, ge=1, le=10)
-    topic_focus: str | None = Field(default=None, max_length=120)
+    topic_focus: str | None = Field(default=None, max_length=500)
     subtitles_enabled: bool | None = None
 
     @field_validator("topic_focus")

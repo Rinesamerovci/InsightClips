@@ -201,10 +201,10 @@ export default function ProfilePage() {
       errorBg: base.errorBg,
       errorBorder: base.errorBd,
       errorText: base.errorText,
-      deleteBg: dark ? "rgba(90,158,58,.1)" : "rgba(241,249,235,.92)",
-      deleteBorder: dark ? "rgba(130,205,110,.26)" : "rgba(130,205,110,.38)",
-      deleteText: dark ? "#bfe4ab" : "#3f7f25",
-      deleteButton: dark ? "#3c7627" : "#5a9e3a",
+      deleteBg: dark ? "rgba(95,18,18,.9)" : "rgba(255,236,236,.96)",
+      deleteBorder: dark ? "rgba(234,88,88,.35)" : "rgba(214,67,67,.35)",
+      deleteText: dark ? "#ffb4b4" : "#b42318",
+      deleteButton: dark ? "#d64545" : "#c92a2a",
     };
   }, [dark]);
 

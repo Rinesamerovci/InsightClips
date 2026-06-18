@@ -408,10 +408,10 @@ export default function PodcastsPage() {
           {[
             {
               icon: Radio,
-              title: "Workspace rhythm",
+              title: "Processing status",
               text: processingCount
                 ? `${processingCount} episode${processingCount > 1 ? "s are" : " is"} actively processing right now.`
-                : "Everything is calm right now with no pending processing queue.",
+                : "No episodes are waiting to be processed right now.",
             },
             {
               icon: Sparkles,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ import {
   buildAuthenticatedBackendUrl,
   getContentCalendar,
   downloadClip,
+  analyzePodcast,
   generateClips,
   getBackendBaseUrl,
   getClips,
@@ -46,6 +47,7 @@ import {
   type GenerationTemplateId,
   type Podcast,
   type PodcastsResponse,
+  type ScoreSegment,
   type VisualOutputMode,
 } from "@/lib/api";
 import {
@@ -388,6 +390,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     useState<ExportSettings | null>(null);
   const [visualOutputMode, setVisualOutputMode] =
     useState<VisualOutputMode>("original_people");
+  const autoGenerateRequested = searchParams.get("autogen") === "1";
+  const pendingAutoGenerateScoreSegmentsRef = useRef<ScoreSegment[] | null>(null);
+  const autoGenerateStartedRef = useRef(false);
   const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
 
   const t = dark ? T.dark : T.light;
@@ -638,9 +643,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         if (!cancelled && Date.now() - startedAt > generationTimeoutMs) {
           setGenerating(false);
           setGenerationStartedAt(null);
-          setError(
-            "Clip generation timed out after 8 minutes. Try fewer clips, a shorter duration, or rerun generation.",
-          );
+          setError("");
           setActionFeedback({
             tone: "error",
             message:
@@ -843,7 +846,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     });
   };
 
-  const handleGenerateClips = async () => {
+  const handleGenerateClips = useCallback(async () => {
     if (!selectedPodcastId) {
       setActionFeedback({
         tone: "error",
@@ -878,6 +881,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       const generated = await generateClips(
         selectedPodcastId,
         {
+          score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
           generation_settings: buildGenerationRequestPayload(generationSettings),
           export_settings:
             generationExportSettings ??
@@ -926,20 +930,138 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
             tone: "info",
             message: `Showing ${partialResult.clips.length} clip${partialResult.clips.length === 1 ? "" : "s"} that finished rendering. The rest may still need another generation run.`,
           });
+          setGenerating(false);
           return;
         }
       }
       const message = formatGenerationFailureMessage(generationError);
+      if (message.includes("already being processed") || message.includes("Failed to fetch")) {
+        setActionFeedback({
+          tone: "info",
+          message: "Clips are rendering in the background. This usually takes a few minutes. Please wait...",
+        });
+        // Do not setGenerating(false) so the polling effect takes over
+        return;
+      }
       setError(message);
       setActionFeedback({
         tone: "error",
         message,
       });
-    } finally {
       setGenerating(false);
+    } finally {
+      pendingAutoGenerateScoreSegmentsRef.current = null;
       setGenerationStartedAt(null);
     }
-  };
+  }, [
+    backendToken,
+    generationExportSettings,
+    generationSettings,
+    selectedPodcast,
+    selectedPodcastId,
+    hasCompleteClipSet,
+    mode,
+    resultsPath,
+    router,
+    syncBackendSession,
+    visualOutputMode,
+  ]);
+
+  useEffect(() => {
+    if (!autoGenerateRequested || mode !== "results") {
+      return;
+    }
+    if (!selectedPodcastId || !selectedPodcast || loading || authLoading) {
+      return;
+    }
+    if (clips.length > 0 || autoGenerateStartedRef.current) {
+      return;
+    }
+
+    autoGenerateStartedRef.current = true;
+    const storageKey = `insightclips:analysis-segments:${selectedPodcastId}`;
+
+    const runAutoGenerate = async () => {
+      setGenerating(true);
+      setGenerationStartedAt(Date.now());
+      setError("");
+      setActionFeedback({
+        tone: "info",
+        message: "Preparing the podcast, then rendering clips automatically.",
+      });
+
+      try {
+        const token = backendToken ?? (await syncBackendSession());
+        if (!token) {
+          return;
+        }
+
+        try {
+          const stored = window.sessionStorage.getItem(storageKey);
+          pendingAutoGenerateScoreSegmentsRef.current = stored ? (JSON.parse(stored) as ScoreSegment[]) : null;
+          window.sessionStorage.removeItem(storageKey);
+        } catch {
+          pendingAutoGenerateScoreSegmentsRef.current = null;
+        }
+
+        if (!pendingAutoGenerateScoreSegmentsRef.current) {
+          const analysis = await analyzePodcast(selectedPodcastId, {}, token);
+          pendingAutoGenerateScoreSegmentsRef.current = analysis.top_scoring_segments ?? [];
+        }
+
+        const generated = await generateClips(
+          selectedPodcastId,
+          {
+            score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
+            generation_settings: buildGenerationRequestPayload(generationSettings),
+            export_settings:
+              generationExportSettings ??
+              normalizeExportSettings(selectedPodcast.export_settings ?? null),
+            visual_output_mode: visualOutputMode,
+            save_generation_settings: true,
+            use_preferred_generation_settings: true,
+          },
+          token,
+        );
+
+        setClips(generated.clips);
+        setSearchResults(toDiscoveryClips(generated.clips, selectedPodcast));
+        setWorkspaceView("results");
+        setActionFeedback({
+          tone: "success",
+          message: `Generated ${generated.clips.length} clip${generated.clips.length === 1 ? "" : "s"} for ${selectedPodcast.title}.`,
+        });
+        setGenerating(false);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to start automated clip rendering.";
+        if (message.includes("already being processed") || message.includes("Failed to fetch")) {
+          setActionFeedback({
+            tone: "info",
+            message: "Clips are rendering in the background. This usually takes a few minutes. Please wait...",
+          });
+          // Do not setGenerating(false) so the polling effect takes over
+          return;
+        }
+        setActionFeedback({
+          tone: "error",
+          message,
+        });
+        setGenerating(false);
+      } finally {
+        pendingAutoGenerateScoreSegmentsRef.current = null;
+      }
+    };
+
+    void runAutoGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    authLoading,
+    autoGenerateRequested,
+    clips.length,
+    loading,
+    mode,
+    selectedPodcastId,
+  ]);
 
   const handleCopyPlanning = async (text: string, label: string) => {
     const value = text.trim();

@@ -6,10 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Moon, Sparkles, SunMedium } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { analyzePodcast, confirmMockPayment, generateClips, getClips, ApiRequestError } from "@/lib/api";
+import { confirmMockPayment, isMockPodcastId } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
-type CompletionPhase = "loading" | "processing" | "error";
+type CompletionPhase = "loading" | "processing" | "redirect" | "error";
 
 export default function UploadCompletePage() {
   const router = useRouter();
@@ -24,7 +24,6 @@ export default function UploadCompletePage() {
   });
   const podcastId = searchParams.get("podcast_id")?.trim() ?? "";
   const payment = searchParams.get("payment")?.trim().toLowerCase() ?? "success";
-  const finalizeStorageKey = podcastId ? `insightclips:checkout-finalize:${podcastId}` : "";
   const initialError =
     payment !== "success"
       ? "Payment was not completed."
@@ -38,15 +37,12 @@ export default function UploadCompletePage() {
       return "error";
     }
 
-    if (typeof window !== "undefined" && finalizeStorageKey) {
-      return window.sessionStorage.getItem(finalizeStorageKey) === "running" ? "processing" : "loading";
-    }
-
     return "loading";
   });
   const [detail, setDetail] = useState("Verifying your payment and preparing the clip workspace.");
   const [error, setError] = useState(initialError);
   const finalizeStartedRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const t = useMemo(() => getStudioTheme(dark), [dark]);
 
   useEffect(() => {
@@ -54,70 +50,56 @@ export default function UploadCompletePage() {
   }, [dark]);
 
   useEffect(() => {
-    if (authLoading || phase !== "loading") {
+    if (authLoading || initialError) {
       return;
     }
     if (finalizeStartedRef.current) {
       return;
     }
     finalizeStartedRef.current = true;
-    if (finalizeStorageKey) {
-      window.sessionStorage.setItem(finalizeStorageKey, "running");
-    }
 
     let cancelled = false;
+
+    const clipsUrl = `/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`;
 
     const finalizeCheckout = async () => {
       setPhase("processing");
 
+      // Safety net: if redirect hasn't happened within 12s, show a manual button
+      redirectTimerRef.current = setTimeout(() => {
+        if (!cancelled) {
+          setDetail("Taking longer than expected. Use the button below to continue.");
+          setPhase("redirect");
+        }
+      }, 12000);
+
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
-          if (finalizeStorageKey) {
-            window.sessionStorage.removeItem(finalizeStorageKey);
-          }
+          if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
           router.replace("/login");
           return;
         }
 
-        setDetail("Marking the episode as paid.");
-        await confirmMockPayment(podcastId, "paid", token);
-
-        setDetail("Analyzing the recording and building your clips.");
-        const analysis = await analyzePodcast(podcastId, {}, token);
-
-        setDetail("Rendering your clips.");
-        await generateClips(
-          podcastId,
-          {
-            score_segments: analysis.top_scoring_segments,
-            use_preferred_generation_settings: true,
-            visual_output_mode: "original_people",
-          },
-          token,
-        );
+        if (!isMockPodcastId(podcastId)) {
+          setDetail("Marking the episode as paid.");
+          await confirmMockPayment(podcastId, "paid", token);
+        }
 
         if (!cancelled) {
-          if (finalizeStorageKey) {
-            window.sessionStorage.removeItem(finalizeStorageKey);
-          }
-          router.replace(`/clips/generated?podcastId=${encodeURIComponent(podcastId)}`);
+          if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+          setDetail("Payment confirmed! Redirecting to your clips…");
+          setPhase("redirect");
+          router.replace(clipsUrl);
         }
       } catch (err) {
+        if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
         if (cancelled) {
-          return;
-        }
-        if (err instanceof ApiRequestError && err.status === 409) {
-          setDetail("Clip rendering is already in progress.");
-          setPhase("processing");
           return;
         }
         setError(err instanceof Error ? err.message : "Unable to finish payment processing.");
         setPhase("error");
         finalizeStartedRef.current = false;
-        if (finalizeStorageKey) {
-          window.sessionStorage.removeItem(finalizeStorageKey);
-        }
       }
     };
 
@@ -125,72 +107,14 @@ export default function UploadCompletePage() {
 
     return () => {
       cancelled = true;
+      finalizeStartedRef.current = false;
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     };
-  }, [authLoading, backendToken, finalizeStorageKey, payment, phase, podcastId, router, syncBackendSession]);
+  }, [authLoading, backendToken, initialError, podcastId, router, syncBackendSession]);
 
-  useEffect(() => {
-    if (phase !== "processing" || !podcastId) {
-      return;
-    }
+  const clipsUrl = `/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`;
 
-    let cancelled = false;
-    let timeoutId: number | null = null;
-
-    const pollForAnalysis = async () => {
-      try {
-        const token = backendToken ?? (await syncBackendSession());
-        if (!token || cancelled) {
-          return;
-        }
-
-        const result = await getClips(podcastId, token);
-        if (cancelled) {
-          return;
-        }
-
-        if (result.clips.length === 0) {
-          timeoutId = window.setTimeout(() => {
-            void pollForAnalysis();
-          }, 3500);
-          return;
-        }
-
-        if (finalizeStorageKey) {
-          window.sessionStorage.removeItem(finalizeStorageKey);
-        }
-        router.replace(`/clips/generated?podcastId=${encodeURIComponent(podcastId)}`);
-      } catch (err) {
-        if (cancelled) {
-          return;
-        }
-
-        if (err instanceof ApiRequestError && err.status === 404) {
-          timeoutId = window.setTimeout(() => {
-            void pollForAnalysis();
-          }, 3500);
-          return;
-        }
-
-        setError(err instanceof Error ? err.message : "Unable to confirm clip processing.");
-        setPhase("error");
-        finalizeStartedRef.current = false;
-        if (finalizeStorageKey) {
-          window.sessionStorage.removeItem(finalizeStorageKey);
-        }
-      }
-    };
-
-    void pollForAnalysis();
-
-    return () => {
-      cancelled = true;
-      if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [backendToken, finalizeStorageKey, phase, podcastId, router, syncBackendSession]);
-
-  if (authLoading || phase === "processing") {
+  if (authLoading || phase === "processing" || phase === "redirect") {
     return (
       <div
         style={{
@@ -256,9 +180,29 @@ export default function UploadCompletePage() {
             />
             <div>
               <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 34, fontStyle: "italic", lineHeight: 1.05, marginBottom: 8 }}>
-                {phase === "processing" ? "Preparing your clips" : "Loading"}
+                {phase === "redirect" ? "Payment confirmed!" : phase === "processing" ? "Preparing your clips" : "Loading"}
               </div>
               <div style={{ color: t.textSub, lineHeight: 1.7, fontSize: 14 }}>{detail}</div>
+              {phase === "redirect" && (
+                <a
+                  href={clipsUrl}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    marginTop: 14,
+                    borderRadius: 14,
+                    background: t.accent,
+                    color: "#fff",
+                    padding: "11px 18px",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    textDecoration: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Go to my clips →
+                </a>
+              )}
             </div>
           </div>
 

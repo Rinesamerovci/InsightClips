@@ -29,6 +29,7 @@ import {
   analyzePodcast,
   confirmMockPayment,
   importYouTubePodcast,
+  isMockPodcastId,
     createCheckoutSession,
   type AudioEnhancementSettings,
   type ExportMode,
@@ -470,7 +471,9 @@ export default function UploadWorkspace({
 
     // REAL MODE: Upload directly to Render backend
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+      "http://localhost:8000";
 
     const uploadFormData = new FormData();
     uploadFormData.append("file", selectedFile);
@@ -562,7 +565,9 @@ export default function UploadWorkspace({
 
     // REAL MODE: Call prepare directly on backend
     const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+      process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+      "http://localhost:8000";
 
     const response = await fetch(`${backendUrl}/upload/prepare`, {
       method: "POST",
@@ -723,9 +728,11 @@ export default function UploadWorkspace({
           try {
             const token = backendToken ?? (await syncBackendSession());
             if (!token) return;
-            await confirmMockPayment(podcastId, "paid", token);
+            if (!isMockPodcastId(podcastId)) {
+              await confirmMockPayment(podcastId, "paid", token);
+            }
             await analyzePodcast(podcastId, {}, token);
-            router.push(`/clips?podcastId=${encodeURIComponent(podcastId)}`);
+            router.push(`/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`);
           } catch (err) {
             setErr(err instanceof Error ? err.message : "Payment succeeded but processing failed.");
           }

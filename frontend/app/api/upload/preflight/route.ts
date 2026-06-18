@@ -5,7 +5,9 @@ import { stageUploadFile } from "@/lib/upload-staging";
 export const runtime = "nodejs";
 
 const backendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+  "http://localhost:8000";
 const FREE_TRIAL_MAX_MINUTES = 30;
 const ABSOLUTE_MAX_MINUTES = 120;
 

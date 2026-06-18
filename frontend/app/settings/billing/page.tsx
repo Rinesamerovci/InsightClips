@@ -165,7 +165,7 @@ export default function BillingSettingsPage() {
       return;
     }
     if (!backendToken) {
-      void syncBackendSession();
+      void syncBackendSession().catch(() => {});
     }
   }, [authLoading, backendToken, router, syncBackendSession, user]);
 

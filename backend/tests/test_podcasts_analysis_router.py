@@ -240,6 +240,17 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         get_user_export_settings_mock,
         generate_clips_mock,
     ) -> None:
+        from app.models.podcast import PodcastRecord
+
+        self.mock_get_podcast.return_value = PodcastRecord(
+            id="podcast-123",
+            user_id="user-123",
+            title="Mock Podcast",
+            duration=300,
+            status="ready_for_processing",
+            payment_status="paid",
+            import_metadata={"transcription_data": self.payload.transcription.model_dump()},
+        )
         get_user_export_settings_mock.return_value = None
         get_scored_segments_mock.return_value = [
             ScoreSegment(
@@ -277,9 +288,34 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertEqual(result.total_clips_generated, 1)
         get_scored_segments_mock.assert_called_once_with("podcast-123", limit=5)
         transcribe_podcast_mock.assert_not_called()
-        self.assertIsNone(generate_clips_mock.call_args.args[2])
+        self.assertEqual(generate_clips_mock.call_args.args[2], self.payload.transcription)
         build_analysis_result_mock.assert_not_called()
         persist_analysis_result_mock.assert_not_called()
+
+    def test_generate_podcast_clips_returns_413_for_long_podcast(self) -> None:
+        from app.models.podcast import PodcastRecord
+
+        self.mock_get_podcast.return_value = PodcastRecord(
+            id="podcast-123",
+            user_id="user-123",
+            title="Mock Podcast",
+            duration=2 * 60 * 60 + 1,
+            status="ready_for_processing",
+            payment_status="paid",
+            import_metadata={},
+        )
+
+        with self.assertRaises(HTTPException) as exc_info:
+            asyncio.run(
+                generate_podcast_clips(
+                    "podcast-123",
+                    GenerateClipsRequest(),
+                    self.user,
+                )
+            )
+
+        self.assertEqual(exc_info.exception.status_code, 413)
+        self.assertIn("2 hours", exc_info.exception.detail)
 
     @patch("app.routers.podcasts.generate_clips")
     @patch("app.routers.podcasts.get_user_export_settings")
@@ -354,13 +390,18 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertEqual(result.total_clips_generated, 1)
         get_scored_segments_mock.assert_called_once_with("podcast-123", limit=5)
         transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
-        analyze_and_score_mock.assert_called_once_with("podcast-123", self.payload.transcription)
+        analyze_and_score_mock.assert_called_once_with(
+            "podcast-123",
+            self.payload.transcription,
+            topic_focus=None,
+        )
         build_analysis_result_mock.assert_called_once()
         persist_analysis_result_mock.assert_called_once()
 
     @patch("app.routers.podcasts.update_user_export_settings")
     @patch("app.routers.podcasts.get_user_export_settings")
     @patch("app.routers.podcasts.generate_clips")
+    @patch("app.routers.podcasts.transcribe_podcast_media_for_user")
     @patch("app.routers.podcasts.get_scored_segments_for_podcast")
     @patch("app.routers.podcasts.get_clips_for_podcast", return_value=None)
     @patch("app.routers.podcasts.update_podcast_status_for_user")
@@ -371,6 +412,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         update_status_mock,
         get_clips_for_podcast_mock,
         get_scored_segments_mock,
+        transcribe_podcast_mock,
         generate_clips_mock,
         get_user_export_settings_mock,
         update_user_export_settings_mock,
@@ -402,6 +444,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
                 keywords=["ai"],
             )
         ]
+        transcribe_podcast_mock.return_value = self.payload.transcription
         generate_clips_mock.return_value = [
             ClipResult(
                 id="clip-1",
@@ -441,6 +484,7 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
         self.assertEqual(result.generation_settings.topic_focus, "product launch")
         self.assertFalse(result.generation_settings.subtitles_enabled)
         get_scored_segments_mock.assert_called_once_with("podcast-123", limit=2)
+        transcribe_podcast_mock.assert_called_once_with("podcast-123", "user-123", model="base")
         generate_clips_mock.assert_called_once()
         self.assertEqual(generate_clips_mock.call_args.args[4].topic_focus, "product launch")
         update_user_export_settings_mock.assert_called_once()

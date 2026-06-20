@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   applyGenerationTemplate,
+  CLIP_COUNT_OPTIONS,
+  CLIP_DURATION_OPTIONS,
   describeGenerationSettings,
+  GENERATION_TEMPLATES,
   normalizeGenerationSettings,
 } from "../lib/generation-settings";
 import { buildEstimatedContentCalendar, type ClipResult } from "../lib/api";
@@ -150,6 +153,15 @@ export function runClipsTests(): void {
     describeGenerationSettings(normalizedGeneration),
     "4 clips | 30s | Subtitles off",
   );
+  assert.equal(
+    describeGenerationSettings({
+      clip_duration_seconds: 15,
+      number_of_clips: 1,
+      topic_focus: "",
+      subtitles_enabled: true,
+    }),
+    "1 clip | 15s | Subtitles on",
+  );
 
   const template = applyGenerationTemplate("story_arc", discoveryItems[0]?.export_settings);
 
@@ -157,6 +169,62 @@ export function runClipsTests(): void {
   assert.equal(template.generationSettings.number_of_clips, 3);
   assert.equal(template.exportSettings.export_mode, "portrait");
   assert.equal(template.exportSettings.subtitle_style?.preset, "boxed");
+  assert.equal(template.exportSettings.generation_settings?.number_of_clips, 3);
+
+  const templateWithPrompt = applyGenerationTemplate("tiktok_viral", null, {
+    topic_focus: "   strongest audience hook   ",
+    subtitles_enabled: false,
+  });
+
+  assert.equal(templateWithPrompt.generationSettings.clip_duration_seconds, 15);
+  assert.equal(templateWithPrompt.generationSettings.topic_focus, "strongest audience hook");
+  assert.equal(templateWithPrompt.generationSettings.subtitles_enabled, true);
+  assert.equal(templateWithPrompt.exportSettings.export_mode, "portrait");
+  assert.equal(templateWithPrompt.exportSettings.crop_mode, "smart_crop");
+  assert.equal(templateWithPrompt.exportSettings.face_tracking_enabled, true);
+  assert.equal(templateWithPrompt.exportSettings.generation_settings?.topic_focus, "strongest audience hook");
+
+  const singleGem = applyGenerationTemplate("single_gem", null, {
+    topic_focus: "one decisive quote",
+  });
+
+  assert.equal(singleGem.generationSettings.number_of_clips, 1);
+  assert.equal(singleGem.generationSettings.clip_duration_seconds, 15);
+  assert.equal(singleGem.exportSettings.subtitle_style?.preset, "boxed");
+
+  const highlightPair = applyGenerationTemplate("highlight_pair");
+
+  assert.equal(highlightPair.generationSettings.number_of_clips, 2);
+  assert.equal(highlightPair.generationSettings.clip_duration_seconds, 30);
+
+  for (const templateDefinition of GENERATION_TEMPLATES) {
+    const applied = applyGenerationTemplate(templateDefinition.id);
+    const subtitleStyle = applied.exportSettings.subtitle_style;
+
+    assert.ok(
+      CLIP_DURATION_OPTIONS.includes(
+        applied.generationSettings.clip_duration_seconds as (typeof CLIP_DURATION_OPTIONS)[number],
+      ),
+      `${templateDefinition.id} duration must be selectable`,
+    );
+    assert.ok(
+      CLIP_COUNT_OPTIONS.includes(
+        applied.generationSettings.number_of_clips as (typeof CLIP_COUNT_OPTIONS)[number],
+      ),
+      `${templateDefinition.id} clip count must be selectable`,
+    );
+    assert.equal(applied.exportSettings.generation_settings?.number_of_clips, applied.generationSettings.number_of_clips);
+    assert.equal(
+      applied.exportSettings.generation_settings?.clip_duration_seconds,
+      applied.generationSettings.clip_duration_seconds,
+    );
+    assert.equal(Boolean(subtitleStyle), true);
+    assert.match(subtitleStyle?.primary_color ?? "", /^#[0-9A-F]{6}$/i);
+    assert.match(subtitleStyle?.outline_color ?? "", /^#[0-9A-F]{6}$/i);
+    assert.match(subtitleStyle?.background_color ?? "", /^#[0-9A-F]{6}$/i);
+    assert.ok((subtitleStyle?.font_family ?? "").length > 0);
+    assert.ok((subtitleStyle?.font_size ?? 0) >= 16);
+  }
 
   const clipCalendarSeed: ClipResult[] = [
     {

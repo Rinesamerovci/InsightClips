@@ -212,7 +212,79 @@ export function AnalyticsMetricsDisplay({
               automatically.
             </div>
           )}
-        </MetricPanel>
+          </MetricPanel>
+        </section>
+
+      <section
+        style={{
+          borderRadius: 24,
+          background: theme.cardAlt,
+          border: `1px solid ${theme.borderSub}`,
+          padding: 20,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: ".2em",
+              textTransform: "uppercase",
+              color: theme.textFaint,
+              marginBottom: 6,
+            }}
+          >
+            Clip trend chart
+          </div>
+          <h3 style={{ margin: 0, fontSize: 26, lineHeight: 1.1 }}>
+            Top clips by downloads
+          </h3>
+        </div>
+
+        {metrics.top_clips.length > 0 ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {metrics.top_clips.slice(0, 5).map((clip) => {
+              const maxDownloads = Math.max(...metrics.top_clips.map((item) => item.downloads), 1);
+              const width = Math.max(10, Math.round((clip.downloads / maxDownloads) * 100));
+
+              return (
+                <div key={clip.clip_id} style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>
+                      Clip {clip.clip_number}
+                    </div>
+                    <div style={{ fontSize: 12, color: theme.textSub }}>
+                      {clip.downloads} downloads · {formatAnalyticsChange(clip.click_trend)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      height: 10,
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,.06)",
+                      border: `1px solid ${theme.borderSub}`,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${width}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent}88)`,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ color: theme.textSub, lineHeight: 1.75 }}>
+            Generate clips first, then the chart will show their ranking by downloads.
+          </div>
+        )}
       </section>
 
       <section

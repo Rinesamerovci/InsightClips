@@ -8,7 +8,7 @@
 //    triggered by the provider's webhook, not by this client directly
 // 4. The podcastId and amount are passed as URL params - wire them to your intent metadata
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -101,7 +101,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading, backendToken, syncBackendSession } = useAuth();
@@ -389,7 +389,9 @@ export default function CheckoutPage() {
                     <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub }}>
                       CVV
                     </span>
-                    <HelpCircle size={14} color={t.textSub} title="3 digits on the back of your card (4 for Amex)" />
+                    <span title="3 digits on the back of your card (4 for Amex)">
+                      <HelpCircle size={14} color={t.textSub} aria-hidden="true" />
+                    </span>
                   </div>
                   <input
                     id="checkout-cvv"
@@ -436,5 +438,13 @@ export default function CheckoutPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={null}>
+      <CheckoutContent />
+    </Suspense>
   );
 }

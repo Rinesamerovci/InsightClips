@@ -175,6 +175,7 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<UserPodcastAnalytics | null>(null);
   const [isMock,    setIsMock]    = useState(false);
   const [loading,   setLoading]   = useState(true);
+  const [loadingTimeoutReached, setLoadingTimeoutReached] = useState(false);
   const [error,     setError]     = useState("");
   const [dark,      setDark]      = useState(true);
   const [mounted,   setMounted]   = useState(false);
@@ -182,6 +183,7 @@ export default function DashboardPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showAllLibrary, setShowAllLibrary] = useState(false);
   const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -203,6 +205,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoadingTimeoutReached(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!mounted) return;
     window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
@@ -210,6 +219,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isMobile) setMobileNavOpen(false);
   }, [isMobile]);
+
+  useEffect(() => {
+    setShowAllLibrary(false);
+  }, [activeTab]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -265,10 +278,16 @@ export default function DashboardPage() {
     ),
   }));
 
+  const podcastsInDisplayOrder = [...podcastsWithEffectiveStatus].sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : 0;
+    const rightTime = right.created_at ? Date.parse(right.created_at) : 0;
+    return rightTime - leftTime;
+  });
+
   const processing = podcastsWithEffectiveStatus.filter(p => isProcessingStatus(p.status)).length;
   const payments   = podcastsWithEffectiveStatus.filter(p => isPaymentStatus(p.status)).length;
   const done       = podcastsWithEffectiveStatus.filter(p => isDoneStatus(p.status)).length;
-  const filtered   = podcastsWithEffectiveStatus.filter(p =>
+  const filtered   = podcastsInDisplayOrder.filter(p =>
     activeTab === "all"
       ? true
       : activeTab === "processing"
@@ -277,6 +296,8 @@ export default function DashboardPage() {
           ? isPaymentStatus(p.status)
         : isDoneStatus(p.status)
   );
+  const visibleLibraryPodcasts = showAllLibrary ? filtered : filtered.slice(0, 3);
+  const libraryHasMore = filtered.length > visibleLibraryPodcasts.length;
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
   const workspaceEpisodes = safePodcasts.length;
@@ -421,7 +442,7 @@ export default function DashboardPage() {
   };
 
   /* ── loading screen ── */
-  if (!mounted || loading || authLoading) return (
+  if ((!mounted || loading || authLoading) && !loadingTimeoutReached) return (
     <div style={{ display:"flex", minHeight:"100vh", alignItems:"center", justifyContent:"center", background: dark ? T.dark.bg : T.light.bg }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
@@ -1361,20 +1382,43 @@ export default function DashboardPage() {
                       )}
                     </div>
                   ) : (
-                    <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(min(100%,220px),1fr))", gap:14 }}>
-                      {filtered.map((podcast,i) => (
-                        <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
-                          <PodcastCard
-                            podcast={podcast}
-                            analysis={analysisByPodcast[podcast.id]}
-                            analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
-                            onAnalyze={(lang, force) => void runAnalysis(podcast.id, lang, force)}
-                            generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
-                            dark={dark}
-                          />
+                    <>
+                      <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(min(100%,220px),1fr))", gap:14 }}>
+                        {visibleLibraryPodcasts.map((podcast,i) => (
+                          <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
+                            <PodcastCard
+                              podcast={podcast}
+                              analysis={analysisByPodcast[podcast.id]}
+                              analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
+                              onAnalyze={(lang, force) => void runAnalysis(podcast.id, lang, force)}
+                              generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
+                              dark={dark}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {libraryHasMore && (
+                        <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowAllLibrary((value) => !value)}
+                            className="ic-btn"
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${t.border}`,
+                              background: dark ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.06)",
+                              color: t.text,
+                              padding: "10px 16px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {showAllLibrary ? "Show less" : `Show more (${filtered.length - visibleLibraryPodcasts.length})`}
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

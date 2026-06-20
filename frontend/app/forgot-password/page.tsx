@@ -62,7 +62,7 @@ export default function ForgotPasswordPage() {
 
   useEffect(() => {
     try {
-      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
     } catch {}
   }, []);
 
@@ -202,12 +202,12 @@ export default function ForgotPasswordPage() {
           <em style={{ color: shell.accent }}>without losing momentum.</em>
         </>
       }
-      showcaseBody="The recovery flow stays simple: request a reset email, verify the recovery session, then set a new password."
+      showcaseBody="Request the reset email, open the recovery link, then set a new password."
       showcaseContent={
         <div style={{ display: "grid", gap: 14 }}>
           <RecoveryStep
             title="1. Request reset email"
-            body="Enter the email tied to your workspace and we will send password recovery instructions."
+            body="Enter the email tied to your workspace and we will send a recovery link."
             active
             accent={shell.accent}
             border={shell.border}
@@ -215,7 +215,7 @@ export default function ForgotPasswordPage() {
           />
           <RecoveryStep
             title="2. Verify session"
-            body="Open the reset link, or confirm the code if your email template includes one."
+            body="Open the reset link and confirm the recovery session."
             active={step >= 2}
             accent={shell.accent}
             border={shell.border}
@@ -223,7 +223,7 @@ export default function ForgotPasswordPage() {
           />
           <RecoveryStep
             title="3. Create a new password"
-            body="Finish on the next screen and return directly to sign in."
+            body="Set the new password and sign in again."
             active={step === 2}
             accent={shell.accent}
             border={shell.border}
@@ -246,7 +246,7 @@ export default function ForgotPasswordPage() {
               Send reset email
             </h1>
             <p style={{ color: shell.muted, fontSize: 14, lineHeight: 1.7 }}>
-              We will send a reset link to the email linked with your account. If your email includes a 6-digit code, you can enter it here too.
+              We&apos;ll send a reset link to the email linked with your account.
             </p>
           </div>
 

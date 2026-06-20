@@ -341,7 +341,9 @@ export default function BillingSettingsPage() {
                   <label htmlFor="billing-cvv">
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub }}>CVV</span>
-                      <HelpCircle size={14} color={t.textSub} title="3 digits on the back of your card (4 for Amex)" />
+                      <span title="3 digits on the back of your card (4 for Amex)">
+                        <HelpCircle size={14} color={t.textSub} aria-hidden="true" />
+                      </span>
                     </div>
                     <input id="billing-cvv" value={cvv} required inputMode="numeric" maxLength={4} placeholder="123" className={inputClass("cvv")} aria-describedby="billing-cvv-error" onBlur={() => setTouched((current) => ({ ...current, cvv: true }))} onChange={(event) => setCvv(digitsOnly(event.target.value).slice(0, 4))} />
                     <div id="billing-cvv-error" style={{ fontSize: 12, color: "#c0392b", marginTop: 4, minHeight: 16 }}>{visibleError("cvv") ?? ""}</div>

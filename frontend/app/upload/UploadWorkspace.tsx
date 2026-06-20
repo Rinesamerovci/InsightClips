@@ -35,6 +35,7 @@ import {
   type ExportMode,
   type ExportSettings,
   type GenerationSettings,
+  type GenerationTemplateId,
   type PrepareUploadResponse,
   type SubtitleStyle,
   type UploadPriceResponse,
@@ -47,6 +48,9 @@ import {
   buildDefaultGenerationSettings,
   describeGenerationSettings,
   loadSavedGenerationPreferences,
+  saveGenerationPreferences,
+  applyGenerationTemplate,
+  GENERATION_TEMPLATES,
 } from "@/lib/generation-settings";
 import {
   SUBTITLE_PRESET_DETAILS,
@@ -162,6 +166,13 @@ const SOCIAL_PLATFORM_OPTIONS: Array<{
     exportMode: "landscape",
   },
 ];
+
+function getDefaultPlatformForExportMode(exportMode: ExportMode): SocialPlatformId {
+  return (
+    SOCIAL_PLATFORM_OPTIONS.find((option) => option.exportMode === exportMode)?.id ??
+    SOCIAL_PLATFORM_OPTIONS[0].id
+  );
+}
 
 export type UploadSourceMode = "file" | "youtube";
 
@@ -339,7 +350,8 @@ export default function UploadWorkspace({
   const sourceMode = initialSourceMode;
   const [exportMode, setExportMode] = useState<ExportMode>("portrait");
   const [socialPlatform, setSocialPlatform] = useState<SocialPlatformId>("tiktok");
-  const [subtitleStyle] = useState<SubtitleStyle>(() => buildSubtitleStyleFromPreset("classic"));
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(() => buildSubtitleStyleFromPreset("classic"));
+  const [generationTemplateId, setGenerationTemplateId] = useState<GenerationTemplateId>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
     buildDefaultGenerationSettings(),
   );
@@ -392,8 +404,31 @@ export default function UploadWorkspace({
 
   useEffect(() => {
     const savedPreferences = loadSavedGenerationPreferences();
-    setGenerationSettings(savedPreferences.settings);
+    const applied = applyGenerationTemplate(
+      savedPreferences.templateId,
+      null,
+      savedPreferences.settings,
+    );
+    setGenerationTemplateId(savedPreferences.templateId);
+    setGenerationSettings(applied.generationSettings);
+    if (applied.exportSettings.subtitle_style) {
+      setSubtitleStyle(applied.exportSettings.subtitle_style);
+    }
+    setExportMode(applied.exportSettings.export_mode);
+    setSocialPlatform(getDefaultPlatformForExportMode(applied.exportSettings.export_mode));
   }, []);
+
+  const handleTemplateSelect = (templateId: GenerationTemplateId) => {
+    setGenerationTemplateId(templateId);
+    const applied = applyGenerationTemplate(templateId, exportSettings, generationSettings);
+    setGenerationSettings(applied.generationSettings);
+    if (applied.exportSettings.subtitle_style) {
+      setSubtitleStyle(applied.exportSettings.subtitle_style);
+    }
+    setExportMode(applied.exportSettings.export_mode);
+    setSocialPlatform(getDefaultPlatformForExportMode(applied.exportSettings.export_mode));
+    saveGenerationPreferences(templateId, applied.generationSettings);
+  };
 
   const fileMeta = useMemo(() => {
     if (!file) return null;
@@ -688,7 +723,8 @@ export default function UploadWorkspace({
         router.replace("/login");
         return;
       }
-      setPrep(await runServerPrepare(file, result, token, mock));
+      const prepData = await runServerPrepare(file, result, token, mock);
+      setPrep(prepData);
     } catch (error) {
       setPrep(null);
       setState("error");
@@ -794,7 +830,7 @@ export default function UploadWorkspace({
         return;
       }
       await analyzePodcast(youtubeImport.podcast_id, {}, token);
-      router.push(`/clips?podcastId=${youtubeImport.podcast_id}`);
+      router.push(`/clips/generated?podcastId=${encodeURIComponent(youtubeImport.podcast_id)}&autogen=1`);
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Unable to analyze the imported video yet.");
     } finally {
@@ -1086,7 +1122,7 @@ export default function UploadWorkspace({
             <span>
               {sourceMode === "file" ? (
                 <>
-                  <strong>120-minute limit.</strong> Videos over this length are blocked automatically during pre-flight.
+                  <strong>2-hour limit.</strong> Videos over this length are blocked automatically during pre-flight.
                 </>
               ) : (
                 <>
@@ -1618,6 +1654,126 @@ export default function UploadWorkspace({
                   </div>
                 ))}
               </div>
+
+              <div style={{ gridColumn: "1 / -1", marginTop: 2 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: ".2em",
+                    textTransform: "uppercase",
+                    color: hi2,
+                    fontWeight: 700,
+                    marginBottom: 10,
+                  }}
+                >
+                  Select Style Template
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 158px), 1fr))",
+                    gap: 10,
+                    alignItems: "stretch",
+                  }}
+                >
+                  {GENERATION_TEMPLATES.map((tpl) => {
+                    const active = generationTemplateId === tpl.id;
+                    const clipCountText = tpl.generationSettings.number_of_clips === 1 ? "1 clip" : `${tpl.generationSettings.number_of_clips} clips`;
+
+                    return (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => handleTemplateSelect(tpl.id)}
+                        className="lift-card"
+                        style={{
+                          textAlign: "left",
+                          borderRadius: 14,
+                          padding: "14px",
+                          border: `1px solid ${active ? hi : subBorder}`,
+                          background: active
+                            ? d
+                              ? "rgba(90,158,58,.16)"
+                              : "rgba(90,158,58,.1)"
+                            : d
+                              ? "rgba(11,18,9,.52)"
+                              : "rgba(248,252,245,.82)",
+                          color: text,
+                          cursor: "pointer",
+                          transition: "all 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          minHeight: 124,
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: active ? hi : text }}>
+                              {tpl.label}
+                            </span>
+                            <span
+                              style={{
+                                borderRadius: 4,
+                                background: active ? "rgba(255,255,255,.15)" : d ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)",
+                                border: `1px solid ${active ? "rgba(255,255,255,.2)" : subBorder}`,
+                                padding: "1px 5px",
+                                fontSize: 9,
+                                fontWeight: 600,
+                                textTransform: "uppercase",
+                                color: active ? hi : muted,
+                              }}
+                            >
+                              {tpl.badge}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: 11, color: active ? text : muted, lineHeight: 1.4, marginBottom: 8, fontWeight: 400 }}>
+                            {tpl.title}
+                          </div>
+                        </div>
+
+                        <div style={{ marginTop: "auto" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: active ? hi : muted,
+                              textTransform: "uppercase",
+                              letterSpacing: ".02em",
+                              borderTop: `1px solid ${active ? "rgba(90,158,58,.15)" : subBorder}`,
+                              paddingTop: 8,
+                            }}
+                          >
+                            <span>
+                              {tpl.generationSettings.clip_duration_seconds}s • {clipCountText} • {tpl.exportMode}
+                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "50%",
+                                  border: `1px solid ${subBorder}`,
+                                  background: tpl.subtitleStyle.primary_color,
+                                  boxShadow: `0 0 0 1px ${tpl.subtitleStyle.background_color}`,
+                                }}
+                              />
+                              <span style={{ fontSize: 9, fontWeight: 700 }}>
+                                {tpl.subtitleStyle.font_size}px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -2060,7 +2216,7 @@ export default function UploadWorkspace({
                           }}
                         >
                           <Play size={13} />
-                          Open clips generation
+                          Analyze & generate
                         </Link>
                       </div>
                     </div>
@@ -2110,29 +2266,53 @@ export default function UploadWorkspace({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => void reserveRecord()}
-                      disabled={preparing}
-                      className="ic-action"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 8,
-                        borderRadius: 14,
-                        padding: "12px 22px",
-                        border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                        background: d ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.08)",
-                        color: d ? "#9dce7a" : "#3a6e25",
-                        fontSize: 13,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                        opacity: preparing ? 0.65 : 1,
-                      }}
-                    >
-                      {preparing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle2 size={14} />}
-                      {preparing ? "Saving..." : `Create ${exportDetails.label.toLowerCase()} record`}
-                    </button>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => pickFile(null)}
+                        disabled={preparing}
+                        className="ic-action"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          borderRadius: 14,
+                          padding: "12px 22px",
+                          border: `1px solid ${border}`,
+                          background: d ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
+                          color: text,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          opacity: preparing ? 0.65 : 1,
+                        }}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void reserveRecord()}
+                        disabled={preparing}
+                        className="ic-action"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          borderRadius: 14,
+                          padding: "12px 22px",
+                          border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
+                          background: d ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.08)",
+                          color: d ? "#9dce7a" : "#3a6e25",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          opacity: preparing ? 0.65 : 1,
+                        }}
+                      >
+                        {preparing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle2 size={14} />}
+                        {preparing ? "Saving..." : "Save upload"}
+                      </button>
+                    </div>
                     {prep ? (
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         {prep.checkout_required ? (
@@ -2159,7 +2339,7 @@ export default function UploadWorkspace({
                           </button>
                         ) : null}
                         <Link
-                          href={`/clips?podcastId=${prep.podcast_id}`}
+                          href={`/clips?podcastId=${prep.podcast_id}&autogen=1`}
                           className="ic-premium-card"
                           style={{
                             display: "inline-flex",
@@ -2176,7 +2356,26 @@ export default function UploadWorkspace({
                           }}
                         >
                           <Play size={14} />
-                          Go to clips generation
+                          Analyze & generate clips
+                        </Link>
+                        <Link
+                          href={`/dashboard`}
+                          className="ic-action"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 14,
+                            padding: "12px 18px",
+                            border: `1px solid ${border}`,
+                            background: "transparent",
+                            color: muted,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            textDecoration: "none",
+                          }}
+                        >
+                          Save & Return
                         </Link>
                       </div>
                     ) : null}
@@ -2445,9 +2644,9 @@ export default function UploadWorkspace({
                       </div>
                       <div style={{ display: "grid", gap: 9 }}>
                         {[
-                          "Save video to library",
-                          "Analyze when ready",
-                          "Open clips workspace",
+                        "Save video to library",
+                        "Analyze it here",
+                        "Generate clips right away",
                         ].map((item, index) => (
                           <div key={item} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: muted, lineHeight: 1.5 }}>
                             <span
@@ -2620,7 +2819,7 @@ export default function UploadWorkspace({
                       }}
                     >
                       {youtubeAnalyzing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-                      {youtubeAnalyzing ? "Analyzing..." : youtubeNeedsPayment ? "Payment required" : "Analyze and open clips"}
+                      {youtubeAnalyzing ? "Analyzing..." : youtubeNeedsPayment ? "Payment required" : "Analyze & generate clips"}
                     </button>
                     <Link
                       href="/podcasts"

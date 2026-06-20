@@ -129,7 +129,7 @@ class _ReferenceCandidate:
     topic_hints: tuple[str, ...]
 
 
-def analyze_and_score(podcast_id: str, transcription: TranscriptionResult) -> list[ScoreSegment]:
+def analyze_and_score(podcast_id: str, transcription: TranscriptionResult, topic_focus: str | None = None) -> list[ScoreSegment]:
     podcast_id = podcast_id.strip()
     if not podcast_id:
         raise AnalysisError("Podcast id is required.", status_code=400)
@@ -140,7 +140,7 @@ def analyze_and_score(podcast_id: str, transcription: TranscriptionResult) -> li
     if not segments:
         raise AnalysisError("Transcription did not contain enough coherent speech to analyze.")
 
-    scored_segments = [_score_segment(segment) for segment in segments]
+    scored_segments = [_score_segment(segment, topic_focus) for segment in segments]
     scored_segments.sort(
         key=lambda item: (
             -item.virality_score,
@@ -340,9 +340,12 @@ def _finalize_candidate(words: list[TranscriptWord]) -> _SegmentCandidate | None
         return None
     start = words[0].start
     end = words[-1].end
-    if end - start < MIN_SEGMENT_DURATION:
-        return _SegmentCandidate(words=words, snippet=_join_words(words))
-    return _SegmentCandidate(words=words, snippet=_join_words(words))
+    
+    snippet = _join_words(words)
+    if snippet:
+        snippet = snippet[0].upper() + snippet[1:]
+        
+    return _SegmentCandidate(words=words, snippet=snippet)
 
 
 def _merge_short_neighbors(candidates: list[_SegmentCandidate]) -> list[_SegmentCandidate]:
@@ -380,12 +383,12 @@ def _is_sentence_break(token: str) -> bool:
     return token.strip().endswith((".", "!", "?"))
 
 
-def _score_segment(segment: _SegmentCandidate) -> ScoreSegment:
+def _score_segment(segment: _SegmentCandidate, topic_focus: str | None = None) -> ScoreSegment:
     snippet = segment.snippet
     terms = _extract_terms(snippet)
     sentiment = _resolve_sentiment(terms)
     keywords = _extract_keywords(snippet, terms)
-    score = _calculate_virality_score(snippet, terms, sentiment, segment.duration)
+    score = _calculate_virality_score(snippet, terms, sentiment, segment.duration, topic_focus)
     return ScoreSegment(
         segment_start_seconds=round(segment.start, 3),
         segment_end_seconds=round(segment.end, 3),
@@ -488,6 +491,7 @@ def _calculate_virality_score(
     terms: list[str],
     sentiment: str,
     duration: float,
+    topic_focus: str | None = None,
 ) -> float:
     score = 32.0
     score += min(18.0, sum(1 for term in terms if term in VIRAL_TERMS) * 4.5)
@@ -501,6 +505,11 @@ def _calculate_virality_score(
         score += 8.0
     elif duration < 8.0 or duration > 55.0:
         score -= 6.0
+    if topic_focus:
+        topic_terms = [t.strip().lower() for t in topic_focus.split() if len(t.strip()) > 2]
+        matches = sum(1 for term in terms if term in topic_terms)
+        if matches > 0:
+            score += min(15.0, matches * 5.0)
     unique_ratio = (len(set(terms)) / len(terms)) if terms else 0.0
     score += round(unique_ratio * 12.0, 2)
     return round(max(0.0, min(100.0, score)), 2)

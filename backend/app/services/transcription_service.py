@@ -222,7 +222,10 @@ def _transcribe_with_openai(
             transcript_parts.append(payload["text"].strip())
             all_words.extend(chunk_words)
             detected_language = chunk_language
-            prompt = payload["text"].strip()[-800:]
+            
+            # Groq's Whisper API has strict prompt length limits (around 896 chars).
+            # We keep only the last 400 characters to be safe.
+            prompt = payload["text"].strip()[-400:]
 
     return " ".join(part for part in transcript_parts if part).strip(), all_words, detected_language, resolved_model
 

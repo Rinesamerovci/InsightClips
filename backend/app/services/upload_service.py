@@ -134,7 +134,7 @@ def determine_upload_price(
             status="blocked",
             price=0.0,
             free_trial_available=False,
-            message="Videos longer than 120 minutes are blocked in Sprint 2.",
+            message="Videos longer than 2 hours are blocked in Sprint 2.",
         )
 
     duration_seconds = max(0.0, duration_minutes * 60)

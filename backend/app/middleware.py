@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 from app.config import get_settings
 
@@ -34,8 +35,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 def add_common_middleware(app: FastAPI) -> None:
     app.add_middleware(RequestLoggingMiddleware)
-    app.add_middleware(
-        CORSMiddleware,
+
+
+def wrap_with_cors(app: ASGIApp) -> ASGIApp:
+    return CORSMiddleware(
+        app,
         allow_origins=settings.frontend_origins,
         allow_credentials=True,
         allow_methods=["*"],

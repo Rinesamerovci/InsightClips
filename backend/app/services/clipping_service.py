@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.config import BACKEND_DIR, ROOT_DIR
+from app.config import BACKEND_DIR, ROOT_DIR, get_settings
 from app.database import UnconfiguredSupabaseClient, service_supabase
 from app.models.analysis import ScoreSegment
 from app.models.clipping import ClipGenerationResult, ClipResult
@@ -56,6 +56,7 @@ def build_ffmpeg_clip_command(
     overlay: OverlayDecision | None = None,
     overlay_asset_path: Path | None = None,
 ) -> list[str]:
+    settings = get_settings()
     resolved_export_settings = export_settings or ExportSettings()
     command = [
         "ffmpeg",
@@ -101,9 +102,9 @@ def build_ffmpeg_clip_command(
             "-c:v",
             "libx264",
             "-preset",
-            "ultrafast",
+            settings.clip_ffmpeg_preset,
             "-crf",
-            "23",
+            str(settings.clip_ffmpeg_crf),
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -115,6 +116,8 @@ def build_ffmpeg_clip_command(
             str(output_path),
         ]
     )
+    if settings.clip_ffmpeg_threads is not None:
+        command.extend(["-threads", str(settings.clip_ffmpeg_threads)])
     return command
 
 
@@ -138,36 +141,40 @@ def build_srt_content(
 
     srt_lines: list[str] = []
     for index, cue in enumerate(cues, start=1):
-        cue_text = cue.text
-        if cue_text:
-            cue_text = cue_text[0].upper() + cue_text[1:]
-            
         srt_lines.extend(
             [
                 str(index),
                 f"{_format_srt_timestamp(cue.start)} --> {_format_srt_timestamp(cue.end)}",
-                cue_text,
+                _capitalize_initial_character(cue.text),
                 "",
             ]
         )
 
-    subtitle_text = _join_transcript_tokens(word.word for word in clip_words)
+    subtitle_text = _capitalize_initial_character(_join_transcript_tokens(word.word for word in clip_words))
     return "\n".join(srt_lines).strip(), subtitle_text
 
+
+from app.models.export_settings import GenerationSettings
 
 def generate_clips(
     podcast_id: str,
     score_segments: list[ScoreSegment],
     transcription: TranscriptionResult,
     export_settings: ExportSettingsInput | ExportSettings | None = None,
+    generation_settings: GenerationSettings | None = None,
+    visual_output_mode: str = "original_people",
 ) -> list[ClipResult]:
     podcast_row = _get_podcast_row(podcast_id)
     source_path = _resolve_source_media_path(podcast_row)
-    selected_segments = _select_segments(score_segments)
+    selected_segments = _select_segments(
+        score_segments,
+        limit=generation_settings.number_of_clips if generation_settings is not None else MAX_GENERATED_CLIPS,
+    )
     if not selected_segments:
         raise ClippingError("No scored segments are available for clip generation.", status_code=404)
 
     resolved_export_settings = _resolve_export_settings(export_settings, podcast_row=podcast_row)
+    resolved_generation_settings = generation_settings or GenerationSettings()
     output_dir = _prepare_output_directory(podcast_id)
     overlay_mapping_service_module.service_supabase = service_supabase
     generated_results: list[ClipResult] = []
@@ -203,6 +210,8 @@ def generate_clips(
                 subtitle_text=subtitle_text,
                 status="ready",
                 export_settings=resolved_export_settings,
+                generation_settings=resolved_generation_settings,
+                visual_output_mode=visual_output_mode,
             )
             overlay_decision = overlay_mapping_service_module.detect_overlay_decision(
                 podcast_id,
@@ -272,14 +281,18 @@ def generate_clips(
     return generated_results
 
 
+from app.models.export_settings import GenerationSettings
+
 def build_clip_generation_result(
     podcast_id: str,
     clips: list[ClipResult],
     *,
     processing_time_seconds: float,
     export_settings: ExportSettings | None = None,
+    generation_settings: GenerationSettings | None = None,
 ) -> ClipGenerationResult:
     resolved_export_settings = export_settings or (clips[0].export_settings if clips else ExportSettings())
+    resolved_generation_settings = generation_settings or GenerationSettings()
     return ClipGenerationResult(
         podcast_id=podcast_id,
         total_clips_generated=len(clips),
@@ -287,6 +300,7 @@ def build_clip_generation_result(
         processing_time_seconds=round(processing_time_seconds, 3),
         download_folder_url=f"/podcasts/{podcast_id}/clips",
         export_settings=resolved_export_settings,
+        generation_settings=resolved_generation_settings,
     )
 
 
@@ -376,11 +390,11 @@ def get_clip_podcast_id(clip_id: str) -> str | None:
     return str(rows[0]["podcast_id"])
 
 
-def _select_segments(score_segments: list[ScoreSegment]) -> list[ScoreSegment]:
+def _select_segments(score_segments: list[ScoreSegment], *, limit: int) -> list[ScoreSegment]:
     return sorted(
         score_segments,
         key=lambda item: (-item.virality_score, item.segment_start_seconds),
-    )[:MAX_GENERATED_CLIPS]
+    )[: max(1, min(int(limit), MAX_GENERATED_CLIPS))]
 
 
 def _resolve_clip_window(
@@ -540,6 +554,16 @@ def _join_transcript_tokens(tokens: Any) -> str:
     return "".join(parts).strip()
 
 
+def _capitalize_initial_character(text: str) -> str:
+    if not text:
+        return text
+    first_char = text[0]
+    uppered = first_char.upper()
+    if first_char == uppered:
+        return text
+    return f"{uppered}{text[1:]}"
+
+
 def _format_srt_timestamp(seconds: float) -> str:
     total_milliseconds = int(round(seconds * 1000))
     hours, remainder = divmod(total_milliseconds, 3_600_000)
@@ -548,12 +572,29 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def _build_subtitle_filter(subtitle_path: Path) -> str:
+def _build_subtitle_filter(subtitle_path: Path, subtitle_style: "SubtitleStyle") -> str:
     normalized = subtitle_path.resolve().as_posix().replace(":", r"\:")
     safe_path = normalized.replace("'", r"\'")
+
+    def to_ass_color(hex_color: str, opacity: float = 1.0) -> str:
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) != 6:
+            hex_color = "FFFFFF"
+        r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
+        alpha = int((1.0 - opacity) * 255)
+        return f"&H{alpha:02X}{b}{g}{r}"
+
+    primary = to_ass_color(subtitle_style.primary_color)
+    outline = to_ass_color(subtitle_style.outline_color)
+    bg = to_ass_color(subtitle_style.background_color, subtitle_style.background_opacity)
+    bold = -1 if subtitle_style.bold else 0
+    italic = -1 if subtitle_style.italic else 0
+
     style = (
-        "FontName=Arial,Fontsize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H64000000,"
-        "BackColour=&H32000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=32"
+        f"FontName={subtitle_style.font_family},Fontsize={subtitle_style.font_size},"
+        f"PrimaryColour={primary},OutlineColour={outline},"
+        f"BackColour={bg},BorderStyle=3,Outline=1,Shadow=0,MarginV=32,"
+        f"Bold={bold},Italic={italic}"
     )
     return f"subtitles='{safe_path}':force_style='{style}'"
 
@@ -576,7 +617,7 @@ def _build_clip_filter_chain(subtitle_path: Path, export_settings: ExportSetting
     export_filter = _build_export_filter(export_settings)
     if export_filter:
         filters.append(export_filter)
-    filters.append(_build_subtitle_filter(subtitle_path))
+    filters.append(_build_subtitle_filter(subtitle_path, export_settings.subtitle_style))
     return ",".join(filters)
 
 
@@ -753,11 +794,18 @@ def _get_podcast_row(podcast_id: str) -> dict[str, Any]:
     return rows[0]
 
 
+from app.services.source_storage_service import materialize_source_media_path, SourceStorageError
+
 def _resolve_source_media_path(podcast_row: dict[str, Any]) -> Path:
     storage_path = str(podcast_row.get("storage_path") or "").strip()
     if not storage_path:
         raise ClippingError("Podcast source media is missing, so clips cannot be generated.")
-    source_path = Path(storage_path).expanduser().resolve()
+    
+    try:
+        source_path = materialize_source_media_path(storage_path)
+    except SourceStorageError as exc:
+        raise ClippingError(f"Podcast source media was not found or could not be downloaded: {exc}", status_code=404) from exc
+
     if not source_path.exists():
         raise ClippingError(f"Podcast source media was not found: {source_path}", status_code=404)
     return source_path

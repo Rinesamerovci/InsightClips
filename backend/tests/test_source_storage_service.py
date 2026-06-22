@@ -57,6 +57,12 @@ class SourceStorageServiceTests(unittest.TestCase):
         self.assertTrue(is_source_storage_path(storage_path))
         self.assertEqual(parse_source_storage_path(storage_path), ("podcast-sources", "user-123/sources/video.mp4"))
 
+    def test_parse_source_storage_path_accepts_legacy_slash_prefix(self) -> None:
+        storage_path = "supabase/podcast-sources/user-123/sources/video.mp4"
+
+        self.assertTrue(is_source_storage_path(storage_path))
+        self.assertEqual(parse_source_storage_path(storage_path), ("podcast-sources", "user-123/sources/video.mp4"))
+
     def test_materialize_source_media_path_downloads_supabase_object(self) -> None:
         bucket = FakeStorageBucket()
         fake_supabase = FakeSupabase(bucket)

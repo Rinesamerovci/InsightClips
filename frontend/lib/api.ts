@@ -61,7 +61,14 @@ export type ExportMode = "landscape" | "portrait";
 export type CropMode = "none" | "center_crop" | "smart_crop";
 export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
 export type SubtitlePosition = "top" | "center" | "bottom";
-export type GenerationTemplateId = "hook_spotlight" | "story_arc" | "expert_take";
+export type GenerationTemplateId =
+  | "single_gem"
+  | "hook_spotlight"
+  | "highlight_pair"
+  | "story_arc"
+  | "expert_take"
+  | "tiktok_viral"
+  | "deep_conversation";
 export type VisualOutputMode = "original_people" | "book_like" | "stylized_animated";
 
 export type SubtitleStyle = {
@@ -100,6 +107,7 @@ export type GenerationSettings = {
   number_of_clips: number;
   topic_focus: string;
   subtitles_enabled: boolean;
+  language?: string;
 };
 
 export type GenerateClipsPayload = {
@@ -624,7 +632,7 @@ function buildMockUploadPrice(payload: UploadPriceRequest): UploadPriceResponse 
       currency: "USD",
       free_trial_available: false,
       status: "blocked",
-      message: "Mock mode: files above 120 minutes are blocked in Sprint 2.",
+      message: "Mock mode: files above 2 hours are blocked in Sprint 2.",
       detected_format: payload.mime_type ?? null,
       validation_flags: { mock_mode: true, duration_detected: true },
     };

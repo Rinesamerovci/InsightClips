@@ -100,7 +100,7 @@ function LoginPageContent() {
 
   useEffect(() => {
     try {
-      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
       const remembered = window.localStorage.getItem("rememberedEmail");
       if (remembered) {
         setRememberMe(true);

@@ -233,16 +233,6 @@ export default function PodcastsPage() {
   };
 
   const handleDeletePodcast = async (podcast: Podcast) => {
-    const confirmed = window.confirm(
-      [
-        `Delete "${podcast.title}"?`,
-        "",
-        "This removes the podcast, source media, analysis, generated clips, and related records.",
-        "Your one-time free upload usage will not be restored.",
-      ].join("\n"),
-    );
-    if (!confirmed) return;
-
     try {
       setDeletingByPodcast((current) => ({ ...current, [podcast.id]: true }));
       setError("");

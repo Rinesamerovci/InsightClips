@@ -73,6 +73,7 @@ class AnalyzePodcastRequest(BaseModel):
     transcription: TranscriptionResult | None = None
     transcription_model: str = "base"
     language: str | None = None
+    topic_focus: str | None = Field(default=None, max_length=500)
     force: bool = False
 
 

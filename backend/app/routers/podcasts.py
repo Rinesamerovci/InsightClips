@@ -263,7 +263,7 @@ async def analyze_podcast(
                 update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
 
         # Run CPU-bound semantic scoring off the event loop so the API remains responsive.
-        scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
+        scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription, topic_focus=payload.topic_focus)
     except AnalysisError as exc:
         update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -316,6 +316,11 @@ async def generate_podcast_clips(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ClipGenerationResult:
     podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.duration > 2 * 60 * 60:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Videos longer than 2 hours cannot generate clips. Please trim the episode or use a shorter upload.",
+        )
 
     existing_result = get_clips_for_podcast(podcast_id)
 
@@ -357,37 +362,39 @@ async def generate_podcast_clips(
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
 
     try:
-
         score_segments = payload.score_segments or get_scored_segments_for_podcast(
             podcast_id,
             limit=generation_settings.number_of_clips,
         )
         transcription = payload.transcription
-        refreshed_scores = False
+        if transcription is None:
+            saved_trans_data = podcast.import_metadata.get("transcription_data")
+            if saved_trans_data:
+                try:
+                    transcription = TranscriptionResult.model_validate(saved_trans_data)
+                except Exception:
+                    transcription = None
 
-        if not score_segments or score_segments_need_refresh(score_segments):
             if transcription is None:
-                saved_trans_data = podcast.import_metadata.get("transcription_data")
-                if saved_trans_data:
-                    try:
-                        transcription = TranscriptionResult.model_validate(saved_trans_data)
-                    except Exception:
-                        pass
+                transcription = await asyncio.to_thread(
+                    transcribe_podcast_media_for_user,
+                    podcast_id,
+                    current_user.id,
+                    model="base",
+                )
+                updated_metadata = dict(podcast.import_metadata)
+                updated_metadata["transcription_data"] = transcription.model_dump()
+                update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
 
-                if transcription is None:
-                    transcription = await asyncio.to_thread(
-                        transcribe_podcast_media_for_user,
-                        podcast_id,
-                        current_user.id,
-                        model="base",
-                    )
-                    updated_metadata = dict(podcast.import_metadata)
-                    updated_metadata["transcription_data"] = transcription.model_dump()
-                    update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
-            score_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
+        refreshed_scores = False
+        if not score_segments or score_segments_need_refresh(score_segments):
+            score_segments = await asyncio.to_thread(
+                analyze_and_score,
+                podcast_id,
+                transcription,
+                topic_focus=generation_settings.topic_focus,
+            )
             refreshed_scores = True
-
-
         if refreshed_scores:
             await asyncio.to_thread(
                 persist_analysis_result,

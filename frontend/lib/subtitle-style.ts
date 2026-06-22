@@ -126,7 +126,7 @@ export function buildDefaultExportSettings(
       ? overrides.face_tracking_enabled ?? cropMode === "smart_crop"
       : false;
 
-  return {
+  const settings: ExportSettings = {
     export_mode: resolvedExportMode,
     crop_mode: resolvedExportMode === "landscape" ? "none" : cropMode,
     mobile_optimized:
@@ -139,6 +139,12 @@ export function buildDefaultExportSettings(
       overrides.audio_enhancement,
     ),
   };
+
+  if (overrides.generation_settings) {
+    settings.generation_settings = overrides.generation_settings;
+  }
+
+  return settings;
 }
 
 export function normalizeExportSettings(

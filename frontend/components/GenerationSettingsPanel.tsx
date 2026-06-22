@@ -1,14 +1,17 @@
-import type { GenerationSettings } from "@/lib/api";
+import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
   MAX_TOPIC_LENGTH,
+  GENERATION_TEMPLATES,
 } from "@/lib/generation-settings";
 
 type GenerationSettingsPanelProps = {
   dark: boolean;
   settings: GenerationSettings;
   onSettingsChange: (changes: Partial<GenerationSettings>) => void;
+  selectedTemplateId?: GenerationTemplateId;
+  onTemplateSelect?: (templateId: GenerationTemplateId) => void;
   palette: {
     border: string;
     subBorder: string;
@@ -25,6 +28,8 @@ export default function GenerationSettingsPanel({
   dark,
   settings,
   onSettingsChange,
+  selectedTemplateId,
+  onTemplateSelect,
   palette,
   title = "Plan the clips before generation starts",
   description = "Use Topic to guide clip selection from this video. Keep fixed output settings in the controls below.",
@@ -120,7 +125,7 @@ export default function GenerationSettingsPanel({
                 color: palette.muted,
               }}
             >
-              {settings.number_of_clips} outputs
+              {settings.number_of_clips} {settings.number_of_clips === 1 ? "output" : "outputs"}
             </span>
             <span
               style={{
@@ -157,6 +162,127 @@ export default function GenerationSettingsPanel({
         </div>
 
       </div>
+
+      {onTemplateSelect ? (
+        <div style={{ marginBottom: 24, marginTop: 12 }}>
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: ".2em",
+              textTransform: "uppercase",
+              color: palette.hi2,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            Style & Generation Templates
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {GENERATION_TEMPLATES.map((tpl) => {
+              const active = selectedTemplateId === tpl.id;
+              
+              // Give each template a unique flavor
+              let icon = "✨";
+              let gradient = "linear-gradient(135deg, rgba(90,158,58,0.2) 0%, rgba(90,158,58,0.05) 100%)";
+              let activeBorder = palette.hi;
+              
+              if (tpl.id.includes("viral")) {
+                icon = "🔥";
+                gradient = dark ? "linear-gradient(135deg, rgba(255,107,107,0.2) 0%, rgba(200,80,192,0.1) 100%)" : "linear-gradient(135deg, rgba(255,107,107,0.1) 0%, rgba(200,80,192,0.05) 100%)";
+                activeBorder = "#ff6b6b";
+              } else if (tpl.id.includes("bomb") || tpl.id.includes("value")) {
+                icon = "💎";
+                gradient = dark ? "linear-gradient(135deg, rgba(74,144,226,0.2) 0%, rgba(80,227,194,0.1) 100%)" : "linear-gradient(135deg, rgba(74,144,226,0.1) 0%, rgba(80,227,194,0.05) 100%)";
+                activeBorder = "#4a90e2";
+              } else if (tpl.id.includes("hook")) {
+                icon = "🎣";
+                gradient = dark ? "linear-gradient(135deg, rgba(245,166,35,0.2) 0%, rgba(248,231,28,0.1) 100%)" : "linear-gradient(135deg, rgba(245,166,35,0.1) 0%, rgba(248,231,28,0.05) 100%)";
+                activeBorder = "#f5a623";
+              }
+
+              return (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => onTemplateSelect?.(tpl.id)}
+                  className="lift-card"
+                  style={{
+                    textAlign: "left",
+                    borderRadius: 20,
+                    padding: "16px",
+                    border: `2px solid ${active ? activeBorder : palette.subBorder}`,
+                    background: active
+                      ? gradient
+                      : dark
+                        ? "rgba(20,24,20,.6)"
+                        : "rgba(255,255,255,.8)",
+                    color: "inherit",
+                    cursor: "pointer",
+                    transition: "all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: 110,
+                    boxShadow: active ? `0 8px 24px -8px ${activeBorder}40` : "none",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 20, filter: active ? "grayscale(0%)" : "grayscale(100%)", opacity: active ? 1 : 0.5, transition: "all 0.3s" }}>{icon}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: active ? activeBorder : "inherit", letterSpacing: "-0.01em" }}>
+                          {tpl.label}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          borderRadius: 8,
+                          background: active ? `${activeBorder}20` : dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)",
+                          padding: "4px 8px",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: active ? activeBorder : palette.muted,
+                        }}
+                      >
+                        {tpl.badge}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "auto" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: active ? activeBorder : palette.muted,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        {tpl.generationSettings.clip_duration_seconds}s
+                      </div>
+                      <div style={{ width: 4, height: 4, borderRadius: "50%", background: "currentColor", opacity: 0.3 }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        {tpl.generationSettings.number_of_clips} clip{tpl.generationSettings.number_of_clips === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -277,6 +403,49 @@ export default function GenerationSettingsPanel({
               );
             })}
           </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 18,
+            border: `1px solid ${palette.subBorder}`,
+            background: dark ? "rgba(11,18,9,.6)" : "rgba(248,252,245,.82)",
+            padding: "16px 16px 14px",
+          }}
+        >
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: ".2em",
+                textTransform: "uppercase",
+                color: palette.hi2,
+                fontWeight: 700,
+                marginBottom: 10,
+              }}
+            >
+            Spoken language (optional)
+            </div>
+          <select
+            value={settings.language ?? "auto"}
+            onChange={(e) => onSettingsChange({ language: e.target.value })}
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              border: `1px solid ${palette.subBorder}`,
+              background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
+              color: dark ? "#dff0d8" : "#1e3418",
+              fontSize: 14,
+              fontWeight: 700,
+              padding: "10px 14px",
+              cursor: "pointer",
+              outline: "none",
+              appearance: "none",
+            }}
+          >
+            <option value="auto">Auto-detect (Recommended)</option>
+            <option value="sq">Albanian (Shqip)</option>
+            <option value="en">English</option>
+          </select>
         </div>
 
         <button

@@ -13,8 +13,8 @@ import {
 
 export const GENERATION_SETTINGS_STORAGE_KEY = "insightclips-generation-settings";
 
-export const CLIP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
-export const CLIP_COUNT_OPTIONS = [2, 3, 4, 5, 6] as const;
+export const CLIP_DURATION_OPTIONS = [15, 20, 30, 45, 60, 90] as const;
+export const CLIP_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
 export const MAX_TOPIC_LENGTH = 500;
 
 type GenerationTemplateDefinition = {
@@ -29,6 +29,30 @@ type GenerationTemplateDefinition = {
 };
 
 export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
+  {
+    id: "single_gem",
+    label: "Single Gem",
+    title: "One sharp standout clip",
+    description: "Finds one polished 15-second moment when you want the safest, strongest post.",
+    badge: "1 clip",
+    generationSettings: {
+      clip_duration_seconds: 15,
+      number_of_clips: 1,
+      topic_focus: "",
+      subtitles_enabled: true,
+    },
+    exportMode: "portrait",
+    subtitleStyle: {
+      ...buildSubtitleStyleFromPreset("boxed"),
+      font_family: "DM Sans",
+      font_size: 27,
+      primary_color: "#FFF7D6",
+      outline_color: "#18130A",
+      background_color: "#101010",
+      background_opacity: 0.62,
+      position: "center",
+    },
+  },
   {
     id: "hook_spotlight",
     label: "Hook Spotlight",
@@ -46,6 +70,34 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       ...buildSubtitleStyleFromPreset("bold"),
       font_family: "DM Sans",
       font_size: 26,
+      primary_color: "#FFFFFF",
+      outline_color: "#101810",
+      background_color: "#2F6B1F",
+      background_opacity: 0.28,
+      position: "bottom",
+    },
+  },
+  {
+    id: "highlight_pair",
+    label: "Highlight Pair",
+    title: "Two ready-to-test angles",
+    description: "Creates two clean clips so you can compare a hook-heavy version against a calmer insight.",
+    badge: "A/B test",
+    generationSettings: {
+      clip_duration_seconds: 30,
+      number_of_clips: 2,
+      topic_focus: "",
+      subtitles_enabled: true,
+    },
+    exportMode: "portrait",
+    subtitleStyle: {
+      ...buildSubtitleStyleFromPreset("bold"),
+      font_family: "Arial",
+      font_size: 24,
+      primary_color: "#E9FFE1",
+      outline_color: "#0D1D09",
+      background_color: "#1B3D12",
+      background_opacity: 0.34,
       position: "bottom",
     },
   },
@@ -66,6 +118,10 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       ...buildSubtitleStyleFromPreset("boxed"),
       font_family: "Georgia",
       font_size: 22,
+      primary_color: "#FFF2C2",
+      outline_color: "#211809",
+      background_color: "#3A2D13",
+      background_opacity: 0.58,
       position: "bottom",
     },
   },
@@ -86,7 +142,59 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       ...buildSubtitleStyleFromPreset("minimal"),
       font_family: "Trebuchet MS",
       font_size: 18,
+      primary_color: "#DDF7FF",
+      outline_color: "#10222A",
+      background_color: "#000000",
+      background_opacity: 0,
       position: "top",
+    },
+  },
+  {
+    id: "tiktok_viral",
+    label: "TikTok Viral",
+    title: "High-energy scroll stoppers",
+    description: "Ultra-short clips with bold captions in the center, tuned for maximum mobile virality.",
+    badge: "Scroll Stop",
+    generationSettings: {
+      clip_duration_seconds: 15,
+      number_of_clips: 5,
+      topic_focus: "",
+      subtitles_enabled: true,
+    },
+    exportMode: "portrait",
+    subtitleStyle: {
+      ...buildSubtitleStyleFromPreset("bold"),
+      font_family: "DM Sans",
+      font_size: 28,
+      primary_color: "#FFFFFF",
+      outline_color: "#111111",
+      background_color: "#7A3FF2",
+      background_opacity: 0.32,
+      position: "center",
+    },
+  },
+  {
+    id: "deep_conversation",
+    label: "Deep Conversation",
+    title: "Insightful storytelling",
+    description: "Longer widescreen segments with classic subtitles at the bottom, perfect for detailed discussions.",
+    badge: "Deep Dive",
+    generationSettings: {
+      clip_duration_seconds: 60,
+      number_of_clips: 3,
+      topic_focus: "",
+      subtitles_enabled: true,
+    },
+    exportMode: "landscape",
+    subtitleStyle: {
+      ...buildSubtitleStyleFromPreset("classic"),
+      font_family: "Arial",
+      font_size: 18,
+      primary_color: "#F5F7FF",
+      outline_color: "#111827",
+      background_color: "#111827",
+      background_opacity: 0.24,
+      position: "bottom",
     },
   },
 ];
@@ -132,7 +240,8 @@ export function describeGenerationSettings(
   settings: GenerationSettings,
 ): string {
   const normalized = normalizeGenerationSettings(settings);
-  return `${normalized.number_of_clips} clips | ${normalized.clip_duration_seconds}s | ${
+  const clipLabel = normalized.number_of_clips === 1 ? "clip" : "clips";
+  return `${normalized.number_of_clips} ${clipLabel} | ${normalized.clip_duration_seconds}s | ${
     normalized.subtitles_enabled ? "Subtitles on" : "Subtitles off"
   }`;
 }
@@ -149,17 +258,21 @@ export function getGenerationTemplate(
 export function applyGenerationTemplate(
   templateId: GenerationTemplateId,
   baseExportSettings?: ExportSettings | null,
+  baseGenerationSettings?: Partial<GenerationSettings> | null,
 ): {
   generationSettings: GenerationSettings;
   exportSettings: ExportSettings;
 } {
   const template = getGenerationTemplate(templateId);
   const resolvedBaseExportSettings = normalizeExportSettings(baseExportSettings);
+  const resolvedBaseGenerationSettings = normalizeGenerationSettings(baseGenerationSettings);
+  const generationSettings = normalizeGenerationSettings({
+    ...template.generationSettings,
+    topic_focus: resolvedBaseGenerationSettings.topic_focus,
+  });
 
   return {
-    generationSettings: {
-      ...template.generationSettings,
-    },
+    generationSettings,
     exportSettings: buildDefaultExportSettings(
       template.exportMode,
       {
@@ -168,10 +281,12 @@ export function applyGenerationTemplate(
       {
         ...resolvedBaseExportSettings,
         export_mode: template.exportMode,
+        face_tracking_enabled: template.exportMode === "portrait" ? true : resolvedBaseExportSettings.face_tracking_enabled,
         subtitle_style: {
           ...resolvedBaseExportSettings.subtitle_style,
           ...template.subtitleStyle,
         },
+        generation_settings: generationSettings,
       },
     ),
   };

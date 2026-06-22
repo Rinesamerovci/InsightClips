@@ -164,6 +164,7 @@ class GenerationSettings(BaseModel):
     number_of_clips: int = Field(default=5, ge=1, le=10)
     topic_focus: str | None = Field(default=None, max_length=500)
     subtitles_enabled: bool = True
+    language: str | None = None
 
     @field_validator("topic_focus")
     @classmethod
@@ -185,6 +186,7 @@ class GenerationSettingsInput(BaseModel):
     number_of_clips: int | None = Field(default=None, ge=1, le=10)
     topic_focus: str | None = Field(default=None, max_length=500)
     subtitles_enabled: bool | None = None
+    language: str | None = None
 
     @field_validator("topic_focus")
     @classmethod
@@ -201,6 +203,7 @@ class GenerationSettingsInput(BaseModel):
                     "number_of_clips": self.number_of_clips,
                     "topic_focus": self.topic_focus,
                     "subtitles_enabled": self.subtitles_enabled,
+                    "language": self.language,
                 }.items()
                 if value is not None
             }

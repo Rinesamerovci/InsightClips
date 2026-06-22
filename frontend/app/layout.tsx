@@ -1,24 +1,8 @@
 import type { Metadata } from "next";
-import { DM_Sans, DM_Serif_Display, JetBrains_Mono } from "next/font/google";
+import type { CSSProperties } from "react";
 import "./globals.css";
 import { AuthRouteGuard } from "@/components/AuthRouteGuard";
 import { AuthProvider } from "@/context/AuthContext";
-
-const sans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-app-sans",
-});
-
-const serif = DM_Serif_Display({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-app-serif",
-});
-
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-app-mono",
-});
 
 export const metadata: Metadata = {
   title: "InsightClips",
@@ -37,7 +21,24 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth" className="h-full antialiased">
-      <body className={`${sans.variable} ${serif.variable} ${mono.variable} min-h-full flex flex-col`}>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,700&family=DM+Serif+Display:ital@0;1&display=swap"
+        />
+      </head>
+      <body
+        style={
+          {
+            "--font-app-sans": '"DM Sans", sans-serif',
+            "--font-app-serif": '"DM Serif Display", serif',
+            "--font-app-mono": '"JetBrains Mono", monospace',
+          } as CSSProperties
+        }
+        className="min-h-full flex flex-col"
+      >
         <AuthProvider>
           <AuthRouteGuard>{children}</AuthRouteGuard>
         </AuthProvider>

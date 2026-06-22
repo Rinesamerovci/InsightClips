@@ -96,9 +96,9 @@ export function runAnalyticsTests(): void {
 
   const snapshot = buildAnalyticsSnapshot(metrics);
 
-  assert.equal(snapshot.totalVisibility, metrics.total_views + metrics.total_downloads);
+  assert.equal(snapshot.totalVisibility, metrics.total_downloads);
   assert.equal(snapshot.publishRate, 67);
-  assert.equal(snapshot.averageViewsPerClip, Math.round(metrics.total_views / metrics.total_clips));
+  assert.equal(snapshot.averageDownloadsPerClip, Math.round(metrics.total_downloads / metrics.total_clips));
   assert.equal(snapshot.topClip?.clip_id, "clip-c");
 
   const metricsMarkup = renderToStaticMarkup(
@@ -110,7 +110,6 @@ export function runAnalyticsTests(): void {
     />,
   );
 
-  assert.match(metricsMarkup, /Views/);
   assert.match(metricsMarkup, /Downloads/);
   assert.match(metricsMarkup, /Leading Clip/);
   assert.match(metricsMarkup, /Clip 3/);

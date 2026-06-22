@@ -12,7 +12,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.models.analysis import ScoreSegment  # noqa: E402
-from app.models.export_settings import ExportSettings, ExportSettingsInput  # noqa: E402
+from app.models.export_settings import ExportSettings, ExportSettingsInput, GenerationSettings  # noqa: E402
 from app.models.transcription import TranscriptWord, TranscriptionResult  # noqa: E402
 from app.models.overlay import OverlayDecision  # noqa: E402
 import app.services.clipping_service as clipping_service_module  # noqa: E402
@@ -72,18 +72,27 @@ class ClippingServiceTests(unittest.TestCase):
         ]
 
     def test_build_ffmpeg_clip_command_uses_expected_codecs_and_filter(self) -> None:
-        command = build_ffmpeg_clip_command(
-            Path("input.mp4"),
-            Path("output.mp4"),
-            Path("captions.srt"),
-            start_seconds=12.345,
-            duration_seconds=18.2,
+        settings = SimpleNamespace(
+            clip_ffmpeg_preset="veryfast",
+            clip_ffmpeg_crf=22,
+            clip_ffmpeg_threads=2,
         )
+        with patch.object(clipping_service_module, "get_settings", return_value=settings):
+            command = build_ffmpeg_clip_command(
+                Path("input.mp4"),
+                Path("output.mp4"),
+                Path("captions.srt"),
+                start_seconds=12.345,
+                duration_seconds=18.2,
+            )
 
         self.assertIn("ffmpeg", command[0])
         self.assertIn("libx264", command)
         self.assertIn("aac", command)
         self.assertIn("+faststart", command)
+        self.assertEqual(command[command.index("-preset") + 1], "veryfast")
+        self.assertEqual(command[command.index("-crf") + 1], "22")
+        self.assertEqual(command[command.index("-threads") + 1], "2")
         self.assertIn("subtitles=", command[command.index("-vf") + 1])
 
     def test_build_ffmpeg_clip_command_applies_portrait_crop_and_scale(self) -> None:
@@ -213,17 +222,84 @@ class ClippingServiceTests(unittest.TestCase):
                                 "_store_clip_assets",
                                 return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
                             ):
-                                clips = generate_clips("podcast-123", self.score_segments, self.transcription)
+                                clips = generate_clips(
+                                    "podcast-123",
+                                    self.score_segments,
+                                    self.transcription,
+                                    None,
+                                    GenerationSettings(number_of_clips=1, clip_duration_seconds=30),
+                                    "book_like",
+                                )
 
         self.assertEqual(len(clips), 1)
         self.assertEqual(clips[0].status, "ready")
         self.assertEqual(clips[0].export_settings.export_mode, "landscape")
+        self.assertEqual(clips[0].generation_settings.number_of_clips, 1)
+        self.assertEqual(clips[0].visual_output_mode, "book_like")
         insert_payload = clips_table.insert.call_args.args[0]
         self.assertEqual(insert_payload[0]["podcast_id"], "podcast-123")
         self.assertEqual(insert_payload[0]["status"], "ready")
         self.assertEqual(insert_payload[0]["export_mode"], "landscape")
         self.assertEqual(insert_payload[0]["crop_mode"], "none")
         podcasts_table.update.assert_called_once()
+
+    def test_generate_clips_limits_output_to_requested_number_of_clips(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-requested-count")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))) ,
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        podcasts_table = SimpleNamespace(
+            update=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=MagicMock()))))
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = (
+            lambda name: clips_table if name == "clips" else podcasts_table if name == "podcasts" else MagicMock()
+        )
+        score_segments = [
+            ScoreSegment(
+                segment_start_seconds=float(index * 10),
+                segment_end_seconds=float(index * 10 + 5),
+                duration_seconds=5.0,
+                virality_score=90.0 - index,
+                transcript_snippet=f"segment {index}",
+                sentiment="positive",
+                keywords=[f"kw{index}"],
+            )
+            for index in range(5)
+        ]
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_resolve_clip_window", return_value=(0.0, 5.0)):
+                            with patch.object(
+                                clipping_service_module,
+                                "build_srt_content",
+                                return_value=("1\n00:00:00,000 --> 00:00:01,000\nClip text\n", "Clip text"),
+                            ):
+                                with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                                    with patch.object(
+                                        clipping_service_module,
+                                        "_store_clip_assets",
+                                        return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                                    ):
+                                        clips = generate_clips(
+                                            "podcast-123",
+                                            score_segments,
+                                            self.transcription,
+                                            generation_settings=GenerationSettings(number_of_clips=3, clip_duration_seconds=30),
+                                        )
+
+        self.assertEqual(len(clips), 3)
+        self.assertEqual([clip.clip_number for clip in clips], [1, 2, 3])
 
     def test_generate_clips_persists_portrait_export_preferences(self) -> None:
         case_dir = self._workspace_case_dir("clipping-export-settings")

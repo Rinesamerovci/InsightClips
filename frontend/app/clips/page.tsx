@@ -57,6 +57,7 @@ import {
   loadSavedGenerationPreferences,
   normalizeGenerationSettings,
   saveGenerationPreferences,
+  applyGenerationTemplate,
 } from "@/lib/generation-settings";
 import {
   buildDiscoveryItem,
@@ -340,6 +341,17 @@ function formatGenerationFailureMessage(error: unknown): string {
   return baseMessage;
 }
 
+function estimateGenerationTimeoutMs(settings: GenerationSettings): number {
+  const clipCount = Math.max(1, Math.min(settings.number_of_clips || 1, 10));
+  const clipDuration = Math.max(8, Math.min(settings.clip_duration_seconds || 30, 90));
+  const estimatedMinutes = 10 + clipCount * 2 + Math.ceil((clipCount * clipDuration) / 60);
+  return Math.min(45, Math.max(15, estimatedMinutes)) * 60 * 1000;
+}
+
+function formatTimeoutMinutes(timeoutMs: number): number {
+  return Math.round(timeoutMs / 60_000);
+}
+
 type ClipsPageMode = "results" | "generate";
 
 type ClipsPageContentProps = {
@@ -386,6 +398,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
     buildDefaultGenerationSettings(),
   );
+  const generationTemplateIdRef = useRef<GenerationTemplateId>("hook_spotlight");
+  const generationSettingsRef = useRef<GenerationSettings>(buildDefaultGenerationSettings());
   const [generationExportSettings, setGenerationExportSettings] =
     useState<ExportSettings | null>(null);
   const [visualOutputMode, setVisualOutputMode] =
@@ -487,9 +501,25 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
 
     const savedPreferences = loadSavedGenerationPreferences();
+    const applied = applyGenerationTemplate(
+      savedPreferences.templateId,
+      null,
+      savedPreferences.settings,
+    );
+    generationTemplateIdRef.current = savedPreferences.templateId;
+    generationSettingsRef.current = applied.generationSettings;
     setGenerationTemplateId(savedPreferences.templateId);
-    setGenerationSettings(savedPreferences.settings);
+    setGenerationSettings(applied.generationSettings);
+    setGenerationExportSettings(applied.exportSettings);
   }, [mounted]);
+
+  useEffect(() => {
+    generationTemplateIdRef.current = generationTemplateId;
+  }, [generationTemplateId]);
+
+  useEffect(() => {
+    generationSettingsRef.current = generationSettings;
+  }, [generationSettings]);
 
   useEffect(() => {
     if (!mounted) {
@@ -614,7 +644,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
     let cancelled = false;
     const startedAt = generationStartedAt ?? Date.now();
-    const generationTimeoutMs = 8 * 60 * 1000;
+    const generationTimeoutMs = estimateGenerationTimeoutMs(generationSettings);
+    const generationTimeoutMinutes = formatTimeoutMinutes(generationTimeoutMs);
 
     const refreshGeneratedClips = async () => {
       try {
@@ -625,7 +656,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
         if (Date.now() - startedAt > generationTimeoutMs) {
           throw new Error(
-            "Clip generation timed out after 8 minutes. The backend may be stuck on rendering or waiting on storage.",
+            `Clip generation timed out after ${generationTimeoutMinutes} minutes. The backend may be stuck on rendering or waiting on storage.`,
           );
         }
 
@@ -647,7 +678,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           setActionFeedback({
             tone: "error",
             message:
-              "Clip generation timed out after 8 minutes. Try fewer clips, a shorter duration, or rerun generation.",
+              `Clip generation timed out after ${generationTimeoutMinutes} minutes. Try fewer clips, a shorter duration, or rerun generation.`,
           });
         }
       }
@@ -666,6 +697,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     authLoading,
     backendToken,
     generationStartedAt,
+    generationSettings,
     generating,
     selectedPodcast,
     selectedPodcastId,
@@ -747,7 +779,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       return;
     }
 
-    setGenerationExportSettings(normalizeExportSettings(selectedPodcast.export_settings));
+    const applied = applyGenerationTemplate(
+      generationTemplateIdRef.current,
+      selectedPodcast.export_settings,
+      generationSettingsRef.current,
+    );
+    setGenerationExportSettings(applied.exportSettings);
   }, [selectedPodcast]);
 
   useEffect(() => {
@@ -797,6 +834,19 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
             : normalized.topic_focus,
       };
     });
+  };
+
+  const handleTemplateSelect = (templateId: GenerationTemplateId) => {
+    setGenerationTemplateId(templateId);
+    const applied = applyGenerationTemplate(
+      templateId,
+      generationExportSettings ?? selectedPodcast?.export_settings ?? null,
+      generationSettings,
+    );
+    generationTemplateIdRef.current = templateId;
+    generationSettingsRef.current = applied.generationSettings;
+    setGenerationSettings(applied.generationSettings);
+    setGenerationExportSettings(applied.exportSettings);
   };
 
   const handleVisualOutputModeChange = (mode: VisualOutputMode) => {
@@ -1885,6 +1935,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     dark={dark}
                     settings={generationSettings}
                     onSettingsChange={handleGenerationSettingsChange}
+                    selectedTemplateId={generationTemplateId}
+                    onTemplateSelect={handleTemplateSelect}
                     storageHint="These preferences are reused across the upload and clips workflow on this device."
                     palette={{
                       border: t.border,

@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   Camera,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Loader2,
   Moon,
   Palette,
@@ -120,11 +122,13 @@ export default function ProfilePage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordFeedback, setPasswordFeedback] = useState<{
     tone: "success" | "error";
     message: string;
   } | null>(null);
-  const [deleteConfirmationEmail, setDeleteConfirmationEmail] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteFeedback, setDeleteFeedback] = useState<{
     tone: "success" | "error" | "info";
@@ -364,39 +368,6 @@ export default function ProfilePage() {
       return;
     }
 
-    const expectedEmail = profile.email.toLowerCase();
-    if (deleteConfirmationEmail.trim().toLowerCase() !== expectedEmail) {
-      setDeleteFeedback({
-        tone: "error",
-        message: "Type your account email exactly before deleting this account.",
-      });
-      return;
-    }
-
-    const confirmed = window.confirm(
-      [
-        "Are you sure you want to permanently delete this account?",
-        "",
-        "This removes your profile, podcasts, source media, generated clips, and sign-in access.",
-        "Your one-time free upload usage will not be restored for this email.",
-      ].join("\n"),
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const finalConfirmed = window.confirm(
-      [
-        "Final confirmation required.",
-        "",
-        "Do you really want to delete this account permanently?",
-        "This action cannot be undone.",
-      ].join("\n"),
-    );
-    if (!finalConfirmed) {
-      return;
-    }
-
     setDeleteLoading(true);
     setDeleteFeedback({
       tone: "info",
@@ -410,7 +381,7 @@ export default function ProfilePage() {
         return;
       }
 
-      await deleteUserAccount(deleteConfirmationEmail.trim(), token);
+      await deleteUserAccount(profile.email, token);
       setDeleteFeedback({
         tone: "success",
         message: "Account deleted successfully. Signing out...",
@@ -426,6 +397,7 @@ export default function ProfilePage() {
       });
     } finally {
       setDeleteLoading(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -1003,34 +975,80 @@ export default function ProfilePage() {
               ) : null}
 
               <div style={{ display: "grid", gap: 12 }}>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  placeholder="New password"
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${palette.subBorder}`,
-                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
-                    color: palette.text,
-                    padding: "14px 16px",
-                    outline: "none",
-                  }}
-                />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Confirm new password"
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${palette.subBorder}`,
-                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
-                    color: palette.text,
-                    padding: "14px 16px",
-                    outline: "none",
-                  }}
-                />
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="New password"
+                    style={{
+                      width: "100%",
+                      borderRadius: 16,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
+                      color: palette.text,
+                      padding: "14px 48px 14px 16px",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((value) => !value)}
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      border: "none",
+                      background: "transparent",
+                      color: palette.muted,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <div style={{ position: "relative" }}>
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    placeholder="Confirm new password"
+                    style={{
+                      width: "100%",
+                      borderRadius: 16,
+                      border: `1px solid ${palette.subBorder}`,
+                      background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
+                      color: palette.text,
+                      padding: "14px 48px 14px 16px",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((value) => !value)}
+                    aria-label={showConfirmPassword ? "Hide confirmation password" : "Show confirmation password"}
+                    style={{
+                      position: "absolute",
+                      right: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      border: "none",
+                      background: "transparent",
+                      color: palette.muted,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => void handleChangePassword()}
@@ -1124,24 +1142,41 @@ export default function ProfilePage() {
               ) : null}
 
               <div style={{ display: "grid", gap: 12 }}>
-                <input
-                  type="email"
-                  value={deleteConfirmationEmail}
-                  onChange={(event) => setDeleteConfirmationEmail(event.target.value)}
-                  placeholder={`Type ${profile?.email ?? "your email"} to confirm`}
+                <div
                   style={{
                     borderRadius: 16,
-                    border: `1px solid ${palette.subBorder}`,
-                    background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.8)",
-                    color: palette.text,
-                    padding: "14px 16px",
-                    outline: "none",
+                    border: `1px solid ${palette.deleteBorder}`,
+                    background: palette.deleteBg,
+                    padding: "12px 14px",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                    color: palette.deleteText,
                   }}
-                />
+                >
+                  <strong style={{ display: "block", marginBottom: 4 }}>What will be removed</strong>
+                  Profile data, podcasts, clips, source media, and sign-in access are deleted from the workspace.
+                </div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${palette.successBorder}`,
+                    background: palette.successBg,
+                    padding: "12px 14px",
+                    color: palette.successText,
+                    lineHeight: 1.65,
+                    fontSize: 13,
+                  }}
+                >
+                  <strong style={{ display: "block", marginBottom: 4 }}>What you should do first</strong>
+                  Download anything important before continuing. Once deleted, the account cannot be restored.
+                </div>
                 <button
                   type="button"
-                  onClick={() => void handleDeleteAccount()}
-                  disabled={deleteLoading || !profile}
+                  onClick={() => {
+                    setDeleteFeedback(null);
+                    setShowDeleteConfirm(true);
+                  }}
+                  disabled={!profile}
                   style={{
                     border: "none",
                     borderRadius: 16,
@@ -1153,18 +1188,125 @@ export default function ProfilePage() {
                     justifyContent: "center",
                     gap: 8,
                     fontWeight: 700,
-                    cursor: deleteLoading || !profile ? "default" : "pointer",
-                    opacity: deleteLoading || !profile ? 0.72 : 1,
+                    cursor: !profile ? "default" : "pointer",
+                    opacity: !profile ? 0.72 : 1,
                   }}
                 >
-                  {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                  {deleteLoading ? "Deleting..." : "Delete account permanently"}
+                  <Trash2 size={16} />
+                  Delete account
                 </button>
               </div>
             </section>
           </aside>
         </div>
       </div>
+      {showDeleteConfirm ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 140,
+            background: "rgba(10, 16, 8, .45)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm account deletion"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(100%, 460px)",
+              borderRadius: 22,
+              border: `1px solid ${palette.deleteBorder}`,
+              background: dark ? "rgba(20, 24, 15, .98)" : "rgba(255,255,255,.98)",
+              boxShadow: dark ? "0 30px 80px rgba(0,0,0,.45)" : "0 24px 70px rgba(36,60,25,.18)",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "18px 18px 0" }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: palette.deleteText, textTransform: "uppercase", letterSpacing: ".12em" }}>
+                Confirm account deletion
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${palette.deleteBorder}`,
+                    background: palette.deleteBg,
+                    padding: "12px 14px",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                    color: palette.deleteText,
+                  }}
+                >
+                  This will permanently delete your account, podcasts, generated clips, source media, and sign-in access.
+                </div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${palette.successBorder}`,
+                    background: palette.successBg,
+                    padding: "12px 14px",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                    color: palette.successText,
+                  }}
+                >
+                  You can cancel now and nothing changes. If you continue, the workspace cannot be restored.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, padding: 18 }}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1,
+                  borderRadius: 14,
+                  border: `1px solid ${palette.subBorder}`,
+                  background: palette.card,
+                  color: palette.text,
+                  padding: "10px 14px",
+                  fontWeight: 700,
+                  cursor: deleteLoading ? "default" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteAccount()}
+                disabled={deleteLoading || !profile}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  borderRadius: 14,
+                  background: palette.deleteButton,
+                  color: "#fff",
+                  padding: "10px 14px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  fontWeight: 700,
+                  cursor: deleteLoading || !profile ? "default" : "pointer",
+                  opacity: deleteLoading || !profile ? 0.72 : 1,
+                }}
+              >
+                {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {deleteLoading ? "Deleting..." : "Yes, delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

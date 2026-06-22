@@ -48,7 +48,7 @@ function determineMockPrice(
     return {
       price: 0,
       status: "blocked",
-      message: "Videos longer than 120 minutes are blocked in Sprint 2.",
+      message: "Videos longer than 2 hours are blocked in Sprint 2.",
       free_trial_available: false,
     };
   }

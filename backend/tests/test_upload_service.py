@@ -259,6 +259,103 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload["import_metadata"]["channel"], "Insight Lab")
         record_free_trial_usage_mock.assert_called_once_with("user-123", 182.4)
 
+    def test_file_upload_free_usage_blocks_later_youtube_free_import(self) -> None:
+        download_result = YouTubeDownloadResult(
+            title="Later YouTube Episode",
+            storage_path=".generated/youtube-imports/user-123/abcDEF123_4.mp4",
+            duration_seconds=600.0,
+            filename="abcDEF123_4.mp4",
+            filesize_bytes=2048,
+            mime_type="video/mp4",
+            detected_format="mp4",
+            metadata={"normalized_url": "https://www.youtube.com/watch?v=abcDEF123_4"},
+        )
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(return_value=SimpleNamespace(data=[{"id": "podcast-upload"}]))
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table.return_value = SimpleNamespace(insert=insert_mock)
+
+        with (
+            patch.object(upload_service_module, "service_supabase", service_supabase_mock),
+            patch.object(upload_service_module, "_get_latest_free_trial_state", return_value=False),
+            patch.object(upload_service_module, "_get_free_trial_remaining_for_user", side_effect=[1800.0, 0.0]),
+            patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock,
+            patch.object(upload_service_module, "_get_existing_youtube_import", return_value=None),
+            patch.object(upload_service_module, "_download_youtube_media", return_value=download_result),
+            patch.object(upload_service_module, "_persist_youtube_source_media", return_value=download_result),
+            patch.object(upload_service_module, "create_imported_podcast_record", return_value="pod-youtube") as create_mock,
+        ):
+            upload_response = prepare_upload(
+                UploadPrepareRequest(
+                    title="Free Upload",
+                    filename="episode.mp4",
+                    duration_seconds=1800.0,
+                    price=0.0,
+                    status="free_ready",
+                ),
+                self.user,
+            )
+            youtube_response = import_youtube_podcast(
+                YouTubeImportRequest(url="https://www.youtube.com/watch?v=abcDEF123_4"),
+                self.user,
+            )
+
+        self.assertEqual(upload_response.status, "ready_for_processing")
+        self.assertEqual(youtube_response.status, "awaiting_payment")
+        self.assertTrue(youtube_response.checkout_required)
+        self.assertEqual(youtube_response.payment_status, "pending")
+        self.assertEqual(youtube_response.price, 1.0)
+        record_free_trial_usage_mock.assert_called_once_with("user-123", 1800.0)
+        self.assertEqual(create_mock.call_args.args[0]["payment_status"], "pending")
+
+    def test_youtube_free_usage_blocks_later_file_upload_free_prepare(self) -> None:
+        download_result = YouTubeDownloadResult(
+            title="Free YouTube Episode",
+            storage_path=".generated/youtube-imports/user-123/abcDEF123_4.mp4",
+            duration_seconds=1800.0,
+            filename="abcDEF123_4.mp4",
+            filesize_bytes=2048,
+            mime_type="video/mp4",
+            detected_format="mp4",
+            metadata={"normalized_url": "https://www.youtube.com/watch?v=abcDEF123_4"},
+        )
+        service_supabase_mock = MagicMock()
+        execute_mock = MagicMock(return_value=SimpleNamespace(data=[{"id": "podcast-upload"}]))
+        insert_mock = MagicMock(return_value=SimpleNamespace(execute=execute_mock))
+        service_supabase_mock.table.return_value = SimpleNamespace(insert=insert_mock)
+
+        with (
+            patch.object(upload_service_module, "service_supabase", service_supabase_mock),
+            patch.object(upload_service_module, "_get_latest_free_trial_state", return_value=False),
+            patch.object(upload_service_module, "_get_free_trial_remaining_for_user", side_effect=[1800.0, 0.0]),
+            patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock,
+            patch.object(upload_service_module, "_get_existing_youtube_import", return_value=None),
+            patch.object(upload_service_module, "_download_youtube_media", return_value=download_result),
+            patch.object(upload_service_module, "_persist_youtube_source_media", return_value=download_result),
+            patch.object(upload_service_module, "create_imported_podcast_record", return_value="pod-youtube"),
+        ):
+            youtube_response = import_youtube_podcast(
+                YouTubeImportRequest(url="https://www.youtube.com/watch?v=abcDEF123_4"),
+                self.user,
+            )
+            upload_response = prepare_upload(
+                UploadPrepareRequest(
+                    title="Paid Upload After Free YouTube",
+                    filename="episode.mp4",
+                    duration_seconds=600.0,
+                    price=1.0,
+                    status="awaiting_payment",
+                ),
+                self.user,
+            )
+
+        self.assertEqual(youtube_response.status, "ready_for_processing")
+        self.assertEqual(upload_response.status, "awaiting_payment")
+        self.assertTrue(upload_response.checkout_required)
+        self.assertEqual(upload_response.payment_status, "pending")
+        self.assertEqual(upload_response.price, 1.0)
+        record_free_trial_usage_mock.assert_called_once_with("user-123", 1800.0)
+
     def test_import_youtube_podcast_surfaces_download_failure(self) -> None:
         with patch.object(
             upload_service_module,

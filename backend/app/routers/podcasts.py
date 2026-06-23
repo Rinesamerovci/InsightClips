@@ -183,8 +183,17 @@ async def get_podcast_analytics(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found for the current user.",
-        )
+    )
     return get_user_podcast_analytics(current_user.id)
+
+
+@router.get("/{podcast_id}", response_model=PodcastResponse)
+async def get_podcast(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PodcastResponse:
+    podcast = _get_owned_podcast_or_404(podcast_id, current_user.id)
+    return PodcastResponse.model_validate(podcast.model_dump())
 
 
 @router.patch("/{podcast_id}/payment", response_model=PodcastResponse)

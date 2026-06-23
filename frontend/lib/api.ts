@@ -328,6 +328,8 @@ export type Podcast = {
   title: string;
   duration: number;
   status: string;
+  price?: number;
+  payment_status?: string;
   storage_path?: string | null;
   source_type?: PodcastSourceType;
   source_url?: string | null;
@@ -808,6 +810,20 @@ export async function getUserProfile(token?: string | null): Promise<ProfileResp
   return getJson<ProfileResponse>("/users/profile", token);
 }
 
+export async function getPodcastById(
+  podcastId: string,
+  token?: string | null,
+): Promise<PodcastResponse | null> {
+  try {
+    return await getJson<PodcastResponse>(`/podcasts/${podcastId}`, token);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function updateUserProfile(
   payload: UpdateProfilePayload,
   token?: string | null,
@@ -928,6 +944,18 @@ export async function createCheckoutSession(
   token?: string | null,
 ): Promise<{ checkout_url: string }> {
   return postJson<{ checkout_url: string }>("/upload/checkout-session", { podcast_id: podcastId, price }, token);
+}
+
+export async function confirmStripeCheckoutSession(
+  podcastId: string,
+  sessionId: string,
+  token?: string | null,
+): Promise<PodcastResponse> {
+  return postJson<PodcastResponse>(
+    "/upload/stripe-session-confirm",
+    { podcast_id: podcastId, session_id: sessionId },
+    token,
+  );
 }
 
 export async function analyzePodcast(

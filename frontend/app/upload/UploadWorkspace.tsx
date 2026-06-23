@@ -27,10 +27,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import {
   analyzePodcast,
-  confirmMockPayment,
   importYouTubePodcast,
-  isMockPodcastId,
-    createCheckoutSession,
+  createCheckoutSession,
   type AudioEnhancementSettings,
   type ExportMode,
   type ExportSettings,
@@ -752,30 +750,6 @@ export default function UploadWorkspace({
       setErr(error instanceof Error ? error.message : "Unable to start checkout.");
     }
   };
-
-  useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const payment = params.get("payment");
-      const podcastId = params.get("podcast_id");
-      if (payment === "success" && podcastId) {
-        (async () => {
-          setErr("");
-          try {
-            const token = backendToken ?? (await syncBackendSession());
-            if (!token) return;
-            if (!isMockPodcastId(podcastId)) {
-              await confirmMockPayment(podcastId, "paid", token);
-            }
-            await analyzePodcast(podcastId, {}, token);
-            router.push(`/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`);
-          } catch (err) {
-            setErr(err instanceof Error ? err.message : "Payment succeeded but processing failed.");
-          }
-        })();
-      }
-    } catch {}
-  }, [backendToken, router, syncBackendSession]);
 
   const submitYouTubeImport = async () => {
     const normalizedImport = normalizeYouTubeImportUrl(youtubeUrl);
@@ -2799,6 +2773,28 @@ export default function UploadWorkspace({
                   </div>
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {youtubeNeedsPayment ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleStartCheckout(youtubeImport.podcast_id, youtubeImport.price)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          borderRadius: 999,
+                          padding: "12px 20px",
+                          border: "1px solid rgba(158,138,32,.38)",
+                          background: "#9e8a20",
+                          color: "#fff",
+                          fontSize: 13,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <CreditCard size={14} />
+                        Pay with Stripe
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void analyzeImportedPodcast()}

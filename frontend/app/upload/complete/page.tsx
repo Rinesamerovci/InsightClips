@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Moon, Sparkles, SunMedium } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { confirmMockPayment, isMockPodcastId } from "@/lib/api";
+import { analyzePodcast, confirmStripeCheckoutSession, getPodcastById } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 type CompletionPhase = "loading" | "processing" | "redirect" | "error";
@@ -61,6 +61,60 @@ export default function UploadCompletePage() {
     let cancelled = false;
 
     const clipsUrl = `/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`;
+    const pollIntervalMs = 2500;
+    const maxWaitMs = 90000;
+    const getCurrentSessionId = () => {
+      if (typeof window === "undefined") {
+        return "";
+      }
+      return new URLSearchParams(window.location.search).get("session_id")?.trim() ?? "";
+    };
+
+    const waitForStripeConfirmation = async (token: string) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < maxWaitMs) {
+        const podcast = await getPodcastById(podcastId, token);
+        if (!podcast) {
+          throw new Error("Could not find the podcast after checkout.");
+        }
+
+        if (podcast.payment_status === "failed" || podcast.status === "blocked") {
+          throw new Error("Stripe payment was not completed successfully.");
+        }
+
+        const paymentSettled =
+          podcast.payment_status === "paid" ||
+          podcast.payment_status === "not_required" ||
+          podcast.status === "ready_for_processing" ||
+          podcast.status === "processing" ||
+          podcast.status === "done";
+        if (paymentSettled) {
+          return podcast;
+        }
+
+        const currentSessionId = getCurrentSessionId();
+        if (currentSessionId) {
+          try {
+            const confirmed = await confirmStripeCheckoutSession(podcastId, currentSessionId, token);
+            const confirmedSettled =
+              confirmed.payment_status === "paid" ||
+              confirmed.payment_status === "not_required" ||
+              confirmed.status === "ready_for_processing" ||
+              confirmed.status === "processing" ||
+              confirmed.status === "done";
+            if (confirmedSettled) {
+              return confirmed;
+            }
+          } catch {
+            // Ignore transient Stripe lookup errors and keep polling the podcast row.
+          }
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, pollIntervalMs));
+      }
+
+      throw new Error("Stripe is still confirming the payment. Please refresh in a moment.");
+    };
 
     const finalizeCheckout = async () => {
       setPhase("processing");
@@ -81,15 +135,14 @@ export default function UploadCompletePage() {
           return;
         }
 
-        if (!isMockPodcastId(podcastId)) {
-          setDetail("Marking the episode as paid.");
-          await confirmMockPayment(podcastId, "paid", token);
-        }
+        setDetail("Waiting for Stripe to confirm the payment.");
+        await waitForStripeConfirmation(token);
 
         if (!cancelled) {
           if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-          setDetail("Payment confirmed! Redirecting to your clips…");
+          setDetail("Payment confirmed! Redirecting to your clips...");
           setPhase("redirect");
+          await analyzePodcast(podcastId, {}, token);
           router.replace(clipsUrl);
         }
       } catch (err) {
@@ -200,7 +253,7 @@ export default function UploadCompletePage() {
                     cursor: "pointer",
                   }}
                 >
-                  Go to my clips →
+                  Go to my clips &rarr;
                 </a>
               )}
             </div>
@@ -365,3 +418,4 @@ export default function UploadCompletePage() {
     </div>
   );
 }
+

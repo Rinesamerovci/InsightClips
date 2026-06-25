@@ -25,7 +25,7 @@ def _create_supabase_client(url: str, key: str) -> Client | UnconfiguredSupabase
     return create_client(
         url,
         key,
-        ClientOptions(httpx_client=httpx.Client(trust_env=False)),
+        ClientOptions(httpx_client=httpx.Client(trust_env=False, timeout=600.0)),
     )
 
 service_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(
@@ -79,6 +79,11 @@ def run_db_healthcheck() -> bool:
 @asynccontextmanager
 async def lifespan(_: object) -> Iterator[None]:
     open_db_pool()
+    try:
+        if not isinstance(service_supabase, UnconfiguredSupabaseClient):
+            service_supabase.table("podcasts").update({"status": "ready_for_processing"}).eq("status", "processing").execute()
+    except Exception:
+        pass
     try:
         yield
     finally:

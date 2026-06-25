@@ -11,7 +11,9 @@ import {
 } from "./clip-insights";
 
 const configuredBackendUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ??
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ??
+  "http://localhost:8000";
 const uploadPreflightMode = process.env.NEXT_PUBLIC_UPLOAD_PREFLIGHT_MODE?.trim().toLowerCase() ?? "real";
 const BACKEND_IS_LOCAL = (() => {
   try {
@@ -38,6 +40,10 @@ export function shouldUseMockUploadFlow(): boolean {
   return FRONTEND_UPLOAD_PREFLIGHT_MODE === "mock";
 }
 
+export function isMockPodcastId(podcastId: string): boolean {
+  return podcastId === "mock-podcast-id" || podcastId === "mock-youtube-import";
+}
+
 type JsonRecord = Record<string, unknown>;
 
 export type UploadState =
@@ -55,7 +61,14 @@ export type ExportMode = "landscape" | "portrait";
 export type CropMode = "none" | "center_crop" | "smart_crop";
 export type SubtitleStylePreset = "classic" | "bold" | "minimal" | "boxed";
 export type SubtitlePosition = "top" | "center" | "bottom";
-export type GenerationTemplateId = "hook_spotlight" | "story_arc" | "expert_take";
+export type GenerationTemplateId =
+  | "single_gem"
+  | "hook_spotlight"
+  | "highlight_pair"
+  | "story_arc"
+  | "expert_take"
+  | "tiktok_viral"
+  | "deep_conversation";
 export type VisualOutputMode = "original_people" | "book_like" | "stylized_animated";
 
 export type SubtitleStyle = {
@@ -94,9 +107,11 @@ export type GenerationSettings = {
   number_of_clips: number;
   topic_focus: string;
   subtitles_enabled: boolean;
+  language?: string;
 };
 
 export type GenerateClipsPayload = {
+  score_segments?: ScoreSegment[];
   generation_settings?: GenerationSettings;
   export_settings?: ExportSettings;
   visual_output_mode?: VisualOutputMode;
@@ -278,6 +293,8 @@ export type AnalyzePodcastPayload = {
     processing_time_seconds: number;
   };
   transcription_model?: string;
+  language?: string;
+  force?: boolean;
 };
 
 export type ScoreSegment = {
@@ -311,6 +328,8 @@ export type Podcast = {
   title: string;
   duration: number;
   status: string;
+  price?: number;
+  payment_status?: string;
   storage_path?: string | null;
   source_type?: PodcastSourceType;
   source_url?: string | null;
@@ -320,6 +339,8 @@ export type Podcast = {
   created_at: string | null;
   updated_at: string | null;
 };
+
+export type PodcastResponse = Podcast;
 
 export type PodcastsResponse = {
   podcasts: Podcast[];
@@ -529,10 +550,16 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
   return headers;
 }
 
+function buildBackendConnectionErrorMessage(path: string, candidates: string[]): string {
+  const targets = candidates.join(" or ");
+  return `Unable to reach the backend at ${targets} while requesting ${path}. Start the FastAPI server on port 8000, or set NEXT_PUBLIC_BACKEND_URL to the correct API URL.`;
+}
+
 async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let lastError: Error | null = null;
+  const candidates = buildBackendCandidates();
 
-  for (const backendUrl of buildBackendCandidates()) {
+  for (const backendUrl of candidates) {
     try {
       const response = await fetch(`${backendUrl}${path}`, {
         method: options.method ?? "GET",
@@ -548,11 +575,15 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
       return payload as T;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Request failed.");
       if (error instanceof ApiRequestError) {
         throw error;
       }
+      lastError = error instanceof Error ? error : new Error("Request failed.");
     }
+  }
+
+  if (lastError?.name === "TypeError" || /failed to fetch/i.test(lastError?.message ?? "")) {
+    throw new Error(buildBackendConnectionErrorMessage(path, candidates));
   }
 
   throw lastError ?? new Error("Request failed.");
@@ -560,8 +591,9 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
 async function requestBlob(path: string, token?: string | null): Promise<Blob> {
   let lastError: Error | null = null;
+  const candidates = buildBackendCandidates();
 
-  for (const backendUrl of buildBackendCandidates()) {
+  for (const backendUrl of candidates) {
     try {
       const response = await fetch(`${backendUrl}${path}`, {
         method: "GET",
@@ -576,11 +608,15 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
 
       return await response.blob();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Download failed.");
       if (error instanceof ApiRequestError) {
         throw error;
       }
+      lastError = error instanceof Error ? error : new Error("Download failed.");
     }
+  }
+
+  if (lastError?.name === "TypeError" || /failed to fetch/i.test(lastError?.message ?? "")) {
+    throw new Error(buildBackendConnectionErrorMessage(path, candidates));
   }
 
   throw lastError ?? new Error("Download failed.");
@@ -598,7 +634,7 @@ function buildMockUploadPrice(payload: UploadPriceRequest): UploadPriceResponse 
       currency: "USD",
       free_trial_available: false,
       status: "blocked",
-      message: "Mock mode: files above 120 minutes are blocked in Sprint 2.",
+      message: "Mock mode: files above 2 hours are blocked in Sprint 2.",
       detected_format: payload.mime_type ?? null,
       validation_flags: { mock_mode: true, duration_detected: true },
     };
@@ -774,6 +810,20 @@ export async function getUserProfile(token?: string | null): Promise<ProfileResp
   return getJson<ProfileResponse>("/users/profile", token);
 }
 
+export async function getPodcastById(
+  podcastId: string,
+  token?: string | null,
+): Promise<PodcastResponse | null> {
+  try {
+    return await getJson<PodcastResponse>(`/podcasts/${podcastId}`, token);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function updateUserProfile(
   payload: UpdateProfilePayload,
   token?: string | null,
@@ -888,6 +938,26 @@ export async function importYouTubePodcast(
   return postJson<YouTubeImportResponse>("/upload/youtube", payload as JsonRecord, options.token);
 }
 
+export async function createCheckoutSession(
+  podcastId: string,
+  price: number,
+  token?: string | null,
+): Promise<{ checkout_url: string }> {
+  return postJson<{ checkout_url: string }>("/upload/checkout-session", { podcast_id: podcastId, price }, token);
+}
+
+export async function confirmStripeCheckoutSession(
+  podcastId: string,
+  sessionId: string,
+  token?: string | null,
+): Promise<PodcastResponse> {
+  return postJson<PodcastResponse>(
+    "/upload/stripe-session-confirm",
+    { podcast_id: podcastId, session_id: sessionId },
+    token,
+  );
+}
+
 export async function analyzePodcast(
   podcastId: string,
   payload: AnalyzePodcastPayload,
@@ -918,6 +988,9 @@ export async function generateClips(
       : maybeToken;
 
   const requestBody: JsonRecord = {};
+  if (payload?.score_segments) {
+    requestBody.score_segments = payload.score_segments;
+  }
   if (payload?.generation_settings) {
     requestBody.generation_settings = payload.generation_settings;
   }
@@ -984,6 +1057,19 @@ export async function revokeClipDownload(
   token?: string | null,
 ): Promise<ClipRevocationResult> {
   return postJson<ClipRevocationResult>(`/clips/${clipId}/revoke-download`, {}, token);
+}
+
+// INTEGRATION POINT: In production, payment status should be set by backend webhook, not client
+export async function confirmMockPayment(
+  podcastId: string,
+  paymentStatus: "paid" | "failed",
+  token: string,
+): Promise<PodcastResponse> {
+  return patchJson<PodcastResponse>(
+    `/podcasts/${podcastId}/payment`,
+    { payment_status: paymentStatus },
+    token,
+  );
 }
 
 function normalizeCalendarText(value: string): string {

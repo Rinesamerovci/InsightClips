@@ -295,7 +295,7 @@ def _compute_overlay_safe_margins(
         overlay_margin_y += 18
     elif effective_visual_output_mode == "stylized_animated":
         overlay_margin_x += 14
-        overlay_margin_y += 26
+        overlay_margin_y += 36
 
     return overlay_margin_x, overlay_margin_y
 
@@ -331,9 +331,6 @@ def _tune_subtitle_style(
     if tuned.preset != "minimal" and tuned.outline_color == tuned.primary_color:
         tuned.outline_color = "#000000" if tuned.primary_color.upper() != "#000000" else "#FFFFFF"
 
-    if export_mode == "portrait" and tuned.position == "bottom" and duration >= 45:
-        tuned.position = "center"
-
     if visual_output_mode == "book_like":
         if tuned.font_family == "Arial":
             tuned.font_family = "Georgia"
@@ -345,7 +342,6 @@ def _tune_subtitle_style(
         if tuned.font_family == "Arial":
             tuned.font_family = "DM Sans"
         tuned.bold = True
-        tuned.position = "center"
         tuned.background_opacity = max(tuned.background_opacity, 0.58)
         tuned.font_size = max(tuned.font_size, 24 if export_mode == "portrait" else 20)
 

@@ -37,24 +37,24 @@ export function buildAnalyticsSnapshot(metrics: PodcastClipMetrics | null): {
   topClip: PodcastClipMetrics["top_clips"][number] | null;
   totalVisibility: number;
   publishRate: number;
-  averageViewsPerClip: number;
+  averageDownloadsPerClip: number;
 } {
   const topClip = metrics?.top_clips[0] ?? null;
-  const totalVisibility = metrics ? metrics.total_views + metrics.total_downloads : 0;
+  const totalVisibility = metrics ? metrics.total_downloads : 0;
   const publishRate =
     metrics && metrics.total_clips > 0
       ? Math.round((metrics.published_clips / metrics.total_clips) * 100)
       : 0;
-  const averageViewsPerClip =
+  const averageDownloadsPerClip =
     metrics && metrics.total_clips > 0
-      ? Math.round(metrics.total_views / metrics.total_clips)
+      ? Math.round(metrics.total_downloads / metrics.total_clips)
       : 0;
 
   return {
     topClip,
     totalVisibility,
     publishRate,
-    averageViewsPerClip,
+    averageDownloadsPerClip,
   };
 }
 
@@ -74,7 +74,6 @@ export function AnalyticsMetricsDisplay({
   const snapshot = buildAnalyticsSnapshot(metrics);
   const metricCards = metrics
     ? [
-        { label: "Views", value: metrics.total_views },
         { label: "Downloads", value: metrics.total_downloads },
         { label: "Published", value: metrics.published_clips },
         {
@@ -166,9 +165,9 @@ export function AnalyticsMetricsDisplay({
           <div style={{ fontSize: 34, lineHeight: 1.04, marginBottom: 8 }}>
             {snapshot.totalVisibility}
           </div>
-          <div style={{ color: theme.textSub, lineHeight: 1.75 }}>
-            Combined views and downloads across the selected podcast&apos;s clip set,
-            averaging {snapshot.averageViewsPerClip} views per clip.
+        <div style={{ color: theme.textSub, lineHeight: 1.75 }}>
+            Combined downloads across the selected podcast&apos;s clip set,
+            averaging {snapshot.averageDownloadsPerClip} downloads per clip.
           </div>
         </MetricPanel>
 
@@ -185,13 +184,13 @@ export function AnalyticsMetricsDisplay({
                 <MetricBadge
                   background={theme.chip}
                   color={theme.accent}
-                  label={`${snapshot.topClip.views} views`}
+                  label={`${snapshot.topClip.downloads} downloads`}
                 />
                 <MetricBadge
                   background={theme.cardAlt}
                   border={`1px solid ${theme.borderSub}`}
                   color={theme.textSub}
-                  label={`${snapshot.topClip.downloads} downloads`}
+                  label={snapshot.topClip.published ? "Published" : "Private"}
                 />
                 <MetricBadge
                   background={theme.cardAlt}
@@ -213,7 +212,79 @@ export function AnalyticsMetricsDisplay({
               automatically.
             </div>
           )}
-        </MetricPanel>
+          </MetricPanel>
+        </section>
+
+      <section
+        style={{
+          borderRadius: 24,
+          background: theme.cardAlt,
+          border: `1px solid ${theme.borderSub}`,
+          padding: 20,
+          display: "grid",
+          gap: 14,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: ".2em",
+              textTransform: "uppercase",
+              color: theme.textFaint,
+              marginBottom: 6,
+            }}
+          >
+            Clip trend chart
+          </div>
+          <h3 style={{ margin: 0, fontSize: 26, lineHeight: 1.1 }}>
+            Top clips by downloads
+          </h3>
+        </div>
+
+        {metrics.top_clips.length > 0 ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {metrics.top_clips.slice(0, 5).map((clip) => {
+              const maxDownloads = Math.max(...metrics.top_clips.map((item) => item.downloads), 1);
+              const width = Math.max(10, Math.round((clip.downloads / maxDownloads) * 100));
+
+              return (
+                <div key={clip.clip_id} style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>
+                      Clip {clip.clip_number}
+                    </div>
+                    <div style={{ fontSize: 12, color: theme.textSub }}>
+                      {clip.downloads} downloads · {formatAnalyticsChange(clip.click_trend)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      height: 10,
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,.06)",
+                      border: `1px solid ${theme.borderSub}`,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${width}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent}88)`,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ color: theme.textSub, lineHeight: 1.75 }}>
+            Generate clips first, then the chart will show their ranking by downloads.
+          </div>
+        )}
       </section>
 
       <section
@@ -247,7 +318,7 @@ export function AnalyticsMetricsDisplay({
               Top Clips Table
             </div>
             <h3 style={{ margin: 0, fontSize: 30, lineHeight: 1.05 }}>
-              Views, downloads, and click trends
+              Downloads and click trends
             </h3>
           </div>
           {metrics.estimated ? (
@@ -305,9 +376,8 @@ export function AnalyticsMetricsDisplay({
                     {clip.published ? "Published" : "Private"}
                   </span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8, marginTop: 12 }}>
                   {[
-                    { label: "Views", value: clip.views },
                     { label: "Downloads", value: clip.downloads },
                     { label: "Trend", value: formatAnalyticsChange(clip.click_trend), tone: clip.click_trend >= 0 ? theme.accent : theme.errorText },
                   ].map((item) => (
@@ -338,7 +408,6 @@ export function AnalyticsMetricsDisplay({
                   }}
                 >
                   <th style={{ padding: "0 0 12px" }}>Clip</th>
-                  <th style={{ padding: "0 0 12px" }}>Views</th>
                   <th style={{ padding: "0 0 12px" }}>Downloads</th>
                   <th style={{ padding: "0 0 12px" }}>Click Trend</th>
                   <th style={{ padding: "0 0 12px" }}>Status</th>
@@ -362,10 +431,7 @@ export function AnalyticsMetricsDisplay({
                         {clip.title}
                       </div>
                     </td>
-                    <td style={{ padding: "14px 0", fontWeight: 700 }}>{clip.views}</td>
-                    <td style={{ padding: "14px 0", fontWeight: 700 }}>
-                      {clip.downloads}
-                    </td>
+                    <td style={{ padding: "14px 0", fontWeight: 700 }}>{clip.downloads}</td>
                     <td
                       style={{
                         padding: "14px 0",

@@ -89,7 +89,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     try {
-      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
     } catch {}
   }, []);
 

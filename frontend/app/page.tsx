@@ -126,7 +126,8 @@ export default function InsightClipsLanding() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,700&family=DM+Serif+Display:ital@0;1&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::selection { background: ${t.accent}40; color: ${t.text}; }
+        ::selection { background: #1f4b20; color: #ffffff; }
+        ::-moz-selection { background: #1f4b20; color: #ffffff; }
         html { scroll-behavior: smooth; }
 
         @keyframes float-slow  { 0%,100%{transform:translateY(0)}  50%{transform:translateY(-18px)} }
@@ -229,6 +230,7 @@ export default function InsightClipsLanding() {
             >
               Features
             </button>
+
             <button
               className="nav-link"
               style={{ color:t.textMuted }}
@@ -236,6 +238,7 @@ export default function InsightClipsLanding() {
             >
               Stats
             </button>
+
             <Link href="/login" className="nav-link" style={{ color:t.textMuted }}>
               Sign In
             </Link>
@@ -546,49 +549,104 @@ export default function InsightClipsLanding() {
         </section>
       </main>
 
-      {/* ═══════════════════════════ FOOTER ═══════════════════════════ */}
+      {/* ═══════════════════════════ FULL FOOTER ═══════════════════════════ */}
       <footer style={{
         borderTop:`1px solid ${t.border}`,
-        padding:isMobile ? "42px 18px" : "60px 40px",
+        padding:isMobile ? "60px 20px" : "80px 40px",
         background: isDark ? "rgba(0,0,0,.3)" : "rgba(0,0,0,.02)",
       }}>
         <div style={{
           maxWidth:1280, margin:"0 auto",
-          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:isMobile ? 22 : 32,
+          display:"grid",
+          gridTemplateColumns:isMobile ? "1fr" : "2fr 1fr 1fr 1fr",
+          gap:isMobile ? 40 : 60,
+          marginBottom: 60,
         }}>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-            <Image
-              src="/insightclips-logo.svg"
-              alt="InsightClips logo"
-              width={34}
-              height={34}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-              }}
-            />
-            <span style={{
-              fontFamily:"'DM Serif Display', serif", fontSize:18,
-              fontStyle:"italic", color:t.text, letterSpacing:"-.02em",
-            }}>
-              Insight<span style={{color:t.accent}}>Clips</span>
-            </span>
+          {/* Brand Info */}
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
+              <Image
+                src="/insightclips-logo.svg"
+                alt="InsightClips logo"
+                width={34}
+                height={34}
+                style={{ borderRadius: 10 }}
+              />
+              <span style={{ fontFamily:"'DM Serif Display', serif", fontSize:22, fontStyle:"italic", color:t.text, letterSpacing:"-.02em" }}>
+                Insight<span style={{color:t.accent}}>Clips</span>
+              </span>
+            </div>
+            <p style={{ color:t.textMuted, fontSize:14, lineHeight:1.6, maxWidth:300, marginBottom:24 }}>
+              The unified workspace for analyzing, editing, and publishing your best moments.
+            </p>
+            <div style={{ display:"flex", gap:16, color:t.textFaint }}>
+              <Globe size={18} cursor="pointer" className="hover-accent" />
+              <Shield size={18} cursor="pointer" className="hover-accent" />
+            </div>
           </div>
 
-          <p style={{ fontSize:11, fontWeight:600, color:t.textFaint, letterSpacing:".2em", textTransform:"uppercase" }}>
-            © 2026 InsightClips · All rights reserved
+          {/* Product Links */}
+          <div>
+            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Product</h4>
+            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
+              {["Features", "Integrations", "Pricing", "Changelog", "API"].map(link => (
+                <li key={link}>
+                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
+                    {link}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Resources Links */}
+          <div>
+            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Resources</h4>
+            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
+              {["Help Center", "Creator Guides", "Community", "Blog", "Status"].map(link => (
+                <li key={link}>
+                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
+                    {link}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Legal Links */}
+          <div>
+            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Legal</h4>
+            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
+              {["Privacy Policy", "Terms of Service", "Cookie Policy", "Security"].map(link => (
+                <li key={link}>
+                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
+                    {link}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Footer Bottom */}
+        <div style={{
+          maxWidth:1280, margin:"0 auto",
+          paddingTop: 30, borderTop:`1px solid ${t.border}`,
+          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:20,
+        }}>
+          <p style={{ fontSize:11, fontWeight:600, color:t.textFaint, letterSpacing:".15em", textTransform:"uppercase" }}>
+            © 2026 InsightClips, Inc. · All rights reserved
           </p>
 
           <div style={{ display:"flex", gap:isMobile ? 14 : 28, flexWrap:"wrap" }}>
             {[
-              { icon:<Globe size={16}/>,       label:"Global CDN" },
-              { icon:<Shield size={16}/>,      label:"SOC 2" },
-              { icon:<CheckCircle2 size={16}/>, label:"99.9% SLA" },
+              { icon:<Globe size={14}/>,       label:"Global delivery" },
+              { icon:<Shield size={14}/>,      label:"Private by default" },
+              { icon:<CheckCircle2 size={14}/>, label:"Built for teams" },
             ].map(({ icon, label }) => (
               <div key={label} style={{
-                display:"flex", alignItems:"center", gap:7,
-                color:t.textMuted, fontSize:11, fontWeight:600,
+                display:"flex", alignItems:"center", gap:6,
+                color:t.textFaint, fontSize:10, fontWeight:600,
                 letterSpacing:".1em", textTransform:"uppercase", cursor:"default",
               }}>
                 {icon} {label}

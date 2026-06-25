@@ -10,6 +10,8 @@ from app.config import get_settings
 from app.database import UnconfiguredSupabaseClient, service_supabase
 
 SOURCE_STORAGE_SCHEME = "supabase"
+SOURCE_STORAGE_PREFIX = f"{SOURCE_STORAGE_SCHEME}://"
+LEGACY_SOURCE_STORAGE_PREFIX = f"{SOURCE_STORAGE_SCHEME}/"
 
 
 class SourceStorageError(Exception):
@@ -40,15 +42,20 @@ def build_source_storage_path(bucket: str, key: str) -> str:
 
 
 def is_source_storage_path(value: str | None) -> bool:
-    return bool(value and value.strip().startswith(f"{SOURCE_STORAGE_SCHEME}://"))
+    if not value:
+        return False
+    cleaned = value.strip()
+    return cleaned.startswith(SOURCE_STORAGE_PREFIX) or cleaned.startswith(LEGACY_SOURCE_STORAGE_PREFIX)
 
 
 def parse_source_storage_path(storage_path: str) -> tuple[str, str]:
     cleaned = storage_path.strip()
-    prefix = f"{SOURCE_STORAGE_SCHEME}://"
-    if not cleaned.startswith(prefix):
+    if cleaned.startswith(SOURCE_STORAGE_PREFIX):
+        remainder = cleaned[len(SOURCE_STORAGE_PREFIX) :]
+    elif cleaned.startswith(LEGACY_SOURCE_STORAGE_PREFIX):
+        remainder = cleaned[len(LEGACY_SOURCE_STORAGE_PREFIX) :]
+    else:
         raise SourceStorageError("Source storage path is not a Supabase Storage path.", status_code=500)
-    remainder = cleaned[len(prefix) :]
     bucket, separator, key = remainder.partition("/")
     if not separator or not bucket.strip() or not key.strip():
         raise SourceStorageError("Source storage path is incomplete.", status_code=500)
@@ -79,6 +86,8 @@ def upload_source_media(
             {"content-type": content_type, "upsert": "true"},
         )
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         status_code, detail = _map_storage_upload_error(exc)
         raise SourceStorageError(detail, status_code=status_code) from exc
 

@@ -8,6 +8,8 @@ import {
   Loader2,
   Lock,
   ShieldAlert,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 import { AuthScaffold } from "@/components/AuthScaffold";
@@ -18,6 +20,7 @@ import { supabase } from "@/lib/supabase";
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -216,19 +219,39 @@ export default function ResetPasswordPage() {
             <div style={{ position: "relative" }}>
               <Lock size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: shell.faint }} />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="New password"
                 style={inputStyle}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                style={{
+                  position: "absolute",
+                  right: 14,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: shell.faint,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 4,
+                }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
 
             <div style={{ position: "relative" }}>
               <Lock size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: shell.faint }} />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}

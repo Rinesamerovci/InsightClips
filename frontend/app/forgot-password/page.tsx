@@ -55,10 +55,14 @@ export default function ForgotPasswordPage() {
 
   const shell = getAuthTheme(dark);
   const normalizedEmail = email.trim().toLowerCase();
+  const recoveryRedirectTo =
+    typeof window === "undefined"
+      ? undefined
+      : `${window.location.origin}/auth/confirm?next=/reset-password`;
 
   useEffect(() => {
     try {
-      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
     } catch {}
   }, []);
 
@@ -67,15 +71,16 @@ export default function ForgotPasswordPage() {
   }, [dark]);
 
   const sendRecoveryCode = async () => {
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: normalizedEmail,
-      options: {
-        shouldCreateUser: false,
-      },
+    if (!normalizedEmail) {
+      throw new Error("Enter your email address before requesting a recovery code.");
+    }
+
+    const { error: otpError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: recoveryRedirectTo,
     });
 
     if (otpError) {
-      throw new Error(otpError.message || "Unable to send recovery code.");
+      throw new Error(otpError.message || "Unable to send password recovery instructions.");
     }
   };
 
@@ -87,10 +92,10 @@ export default function ForgotPasswordPage() {
 
     try {
       await sendRecoveryCode();
-      setInfo(`We sent a 6-digit recovery code to ${normalizedEmail}.`);
+      setInfo(`We sent password recovery instructions to ${normalizedEmail}.`);
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to send recovery code.");
+      setError(err instanceof Error ? err.message : "Unable to send password recovery instructions.");
     }
 
     setLoading(false);
@@ -142,7 +147,7 @@ export default function ForgotPasswordPage() {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email: normalizedEmail,
         token,
-        type: "email",
+        type: "recovery",
       });
 
       if (verifyError) {
@@ -164,9 +169,9 @@ export default function ForgotPasswordPage() {
 
     try {
       await sendRecoveryCode();
-      setInfo(`A new recovery code was sent to ${normalizedEmail}.`);
+      setInfo(`New password recovery instructions were sent to ${normalizedEmail}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to resend recovery code.");
+      setError(err instanceof Error ? err.message : "Unable to resend password recovery instructions.");
     } finally {
       setResending(false);
     }
@@ -197,12 +202,12 @@ export default function ForgotPasswordPage() {
           <em style={{ color: shell.accent }}>without losing momentum.</em>
         </>
       }
-      showcaseBody="The recovery flow stays simple: request one code, verify it, then reset the password and get back to the dashboard."
+      showcaseBody="Request the reset email, open the recovery link, then set a new password."
       showcaseContent={
         <div style={{ display: "grid", gap: 14 }}>
           <RecoveryStep
-            title="1. Request recovery code"
-            body="Enter the email tied to your workspace and we will send a one-time code."
+            title="1. Request reset email"
+            body="Enter the email tied to your workspace and we will send a recovery link."
             active
             accent={shell.accent}
             border={shell.border}
@@ -210,7 +215,7 @@ export default function ForgotPasswordPage() {
           />
           <RecoveryStep
             title="2. Verify session"
-            body="Confirm the code once to open a valid password reset session."
+            body="Open the reset link and confirm the recovery session."
             active={step >= 2}
             accent={shell.accent}
             border={shell.border}
@@ -218,7 +223,7 @@ export default function ForgotPasswordPage() {
           />
           <RecoveryStep
             title="3. Create a new password"
-            body="Finish on the next screen and return directly to sign in."
+            body="Set the new password and sign in again."
             active={step === 2}
             accent={shell.accent}
             border={shell.border}
@@ -238,10 +243,10 @@ export default function ForgotPasswordPage() {
               Password recovery
             </div>
             <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 34, lineHeight: 1, letterSpacing: "-0.04em", marginBottom: 10 }}>
-              Send recovery code
+              Send reset email
             </h1>
             <p style={{ color: shell.muted, fontSize: 14, lineHeight: 1.7 }}>
-              We will send a 6-digit code to the email linked with your account.
+              We&apos;ll send a reset link to the email linked with your account.
             </p>
           </div>
 
@@ -280,11 +285,11 @@ export default function ForgotPasswordPage() {
               {loading ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  Sending code...
+                  Sending email...
                 </>
               ) : (
                 <>
-                  Send recovery code
+                  Send reset email
                   <ChevronRight size={16} />
                 </>
               )}
@@ -303,7 +308,7 @@ export default function ForgotPasswordPage() {
               Enter your code
             </h1>
             <p style={{ color: shell.muted, fontSize: 14, lineHeight: 1.7 }}>
-              Sent to <strong style={{ color: shell.text }}>{normalizedEmail}</strong>.
+              Sent to <strong style={{ color: shell.text }}>{normalizedEmail}</strong>. Open the reset link from that email, or enter its 6-digit code here.
             </p>
           </div>
 

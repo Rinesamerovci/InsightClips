@@ -10,6 +10,7 @@ import {
   getPodcastAnalytics,
   getUserExportSettings,
   getUserProfile,
+  confirmStripeCheckoutSession,
   importYouTubePodcast,
   getRecommendations,
   prepareUpload,
@@ -65,6 +66,7 @@ export async function runApiTests(): Promise<void> {
   await testSubmitFeedbackPostsProtectedMessage();
   await testPrepareUploadPostsExportSettings();
   await testImportYouTubePodcastPostsSourcePayload();
+  await testConfirmStripeCheckoutSessionPostsPaymentPayload();
   await testGenerateClipsPostsGenerationSettingsPayload();
   await testGenerateClipsFallsBackToLegacyPayloadWhenBackendRejectsNewFields();
   await testGetContentCalendarUsesBackendRoute();
@@ -669,6 +671,49 @@ async function testImportYouTubePodcastPostsSourcePayload(): Promise<void> {
           mobile_optimized: false,
           face_tracking_enabled: false,
         },
+      }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+async function testConfirmStripeCheckoutSessionPostsPaymentPayload(): Promise<void> {
+  const { calls, restore } = withMockFetch(async (url, init) => {
+    if (url.endsWith("/upload/stripe-session-confirm")) {
+      return jsonResponse({
+        id: "pod-youtube",
+        user_id: "user-1",
+        title: "Founder interview",
+        duration: 1824,
+        status: "ready_for_processing",
+        price: 2,
+        payment_status: "paid",
+        storage_path: ".generated/youtube-imports/user-1/abcDEF123_4.mp4",
+        source_type: "youtube",
+        source_url: "https://www.youtube.com/watch?v=abcDEF123_4",
+        external_source_id: "abcDEF123_4",
+        import_metadata: {},
+        export_settings: null,
+        created_at: "2026-04-23T09:00:00Z",
+        updated_at: "2026-04-24T09:00:00Z",
+      });
+    }
+
+    throw new Error(`Unexpected URL ${url} (${init?.method ?? "GET"})`);
+  });
+
+  try {
+    const result = await confirmStripeCheckoutSession("pod-youtube", "cs_test_123", "token-123");
+
+    assert.equal(result.payment_status, "paid");
+    assert.equal(result.status, "ready_for_processing");
+    assert.equal(calls[0]?.init?.method, "POST");
+    assert.equal(
+      calls[0]?.init?.body,
+      JSON.stringify({
+        podcast_id: "pod-youtube",
+        session_id: "cs_test_123",
       }),
     );
   } finally {

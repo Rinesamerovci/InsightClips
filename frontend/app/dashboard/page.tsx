@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   LogOut, Moon, Plus, SunMedium, Mic2, Download,
-  Sparkles, Settings, Bell, ChevronRight, Play,
+  Sparkles, Settings, Bell, ChevronRight, Play, CreditCard,
   Activity, Zap, TrendingUp,
   Radio, LayoutDashboard, Library, BarChart2,
   User, ArrowUpRight,
@@ -168,13 +168,14 @@ function SignalPill({
 ═══════════════════════════════════════════════════════════ */
 export default function DashboardPage() {
   const router  = useRouter();
-  const { backendToken, loading: authLoading, signOut, syncBackendSession } = useAuth();
+  const { backendToken, loading: authLoading, signOut, syncBackendSession, user } = useAuth();
 
   const [profile,   setProfile]   = useState<ProfileResponse | null>(null);
   const [podcasts,  setPodcasts]  = useState<Podcast[]>([]);
   const [analytics, setAnalytics] = useState<UserPodcastAnalytics | null>(null);
   const [isMock,    setIsMock]    = useState(false);
   const [loading,   setLoading]   = useState(true);
+  const [loadingTimeoutReached, setLoadingTimeoutReached] = useState(false);
   const [error,     setError]     = useState("");
   const [dark,      setDark]      = useState(true);
   const [mounted,   setMounted]   = useState(false);
@@ -182,6 +183,7 @@ export default function DashboardPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showAllLibrary, setShowAllLibrary] = useState(false);
   const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -203,6 +205,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoadingTimeoutReached(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!mounted) return;
     window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark, mounted]);
@@ -212,12 +221,24 @@ export default function DashboardPage() {
   }, [isMobile]);
 
   useEffect(() => {
+    setShowAllLibrary(false);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (authLoading) return;
     const load = async () => {
       setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
-        if (!token) { router.replace("/login"); return; }
+        if (!token) {
+          if (!user) {
+            router.replace("/login");
+            return;
+          }
+
+          setError("Your session is still syncing. Please wait a moment and the dashboard will finish loading.");
+          return;
+        }
         const [p, pod, overview] = await Promise.all([
           getJson<ProfileResponse>("/users/profile", token),
           getJson<PodcastsResponse>("/podcasts", token),
@@ -227,6 +248,10 @@ export default function DashboardPage() {
         setProfile(p); setPodcasts(loadedPodcasts); setIsMock(Boolean(pod?.is_mock)); setAnalytics(overview);
         const analysisEntries = await Promise.all(
           loadedPodcasts.map(async (podcast) => {
+            if (!["done", "completed"].includes(podcast.status)) {
+              return [podcast.id, null] as const;
+            }
+
             try {
               const summary = await getPodcastAnalysis(podcast.id, token);
               return [podcast.id, summary] as const;
@@ -240,7 +265,7 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     };
     void load();
-  }, [authLoading, backendToken, router, syncBackendSession]);
+  }, [authLoading, backendToken, router, syncBackendSession, user]);
 
   const safePodcasts = Array.isArray(podcasts) ? podcasts : [];
 
@@ -253,10 +278,16 @@ export default function DashboardPage() {
     ),
   }));
 
+  const podcastsInDisplayOrder = [...podcastsWithEffectiveStatus].sort((left, right) => {
+    const leftTime = left.created_at ? Date.parse(left.created_at) : 0;
+    const rightTime = right.created_at ? Date.parse(right.created_at) : 0;
+    return rightTime - leftTime;
+  });
+
   const processing = podcastsWithEffectiveStatus.filter(p => isProcessingStatus(p.status)).length;
   const payments   = podcastsWithEffectiveStatus.filter(p => isPaymentStatus(p.status)).length;
   const done       = podcastsWithEffectiveStatus.filter(p => isDoneStatus(p.status)).length;
-  const filtered   = podcastsWithEffectiveStatus.filter(p =>
+  const filtered   = podcastsInDisplayOrder.filter(p =>
     activeTab === "all"
       ? true
       : activeTab === "processing"
@@ -265,6 +296,8 @@ export default function DashboardPage() {
           ? isPaymentStatus(p.status)
         : isDoneStatus(p.status)
   );
+  const visibleLibraryPodcasts = showAllLibrary ? filtered : filtered.slice(0, 3);
+  const libraryHasMore = filtered.length > visibleLibraryPodcasts.length;
 
   const firstName = profile?.full_name?.split(" ")[0] ?? null;
   const workspaceEpisodes = safePodcasts.length;
@@ -364,7 +397,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, [notificationsOpen]);
 
-  const runAnalysis = async (podcastId: string) => {
+  const runAnalysis = async (podcastId: string, language?: string, force?: boolean) => {
     try {
       setAnalysisLoadingByPodcast((current) => ({ ...current, [podcastId]: true }));
       setPodcasts((current) =>
@@ -374,8 +407,14 @@ export default function DashboardPage() {
       );
       setError("");
       const token = backendToken ?? (await syncBackendSession());
-      if (!token) { router.replace("/login"); return; }
-      const result = await analyzePodcast(podcastId, {}, token);
+      if (!token) {
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+        throw new Error("Session is still syncing.");
+      }
+      const result = await analyzePodcast(podcastId, { language, force }, token);
       setPodcasts((current) =>
         current.map((podcast) =>
           podcast.id === podcastId ? { ...podcast, status: "done" } : podcast
@@ -403,7 +442,7 @@ export default function DashboardPage() {
   };
 
   /* ── loading screen ── */
-  if (!mounted || loading || authLoading) return (
+  if ((!mounted || loading || authLoading) && !loadingTimeoutReached) return (
     <div style={{ display:"flex", minHeight:"100vh", alignItems:"center", justifyContent:"center", background: dark ? T.dark.bg : T.light.bg }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
@@ -578,11 +617,22 @@ export default function DashboardPage() {
 
           {/* Nav */}
           <nav style={{ flex: 1, padding: "14px 10px", display: "flex", flexDirection:"column", gap: 4 }}>
+            {!collapsed && (
+              <div style={{ padding: "6px 10px 8px", fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint }}>
+                Workspace
+              </div>
+            )}
             <NavItem icon={LayoutDashboard} label="Overview"  href="/dashboard" active t={t} collapsed={collapsed}/>
             <NavItem icon={Library}         label="Library"   href="/podcasts"  t={t} collapsed={collapsed}/>
             <NavItem icon={BarChart2}       label="Analytics" href="/analytics" t={t} collapsed={collapsed}/>
+            {!collapsed && (
+              <div style={{ padding: "14px 10px 8px", fontSize: 10, fontWeight: 700, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint }}>
+                Account
+              </div>
+            )}
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
+            <NavItem icon={CreditCard}       label="Billing"   href="/settings/billing"  t={t} collapsed={collapsed}/>
           </nav>
 
           {/* Profile + sign out */}
@@ -1332,20 +1382,43 @@ export default function DashboardPage() {
                       )}
                     </div>
                   ) : (
-                    <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(min(100%,220px),1fr))", gap:14 }}>
-                      {filtered.map((podcast,i) => (
-                        <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
-                          <PodcastCard
-                            podcast={podcast}
-                            analysis={analysisByPodcast[podcast.id]}
-                            analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
-                            onAnalyze={() => void runAnalysis(podcast.id)}
-                            generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
-                            dark={dark}
-                          />
+                    <>
+                      <div style={{ display:"grid", gridTemplateColumns:isMobile ? "1fr" : "repeat(auto-fill,minmax(min(100%,220px),1fr))", gap:14 }}>
+                        {visibleLibraryPodcasts.map((podcast,i) => (
+                          <div key={podcast.id} className={`pod-item pc`} style={{ "--i":i, borderRadius:14 } as React.CSSProperties}>
+                            <PodcastCard
+                              podcast={podcast}
+                              analysis={analysisByPodcast[podcast.id]}
+                              analysisLoading={Boolean(analysisLoadingByPodcast[podcast.id])}
+                              onAnalyze={(lang, force) => void runAnalysis(podcast.id, lang, force)}
+                              generatedClipsCount={generatedClipsByPodcastId[podcast.id] ?? 0}
+                              dark={dark}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {libraryHasMore && (
+                        <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                          <button
+                            type="button"
+                            onClick={() => setShowAllLibrary((value) => !value)}
+                            className="ic-btn"
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${t.border}`,
+                              background: dark ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.06)",
+                              color: t.text,
+                              padding: "10px 16px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {showAllLibrary ? "Show less" : `Show more (${filtered.length - visibleLibraryPodcasts.length})`}
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

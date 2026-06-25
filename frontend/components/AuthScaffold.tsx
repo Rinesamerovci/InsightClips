@@ -60,11 +60,25 @@ export function AuthScaffold({
         fontFamily: "var(--font-sans)",
       }}
     >
+      <div
+        className="auth-brand-corner"
+        style={{
+          position: "fixed",
+          top: 22,
+          left: 24,
+          zIndex: 20,
+        }}
+      >
+        <BrandMark accent={shell.accent} inverse={dark} />
+      </div>
+
       <section
         className="auth-showcase ic-premium-card"
         style={{
+          minHeight: "100vh",
           background: shell.showcase,
           borderRight: `1px solid ${shell.border}`,
+          overflow: "hidden",
         }}
       >
         <div
@@ -89,8 +103,6 @@ export function AuthScaffold({
         />
 
         <div style={{ position: "relative", zIndex: 1, maxWidth: 620, margin: "0 auto" }}>
-          <BrandMark accent={shell.accent} inverse={dark} />
-
           <div
             className="ic-premium-card"
             style={{
@@ -102,7 +114,7 @@ export function AuthScaffold({
               background: shell.accentSoft,
               color: shell.accent,
               padding: "8px 14px",
-              marginTop: 42,
+              marginTop: 76,
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: ".18em",
@@ -169,7 +181,9 @@ export function AuthScaffold({
       <section
         className="auth-panel"
         style={{
+          minHeight: "100vh",
           background: dark ? "rgba(13,16,8,.94)" : "rgba(245,248,238,.96)",
+          overflowY: "auto",
         }}
       >
         <div

@@ -11,7 +11,14 @@ from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
 from app.models.publishing import ClipPublicationResult, PublishClipsRequest
 from app.models.publishing import ContentCalendarResponse
-from app.models.podcast import DeletePodcastResponse, PodcastsResponse, UserPodcastAnalytics
+from app.models.transcription import TranscriptionResult
+from app.models.podcast import (
+    DeletePodcastResponse,
+    PodcastResponse,
+    PodcastsResponse,
+    UpdatePaymentStatusRequest,
+    UserPodcastAnalytics,
+)
 from app.models.search import RecommendationResult
 from app.services.analysis_service import (
     AnalysisError,
@@ -52,7 +59,9 @@ from app.services.podcast_service import (
     get_podcast_for_user,
     get_podcasts_for_user,
     get_user_podcast_analytics,
+    update_podcast_payment_status_for_user,
     update_podcast_status_for_user,
+    update_podcast_import_metadata_for_user,
 )
 
 router = APIRouter(prefix="/podcasts", tags=["podcasts"])
@@ -174,8 +183,46 @@ async def get_podcast_analytics(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Profile not found for the current user.",
-        )
+    )
     return get_user_podcast_analytics(current_user.id)
+
+
+@router.get("/{podcast_id}", response_model=PodcastResponse)
+async def get_podcast(
+    podcast_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PodcastResponse:
+    podcast = _get_owned_podcast_or_404(podcast_id, current_user.id)
+    return PodcastResponse.model_validate(podcast.model_dump())
+
+
+@router.patch("/{podcast_id}/payment", response_model=PodcastResponse)
+async def update_payment_status(
+    podcast_id: str,
+    payload: UpdatePaymentStatusRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> PodcastResponse:
+    """
+    Mock payment confirmation endpoint.
+    INTEGRATION POINT: In production this endpoint should NOT be called by the client.
+    Instead it should be triggered exclusively by your payment provider's webhook
+    (e.g. POST /webhooks/stripe) after verifying the webhook signature.
+    The client-side checkout page currently calls this directly for simulation purposes only.
+    """
+    _get_owned_podcast_or_404(podcast_id, current_user.id)
+    next_status = "ready_for_processing" if payload.payment_status == "paid" else "blocked"
+    updated_podcast = update_podcast_payment_status_for_user(
+        podcast_id,
+        current_user.id,
+        payment_status=payload.payment_status,
+        status=next_status,
+    )
+    if updated_podcast is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Podcast not found for the current user.",
+        )
+    return updated_podcast
 
 
 @router.post("/{podcast_id}/analyze", response_model=AnalysisResult)
@@ -185,20 +232,47 @@ async def analyze_podcast(
     background_tasks: BackgroundTasks,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> AnalysisResult:
-    _assert_podcast_can_process(podcast_id, current_user.id)
+    podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.status == "processing" and not payload.force:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This podcast is already being analyzed. If it is stuck, please try again with force=true.",
+        )
+    if podcast.status == "done":
+        existing_segments = get_scored_segments_for_podcast(podcast_id)
+        if existing_segments:
+            return build_analysis_result(
+                podcast_id,
+                existing_segments,
+                processing_time_seconds=0.0,
+            )
+
     started_at = time.perf_counter()
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
     try:
         transcription = payload.transcription
         if transcription is None:
-            transcription = await asyncio.to_thread(
-                transcribe_podcast_media_for_user,
-                podcast_id,
-                current_user.id,
-                model=payload.transcription_model,
-            )
+            saved_trans_data = podcast.import_metadata.get("transcription_data")
+            if saved_trans_data:
+                try:
+                    transcription = TranscriptionResult.model_validate(saved_trans_data)
+                except Exception:
+                    pass
+
+            if transcription is None:
+                transcription = await asyncio.to_thread(
+                    transcribe_podcast_media_for_user,
+                    podcast_id,
+                    current_user.id,
+                    model=payload.transcription_model,
+                    language=payload.language,
+                )
+                updated_metadata = dict(podcast.import_metadata)
+                updated_metadata["transcription_data"] = transcription.model_dump()
+                update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
+
         # Run CPU-bound semantic scoring off the event loop so the API remains responsive.
-        scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
+        scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription, topic_focus=payload.topic_focus)
     except AnalysisError as exc:
         update_podcast_status_for_user(podcast_id, current_user.id, "ready_for_processing")
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -211,6 +285,7 @@ async def analyze_podcast(
     update_podcast_status_for_user(podcast_id, current_user.id, "done")
     background_tasks.add_task(persist_analysis_result, result)
     return result
+
 
 
 @router.get("/{podcast_id}/analysis", response_model=AnalysisSummary)
@@ -249,7 +324,12 @@ async def generate_podcast_clips(
     payload: GenerateClipsRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ClipGenerationResult:
-    _assert_podcast_can_process(podcast_id, current_user.id)
+    podcast = _assert_podcast_can_process(podcast_id, current_user.id)
+    if podcast.duration > 2 * 60 * 60:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Videos longer than 2 hours cannot generate clips. Please trim the episode or use a shorter upload.",
+        )
 
     existing_result = get_clips_for_podcast(podcast_id)
 
@@ -291,15 +371,19 @@ async def generate_podcast_clips(
     update_podcast_status_for_user(podcast_id, current_user.id, "processing")
 
     try:
-
         score_segments = payload.score_segments or get_scored_segments_for_podcast(
             podcast_id,
             limit=generation_settings.number_of_clips,
         )
         transcription = payload.transcription
-        refreshed_scores = False
+        if transcription is None:
+            saved_trans_data = podcast.import_metadata.get("transcription_data")
+            if saved_trans_data:
+                try:
+                    transcription = TranscriptionResult.model_validate(saved_trans_data)
+                except Exception:
+                    transcription = None
 
-        if not score_segments or score_segments_need_refresh(score_segments):
             if transcription is None:
                 transcription = await asyncio.to_thread(
                     transcribe_podcast_media_for_user,
@@ -307,9 +391,19 @@ async def generate_podcast_clips(
                     current_user.id,
                     model="base",
                 )
-            score_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription)
-            refreshed_scores = True
+                updated_metadata = dict(podcast.import_metadata)
+                updated_metadata["transcription_data"] = transcription.model_dump()
+                update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
 
+        refreshed_scores = False
+        if not score_segments or score_segments_need_refresh(score_segments):
+            score_segments = await asyncio.to_thread(
+                analyze_and_score,
+                podcast_id,
+                transcription,
+                topic_focus=generation_settings.topic_focus,
+            )
+            refreshed_scores = True
         if refreshed_scores:
             await asyncio.to_thread(
                 persist_analysis_result,

@@ -1,10 +1,14 @@
 import shutil
 import tempfile
+from urllib.parse import urlencode
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+
+import stripe
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.database import service_supabase
 from app.dependencies.auth import AuthenticatedUser, get_current_user
 from app.models.upload import (
     UploadCalculatePriceRequest,
@@ -16,15 +20,19 @@ from app.models.upload import (
 )
 from app.services.upload_service import (
     UploadWorkflowError,
+    _safe_path_part,
     calculate_upload_price,
     import_youtube_podcast,
     prepare_upload,
-    _safe_path_part,
 )
+from app.services.podcast_service import get_podcast_for_user
+from app.services.podcast_service import update_podcast_payment_status_for_user
 from app.services.source_storage_service import SourceStorageError, upload_source_media
+from app.services.stripe_service import create_checkout_session
 from app.utils.media import MediaInspectionError, validate_media_type
 
 router = APIRouter(prefix="/upload", tags=["upload"])
+settings = get_settings()
 
 
 class UploadFileResponse(BaseModel):
@@ -32,6 +40,11 @@ class UploadFileResponse(BaseModel):
     filename: str
     filesize_bytes: int
     source_storage: str = "local"
+
+
+class StripeSessionConfirmRequest(BaseModel):
+    podcast_id: str
+    session_id: str
 
 
 def get_upload_dir() -> Path:
@@ -153,3 +166,115 @@ async def import_youtube_route(
         return import_youtube_podcast(payload, current_user)
     except UploadWorkflowError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/checkout-session")
+async def create_checkout(
+    payload: dict,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    podcast_id = str(payload.get("podcast_id") or "").strip()
+    if not podcast_id:
+        raise HTTPException(status_code=400, detail="podcast_id is required")
+
+    podcast = get_podcast_for_user(podcast_id, current_user.id)
+    if podcast is None:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    if podcast.payment_status != "pending" and podcast.status != "awaiting_payment":
+        raise HTTPException(status_code=409, detail="Podcast is not awaiting payment")
+
+    price = float(podcast.price or 0.0)
+    frontend_origin = (settings.frontend_origins or [])[0] if settings.frontend_origins else ""
+    if not frontend_origin:
+        frontend_origin = ""
+    success_query = urlencode(
+        {
+            "payment": "success",
+            "podcast_id": podcast_id,
+        }
+    )
+    success_url = f"{frontend_origin}/upload/complete?{success_query}&session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{frontend_origin}/upload?payment=cancelled"
+
+    try:
+        session = create_checkout_session(podcast_id, price, success_url, cancel_url)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"checkout_url": session.get("url")}
+
+
+@router.post("/stripe-session-confirm")
+async def confirm_stripe_session(
+    payload: StripeSessionConfirmRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    podcast_id = payload.podcast_id.strip()
+    session_id = payload.session_id.strip()
+    if not podcast_id:
+        raise HTTPException(status_code=400, detail="podcast_id is required")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    podcast = get_podcast_for_user(podcast_id, current_user.id)
+    if podcast is None:
+        raise HTTPException(status_code=404, detail="Podcast not found")
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Unable to confirm Stripe session: {exc}") from exc
+
+    try:
+        metadata = dict(getattr(session, "metadata", {}) or {})
+    except Exception:
+        metadata = {}
+
+    session_podcast_id = str(metadata.get("podcast_id") or "").strip()
+    if session_podcast_id and session_podcast_id != podcast_id:
+        raise HTTPException(status_code=409, detail="Stripe session does not match this podcast")
+
+    payment_status = str(getattr(session, "payment_status", "") or "").strip().lower()
+    session_status = str(getattr(session, "status", "") or "").strip().lower()
+    if payment_status == "paid" or session_status == "complete":
+        updated_podcast = update_podcast_payment_status_for_user(
+            podcast_id,
+            current_user.id,
+            payment_status="paid",
+            status="ready_for_processing",
+        )
+        if updated_podcast is not None:
+            return updated_podcast.model_dump()
+
+    return {
+        "confirmed": False,
+        "payment_status": payment_status or str(podcast.payment_status or ""),
+        "status": str(podcast.status or ""),
+    }
+
+
+@router.post("/stripe-webhook")
+async def stripe_webhook(request: Request) -> dict:
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, settings.stripe_webhook_secret)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        metadata = session.get("metadata") or {}
+        podcast_id = metadata.get("podcast_id")
+        if podcast_id:
+            try:
+                service_supabase.table("podcasts").update({"payment_status": "paid", "status": "ready_for_processing"}).eq("id", podcast_id).execute()
+            except Exception:
+                # Log and continue
+                pass
+
+    return {"received": True}

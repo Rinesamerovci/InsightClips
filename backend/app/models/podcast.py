@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -48,6 +48,12 @@ class PodcastResponse(BaseModel):
 class PodcastsResponse(BaseModel):
     podcasts: list[PodcastResponse]
     is_mock: bool = False
+
+
+class UpdatePaymentStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payment_status: Literal["paid", "failed"]
 
 
 class DeletePodcastResponse(BaseModel):

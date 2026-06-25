@@ -123,7 +123,7 @@ def build_ffmpeg_chunk_command(
     ]
 
 
-def transcribe_media(file_path: Path, model: str = "base") -> TranscriptionResult:
+def transcribe_media(file_path: Path, model: str = "base", language: str | None = None) -> TranscriptionResult:
     start_time = time.perf_counter()
     resolved_path = file_path.expanduser().resolve()
     if not resolved_path.exists() or not resolved_path.is_file():
@@ -140,16 +140,27 @@ def transcribe_media(file_path: Path, model: str = "base") -> TranscriptionResul
             resolved_path,
             resolved_model=resolved_model,
             duration_seconds=inspection.duration_seconds,
+            language=language,
         )
     except TranscriptionError as exc:
         if not _should_fallback_to_local_whisper(exc):
             raise
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "⚠️ Groq Transcription API failed: %s. "
+            "Falling back to local CPU Whisper which is EXTREMELY SLOW (may take 10-30 minutes). "
+            "To fix this speed issue, verify your GROQ_API_KEY is active and valid in .env.local.",
+            exc
+        )
         transcript_text, all_words, detected_language, model_used = _transcribe_with_local_whisper(
             resolved_path,
             requested_model=model,
+            language=language,
         )
 
     processing_time_seconds = round(time.perf_counter() - start_time, 3)
+
     if not transcript_text:
         raise AudioQualityError("Transcription result was empty after combining chunk output.")
 
@@ -168,9 +179,17 @@ def _transcribe_with_openai(
     *,
     resolved_model: str,
     duration_seconds: float,
+    language: str | None = None,
 ) -> tuple[str, list[TranscriptWord], str, str]:
     client = _build_openai_client()
-    prompt = ""
+    if language == "sq":
+        prompt = "Transkripto bisedën saktësisht në gjuhën shqipe, duke përdorur shkronjat ë dhe ç ku duhet."
+    elif language == "en":
+        prompt = "Transcribe the conversation accurately, capturing spoken words and punctuation."
+    elif language:
+        prompt = f"Transcribe the conversation accurately in the {language} language."
+    else:
+        prompt = "Transkripto bisedën saktësisht në gjuhën e folur, qoftë Shqip, Anglisht, apo gjuhë tjetër."
     transcript_parts: list[str] = []
     all_words: list[TranscriptWord] = []
     detected_language = "en"
@@ -182,8 +201,10 @@ def _transcribe_with_openai(
                 chunk.path,
                 model=resolved_model,
                 prompt=prompt,
+                language=language,
             )
             chunk_language = _normalize_language(payload.get("language"))
+
 
             if not payload.get("text", "").strip():
                 raise AudioQualityError("Transcription result was empty. The audio may be silent or too noisy.")
@@ -201,7 +222,10 @@ def _transcribe_with_openai(
             transcript_parts.append(payload["text"].strip())
             all_words.extend(chunk_words)
             detected_language = chunk_language
-            prompt = payload["text"].strip()[-800:]
+            
+            # Groq's Whisper API has strict prompt length limits (around 896 chars).
+            # We keep only the last 400 characters to be safe.
+            prompt = payload["text"].strip()[-400:]
 
     return " ".join(part for part in transcript_parts if part).strip(), all_words, detected_language, resolved_model
 
@@ -210,6 +234,7 @@ def _transcribe_with_local_whisper(
     resolved_path: Path,
     *,
     requested_model: str,
+    language: str | None = None,
 ) -> tuple[str, list[TranscriptWord], str, str]:
     if whisper is None:
         raise WhisperNotAvailableError(
@@ -219,7 +244,7 @@ def _transcribe_with_local_whisper(
     local_model_name = _resolve_local_whisper_model(requested_model)
     try:
         local_model = whisper.load_model(local_model_name)
-        payload = _run_local_whisper_transcription(local_model, resolved_path)
+        payload = _run_local_whisper_transcription(local_model, resolved_path, language=language)
     except Exception as exc:  # pragma: no cover - depends on local runtime/model weights
         raise TranscriptionError(
             f"Local Whisper transcription failed: {exc}",
@@ -276,23 +301,29 @@ def _build_local_whisper_words(payload: dict[str, Any]) -> list[TranscriptWord]:
     return _build_segment_level_words(payload)
 
 
-def _run_local_whisper_transcription(local_model: Any, resolved_path: Path) -> dict[str, Any]:
+def _run_local_whisper_transcription(local_model: Any, resolved_path: Path, language: str | None = None) -> dict[str, Any]:
+    transcribe_kwargs: dict[str, Any] = {
+        "fp16": False,
+        "verbose": False,
+    }
+    if language:
+        transcribe_kwargs["language"] = language
+
     try:
         payload = local_model.transcribe(
             str(resolved_path),
             word_timestamps=True,
-            fp16=False,
-            verbose=False,
+            **transcribe_kwargs
         )
         return _coerce_mapping(payload)
     except Exception:
         payload = local_model.transcribe(
             str(resolved_path),
             word_timestamps=False,
-            fp16=False,
-            verbose=False,
+            **transcribe_kwargs
         )
         return _coerce_mapping(payload)
+
 
 
 def _build_segment_level_words(payload: dict[str, Any]) -> list[TranscriptWord]:
@@ -326,7 +357,6 @@ def _build_segment_level_words(payload: dict[str, Any]) -> list[TranscriptWord]:
                     confidence=0.65,
                 )
             )
-    return words
     return words
 
 
@@ -488,6 +518,7 @@ def _request_transcription(
     *,
     model: str,
     prompt: str = "",
+    language: str | None = None,
 ) -> dict[str, Any]:
     request_kwargs: dict[str, Any] = {
         "file": file_path.open("rb"),
@@ -497,6 +528,9 @@ def _request_transcription(
     }
     if prompt:
         request_kwargs["prompt"] = prompt
+    if language:
+        request_kwargs["language"] = language
+
 
     try:
         with request_kwargs["file"]:

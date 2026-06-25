@@ -1,3 +1,4 @@
+from typing import Any
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,6 +127,35 @@ def get_podcast_for_user(podcast_id: str, user_id: str) -> PodcastRecord | None:
     return PodcastRecord.model_validate(_serialize_podcast_row(rows[0])) if rows else None
 
 
+def update_podcast_payment_status_for_user(
+    podcast_id: str,
+    user_id: str,
+    *,
+    payment_status: str,
+    status: str,
+) -> PodcastResponse | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    updated_at = datetime.utcnow().isoformat()
+    (
+        service_supabase.table("podcasts")
+        .update(
+            {
+                "payment_status": payment_status,
+                "status": status,
+                "updated_at": updated_at,
+            }
+        )
+        .eq("id", podcast_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+    podcast = get_podcast_for_user(podcast_id, user_id)
+    return PodcastResponse.model_validate(podcast.model_dump()) if podcast is not None else None
+
+
 def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -> PodcastRecord | None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return None
@@ -138,6 +168,36 @@ def update_podcast_status_for_user(podcast_id: str, user_id: str, status: str) -
             .eq("user_id", user_id)
             .execute()
         )
+    except Exception:
+        return None
+
+    try:
+        return get_podcast_for_user(podcast_id, user_id)
+    except Exception:
+        return None
+
+
+def update_podcast_import_metadata_for_user(
+    podcast_id: str,
+    user_id: str,
+    import_metadata: dict[str, Any],
+) -> PodcastRecord | None:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None
+
+    try:
+        (
+            service_supabase.table("podcasts")
+            .update({"import_metadata": import_metadata})
+            .eq("id", podcast_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception:
+        return None
+
+    try:
+        return get_podcast_for_user(podcast_id, user_id)
     except Exception:
         return None
 
@@ -224,10 +284,6 @@ def get_user_podcast_analytics(user_id: str) -> UserPodcastAnalytics:
         podcasts=podcast_summaries,
     )
 
-    try:
-        return get_podcast_for_user(podcast_id, user_id)
-    except Exception:
-        return None
 
 
 def _remove_podcast_source_object(podcast: PodcastRecord) -> int:

@@ -35,7 +35,7 @@ alter table public.clip_publications
 
 alter table public.clip_publications
   add constraint clip_publications_status_check check (
-    status in ('pending', 'published', 'failed')
+    status in ('pending', 'published', 'failed', 'revoked')
   );
 
 create index if not exists clip_publications_podcast_status_idx

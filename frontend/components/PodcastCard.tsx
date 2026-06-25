@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
+  CreditCard,
   Loader2,
   Play,
   Sparkles,
@@ -18,8 +19,11 @@ type Podcast = {
   title: string;
   duration: number;
   status: string;
+  price?: number;
+  payment_status?: string;
   created_at: string | null;
   source_type?: "upload" | "youtube";
+  import_metadata?: Record<string, unknown> | null;
 };
 
 type AnalysisSummary = {
@@ -307,17 +311,19 @@ export function PodcastCard({
   podcast: Podcast;
   analysis?: AnalysisSummary | null;
   analysisLoading?: boolean;
-  onAnalyze?: () => void;
+  onAnalyze?: (language?: string, force?: boolean) => void;
   onDelete?: () => void;
   generatedClipsCount?: number;
   dark?: boolean;
 }) {
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("auto");
   const theme = getTheme(dark);
   const hasAnalysis = Boolean(analysis && analysis.total_scored_segments > 0);
   const hasGeneratedVideos = generatedClipsCount > 0;
-  const needsPayment = podcast.status === "awaiting_payment";
+  const needsPayment = podcast.status === "awaiting_payment" && podcast.payment_status === "pending";
   const statusChip = badge(podcast.status, dark);
   const stages = STAGES(podcast.duration);
+  const hasCachedTranscription = Boolean(podcast.import_metadata?.transcription_data);
 
   const sourceBadge =
     podcast.source_type === "youtube"
@@ -338,6 +344,8 @@ export function PodcastCard({
 
   const [idx, setIdx] = useState(0);
   const [prog, setProg] = useState(20);
+  const [isHovered, setIsHovered] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -450,6 +458,27 @@ export function PodcastCard({
                   }}
                 >
                   {sourceBadge.label}
+                </span>
+              ) : null}
+
+              {needsPayment ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "3px 9px",
+                    borderRadius: 999,
+                    background: theme.paymentBg,
+                    border: `1px solid ${theme.paymentBorder}`,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: ".1em",
+                    textTransform: "uppercase",
+                    color: theme.paymentText,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Payment required
                 </span>
               ) : null}
 
@@ -830,40 +859,105 @@ export function PodcastCard({
               }}
             >
               Payment is needed before analysis can continue for this episode.
+              <Link
+                href={`/checkout?podcastId=${encodeURIComponent(podcast.id)}&amount=${encodeURIComponent(String(podcast.price ?? 0))}&currency=USD`}
+                style={{
+                  marginTop: 9,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  borderRadius: 999,
+                  border: "1px solid rgba(158,138,32,.38)",
+                  background: "transparent",
+                  color: "#9e8a20",
+                  padding: "6px 10px",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textDecoration: "none",
+                }}
+              >
+                <CreditCard size={11} />
+                Pay now
+              </Link>
             </div>
           ) : null}
 
           {!hasAnalysis && !analysisLoading && !needsPayment && onAnalyze ? (
-            <button
-              type="button"
-              onClick={onAnalyze}
-              className="ic-btn"
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 7,
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: `1px solid ${theme.buttonBorder}`,
-                background: theme.buttonBg,
-                fontSize: 11,
-                fontWeight: 800,
-                color: theme.buttonText,
-                cursor: "pointer",
-                fontFamily: "'DM Sans',sans-serif",
-              }}
-            >
-              <Play size={11} strokeWidth={2.5} fill={theme.buttonText} />
-              Analyze episode
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {!hasCachedTranscription && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      letterSpacing: ".1em",
+                      textTransform: "uppercase",
+                      color: theme.textSoft,
+                    }}
+                  >
+                    Spoken language (optional)
+                  </label>
+                  <select
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: `1px solid ${theme.buttonBorder}`,
+                      background: theme.buttonSurface,
+                      color: theme.buttonText,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      outline: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <option value="auto" style={{ background: theme.buttonSurface, color: theme.text }}>Auto-detect language</option>
+                    <option value="sq" style={{ background: theme.buttonSurface, color: theme.text }}>Albanian (Shqip)</option>
+                    <option value="en" style={{ background: theme.buttonSurface, color: theme.text }}>English</option>
+                    <option value="de" style={{ background: theme.buttonSurface, color: theme.text }}>German (Deutsch)</option>
+                    <option value="it" style={{ background: theme.buttonSurface, color: theme.text }}>Italian (Italiano)</option>
+                    <option value="fr" style={{ background: theme.buttonSurface, color: theme.text }}>French (Français)</option>
+                    <option value="es" style={{ background: theme.buttonSurface, color: theme.text }}>Spanish (Español)</option>
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => onAnalyze(
+                  selectedLanguage === "auto" ? undefined : selectedLanguage,
+                  podcast.status === "processing" || podcast.status === "queued"
+                )}
+                className="ic-btn"
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 7,
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${theme.buttonBorder}`,
+                  background: theme.buttonBg,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: theme.buttonText,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans',sans-serif",
+                }}
+              >
+                <Play size={11} strokeWidth={2.5} fill={theme.buttonText} />
+                {hasCachedTranscription ? "Continue analysis" : "Analyze episode"}
+              </button>
+            </div>
           ) : null}
 
           {onDelete ? (
             <button
               type="button"
-              onClick={onDelete}
+              onClick={() => setShowDeleteConfirm(true)}
               className="ic-btn"
               style={{
                 width: "100%",
@@ -889,6 +983,114 @@ export function PodcastCard({
           ) : null}
         </div>
       </article>
+      {onDelete && showDeleteConfirm ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 120,
+            background: "rgba(10, 16, 8, .45)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm podcast deletion"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(100%, 460px)",
+              borderRadius: 22,
+              border: `1px solid ${dark ? "rgba(239, 134, 134, .28)" : "rgba(196, 64, 64, .22)"}`,
+              background: dark ? "rgba(20, 24, 15, .98)" : "rgba(255,255,255,.98)",
+              boxShadow: dark ? "0 30px 80px rgba(0,0,0,.45)" : "0 24px 70px rgba(36,60,25,.18)",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "18px 18px 0" }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: dark ? "#ffcdcd" : "#8a2424", textTransform: "uppercase", letterSpacing: ".12em" }}>
+                Confirm podcast deletion
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${dark ? "rgba(239, 134, 134, .24)" : "rgba(196, 64, 64, .2)"}`,
+                    background: dark ? "rgba(52,12,12,.78)" : "rgba(255,244,244,.95)",
+                    padding: "12px 14px",
+                    color: dark ? "#ffd2d2" : "#8a2424",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  <strong style={{ display: "block", marginBottom: 4 }}>What will be deleted</strong>
+                  The podcast, source media, analysis data, generated clips, and related records will be removed from this workspace.
+                </div>
+                <div
+                  style={{
+                    borderRadius: 16,
+                    border: `1px solid ${dark ? "rgba(90, 158, 58, .28)" : "rgba(90, 158, 58, .22)"}`,
+                    background: dark ? "rgba(14,42,12,.78)" : "rgba(236,250,230,.96)",
+                    padding: "12px 14px",
+                    color: dark ? "#bfe4ab" : "#2d6122",
+                    fontSize: 13,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  <strong style={{ display: "block", marginBottom: 4 }}>Safe to cancel</strong>
+                  If you change your mind, press Cancel and keep working. Nothing is removed until you choose Delete.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, padding: 18 }}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="ic-btn"
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${dark ? "rgba(90, 158, 58, .22)" : "rgba(90, 158, 58, .18)"}`,
+                  background: dark ? "rgba(90, 158, 58, .2)" : "rgba(90, 158, 58, .12)",
+                  color: dark ? "#9dce7a" : "#3a6e25",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onDelete();
+                }}
+                className="ic-btn"
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: dark ? "rgba(239, 134, 134, .8)" : "rgba(196, 64, 64, .95)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Delete podcast
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

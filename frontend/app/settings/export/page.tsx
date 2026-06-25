@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
+  CreditCard,
   Loader2,
   Monitor,
   Moon,
@@ -522,6 +523,23 @@ export default function ExportSettingsPage() {
               <Settings2 size={16} />
               Dashboard
             </Link>
+            <Link
+              href="/settings/billing"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "none",
+                color: "inherit",
+                border: `1px solid ${palette.border}`,
+                borderRadius: 999,
+                padding: "10px 16px",
+                background: palette.card,
+              }}
+            >
+              <CreditCard size={16} />
+              Billing
+            </Link>
             <button
               type="button"
               onClick={() => setDark((value) => !value)}
@@ -745,7 +763,7 @@ export default function ExportSettingsPage() {
                     This page saves your default export profile.
                   </div>
                   <p style={{ margin: 0, fontSize: 13, lineHeight: 1.72, color: palette.muted, maxWidth: 680 }}>
-                    Keep only the defaults here for future uploads. Clip-specific creative work like generation flow, prompt focus, and final polishing belongs in the Clips page.
+                    Keep only the defaults here for future uploads. Clip-specific creative work like generation flow, output format, and final polishing belongs in the Clips page.
                   </p>
                 </div>
                 <button

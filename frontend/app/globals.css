@@ -122,8 +122,13 @@ select {
 }
 
 ::selection {
-  background: rgba(90, 158, 58, 0.18);
-  color: var(--foreground);
+  background: #1f4b20;
+  color: #ffffff;
+}
+
+::-moz-selection {
+  background: #1f4b20;
+  color: #ffffff;
 }
 
 .brand-serif {

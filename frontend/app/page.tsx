@@ -126,7 +126,8 @@ export default function InsightClipsLanding() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,700&family=DM+Serif+Display:ital@0;1&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::selection { background: ${t.accent}40; color: ${t.text}; }
+        ::selection { background: #1f4b20; color: #ffffff; }
+        ::-moz-selection { background: #1f4b20; color: #ffffff; }
         html { scroll-behavior: smooth; }
 
         @keyframes float-slow  { 0%,100%{transform:translateY(0)}  50%{transform:translateY(-18px)} }

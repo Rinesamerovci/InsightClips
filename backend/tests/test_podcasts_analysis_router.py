@@ -20,6 +20,7 @@ from app.models.transcription import TranscriptionResult, TranscriptWord  # noqa
 from app.routers.podcasts import (  # noqa: E402
     analyze_podcast,
     generate_podcast_clips,
+    get_podcast,
     get_podcast_analytics,
     get_podcast_clips,
 )
@@ -66,6 +67,13 @@ class PodcastAnalysisRouterTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._get_podcast_patcher.stop()
+
+    def test_get_podcast_returns_owned_record(self) -> None:
+        result = asyncio.run(get_podcast("podcast-123", self.user))
+
+        self.assertEqual(result.id, "podcast-123")
+        self.assertEqual(result.status, "ready_for_processing")
+        self.mock_get_podcast.assert_called_once_with("podcast-123", "user-123")
 
     @patch("app.routers.podcasts.generate_clips")
     @patch("app.routers.podcasts.get_user_export_settings")

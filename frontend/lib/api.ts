@@ -46,6 +46,17 @@ export function isMockPodcastId(podcastId: string): boolean {
 
 type JsonRecord = Record<string, unknown>;
 
+export type PasswordRecoveryCheckRequest = {
+  email: string;
+};
+
+export type PasswordRecoveryCheckResponse = {
+  email: string;
+  exists: boolean;
+  confirmed: boolean;
+  message: string;
+};
+
 export type UploadState =
   | "idle"
   | "file_selected"
@@ -376,6 +387,7 @@ export type ClipResult = {
   duration_seconds: number;
   virality_score: number;
   video_url: string;
+  subtitle_url?: string | null;
   subtitle_text: string;
   status: "ready" | "processing" | "failed";
   published?: boolean;
@@ -944,6 +956,13 @@ export async function createCheckoutSession(
   token?: string | null,
 ): Promise<{ checkout_url: string }> {
   return postJson<{ checkout_url: string }>("/upload/checkout-session", { podcast_id: podcastId, price }, token);
+}
+
+export async function checkPasswordRecoveryEligibility(
+  payload: PasswordRecoveryCheckRequest,
+  token?: string | null,
+): Promise<PasswordRecoveryCheckResponse> {
+  return postJson<PasswordRecoveryCheckResponse>("/auth/forgot-password/check", payload as JsonRecord, token);
 }
 
 export async function confirmStripeCheckoutSession(

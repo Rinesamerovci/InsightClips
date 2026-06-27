@@ -1,4 +1,4 @@
-import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
+﻿import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
@@ -188,20 +188,20 @@ export default function GenerationSettingsPanel({
               const active = selectedTemplateId === tpl.id;
               
               // Give each template a unique flavor
-              let icon = "✨";
+              let icon = "\u2728";
               let gradient = "linear-gradient(135deg, rgba(90,158,58,0.2) 0%, rgba(90,158,58,0.05) 100%)";
               let activeBorder = palette.hi;
               
               if (tpl.id.includes("viral")) {
-                icon = "🔥";
+                icon = "\ud83d\udd25";
                 gradient = dark ? "linear-gradient(135deg, rgba(255,107,107,0.2) 0%, rgba(200,80,192,0.1) 100%)" : "linear-gradient(135deg, rgba(255,107,107,0.1) 0%, rgba(200,80,192,0.05) 100%)";
                 activeBorder = "#ff6b6b";
               } else if (tpl.id.includes("bomb") || tpl.id.includes("value")) {
-                icon = "💎";
+                icon = "\ud83d\udc8e";
                 gradient = dark ? "linear-gradient(135deg, rgba(74,144,226,0.2) 0%, rgba(80,227,194,0.1) 100%)" : "linear-gradient(135deg, rgba(74,144,226,0.1) 0%, rgba(80,227,194,0.05) 100%)";
                 activeBorder = "#4a90e2";
               } else if (tpl.id.includes("hook")) {
-                icon = "🎣";
+                icon = "\ud83c\udfa3";
                 gradient = dark ? "linear-gradient(135deg, rgba(245,166,35,0.2) 0%, rgba(248,231,28,0.1) 100%)" : "linear-gradient(135deg, rgba(245,166,35,0.1) 0%, rgba(248,231,28,0.05) 100%)";
                 activeBorder = "#f5a623";
               }
@@ -427,7 +427,11 @@ export default function GenerationSettingsPanel({
             </div>
           <select
             value={settings.language ?? "auto"}
-            onChange={(e) => onSettingsChange({ language: e.target.value })}
+            onChange={(e) =>
+              onSettingsChange({
+                language: e.target.value === "auto" ? undefined : e.target.value,
+              })
+            }
             style={{
               width: "100%",
               borderRadius: 12,
@@ -593,3 +597,4 @@ export default function GenerationSettingsPanel({
     </section>
   );
 }
+

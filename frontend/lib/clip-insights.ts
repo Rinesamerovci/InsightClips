@@ -21,6 +21,7 @@ export type ClipInsightInput = {
   published_at?: string | null;
   download_url?: string | null;
   video_url?: string;
+  subtitle_url?: string | null;
   overlay?: ClipOverlay | null;
   export_settings?: ExportSettings | null;
 };

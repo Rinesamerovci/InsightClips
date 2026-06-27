@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Literal
 
@@ -76,6 +76,15 @@ class AnalyzePodcastRequest(BaseModel):
     topic_focus: str | None = Field(default=None, max_length=500)
     force: bool = False
 
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split()).lower()
+        if not cleaned or cleaned in {"auto", "auto-detect", "auto detect", "unknown"}:
+            return None
+        return cleaned
 
 
 class AnalysisSummary(BaseModel):
@@ -85,3 +94,5 @@ class AnalysisSummary(BaseModel):
     total_scored_segments: int = Field(ge=0)
     highest_score: float = Field(ge=0, le=100)
     top_segments: list[ScoreSegment] = Field(default_factory=list)
+
+

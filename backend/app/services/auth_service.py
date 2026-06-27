@@ -1,7 +1,15 @@
+from __future__ import annotations
+
 from fastapi import HTTPException, status
 
 from app.database import public_supabase, service_supabase
-from app.models.auth import AuthResponse, EmailAvailabilityResponse, LoginRequest, RegisterRequest
+from app.models.auth import (
+    AuthResponse,
+    EmailAvailabilityResponse,
+    LoginRequest,
+    PasswordRecoveryResponse,
+    RegisterRequest,
+)
 from app.services.profile_service import get_profile_by_email, get_profile_by_id, upsert_profile
 from app.utils.security import create_backend_token, validate_password_rules
 
@@ -89,8 +97,8 @@ def check_email_availability(email: str) -> EmailAvailabilityResponse:
         pass
 
     try:
-        users = service_supabase.auth.admin.list_users()
-        if any(str(getattr(user, "email", "") or "").lower() == normalized_email for user in users):
+        users = _list_auth_users()
+        if any(_normalize_auth_user_email(user) == normalized_email for user in users):
             return EmailAvailabilityResponse(
                 email=normalized_email,
                 exists=True,
@@ -103,6 +111,53 @@ def check_email_availability(email: str) -> EmailAvailabilityResponse:
         email=normalized_email,
         exists=False,
         message="This email is available.",
+    )
+
+
+def check_password_recovery_eligibility(email: str) -> PasswordRecoveryResponse:
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address is required.",
+        )
+
+    profile = None
+    try:
+        profile = get_profile_by_email(normalized_email)
+    except Exception:
+        profile = None
+
+    auth_user = _find_auth_user_by_email(normalized_email)
+    if profile is None and auth_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account was found for that email address.",
+        )
+
+    if auth_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active account was found for that email address.",
+        )
+
+    if not _is_confirmed_auth_user(auth_user):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Please confirm your email address before requesting a password reset.",
+        )
+
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account was found for that email address.",
+        )
+
+    return PasswordRecoveryResponse(
+        email=normalized_email,
+        exists=True,
+        confirmed=True,
+        message="This account is ready to receive a password reset email.",
     )
 
 
@@ -152,3 +207,40 @@ def verify_session(supabase_token: str) -> AuthResponse:
         full_name = user.user_metadata.get("full_name")
 
     return _issue_auth_response(user.id, user.email, full_name)
+
+
+def _list_auth_users() -> list[object]:
+    try:
+        response = service_supabase.auth.admin.list_users()
+    except Exception:
+        return []
+
+    for attribute_name in ("users", "data"):
+        users = getattr(response, attribute_name, None)
+        if users:
+            return list(users)
+
+    if isinstance(response, list):
+        return list(response)
+
+    return []
+
+
+def _normalize_auth_user_email(user: object) -> str:
+    return str(getattr(user, "email", "") or "").strip().lower()
+
+
+def _find_auth_user_by_email(email: str) -> object | None:
+    for user in _list_auth_users():
+        if _normalize_auth_user_email(user) == email:
+            return user
+    return None
+
+
+def _is_confirmed_auth_user(user: object) -> bool:
+    confirmed_at = getattr(user, "email_confirmed_at", None) or getattr(user, "confirmed_at", None)
+    if confirmed_at is None:
+        return False
+    if isinstance(confirmed_at, str):
+        return bool(confirmed_at.strip())
+    return True

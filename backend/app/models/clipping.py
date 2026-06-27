@@ -27,6 +27,7 @@ class ClipResult(BaseModel):
     duration_seconds: float = Field(gt=0)
     virality_score: float = Field(ge=0, le=100)
     video_url: str
+    subtitle_url: str | None = None
     subtitle_text: str
     status: Literal["ready", "processing", "failed"]
     published: bool = False
@@ -46,6 +47,14 @@ class ClipResult(BaseModel):
         if not cleaned:
             raise ValueError("Field cannot be empty.")
         return cleaned
+
+    @field_validator("subtitle_url")
+    @classmethod
+    def normalize_subtitle_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
     @field_validator("subtitle_text")
     @classmethod

@@ -174,8 +174,8 @@ class GenerationSettings(BaseModel):
         cleaned = " ".join(value.split())
         if not cleaned:
             return None
-        if not re.fullmatch(r"[A-Za-z0-9\s,.'\-#/&]+", cleaned):
-            raise ValueError("topic_focus can only contain letters, numbers, spaces, and simple punctuation.")
+        if re.search(r"[<>{}]", cleaned):
+            raise ValueError("topic_focus cannot contain script brackets like <, >, {, or }.")
         return cleaned
 
     @field_validator("language")

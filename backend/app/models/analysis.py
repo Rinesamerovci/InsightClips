@@ -17,6 +17,7 @@ class ScoreSegment(BaseModel):
     transcript_snippet: str
     sentiment: Literal["positive", "neutral", "negative"]
     keywords: list[str] = Field(default_factory=list)
+    topic_matched: bool = Field(default=False)
 
     @field_validator("transcript_snippet")
     @classmethod

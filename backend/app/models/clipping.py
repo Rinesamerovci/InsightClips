@@ -26,6 +26,7 @@ class ClipResult(BaseModel):
     clip_end_seconds: float = Field(ge=0)
     duration_seconds: float = Field(gt=0)
     virality_score: float = Field(ge=0, le=100)
+    topic_matched: bool = Field(default=False)
     video_url: str
     subtitle_url: str | None = None
     subtitle_text: str
@@ -39,6 +40,7 @@ class ClipResult(BaseModel):
     visual_output_mode: VisualOutputMode = "original_people"
     effective_visual_output_mode: VisualOutputMode = "original_people"
     render_fallback_reason: str | None = None
+    smart_hooks: list[str] | None = None
 
     @field_validator("id", "video_url")
     @classmethod

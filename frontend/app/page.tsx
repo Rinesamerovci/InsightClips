@@ -580,8 +580,12 @@ export default function InsightClipsLanding() {
               The unified workspace for analyzing, editing, and publishing your best moments.
             </p>
             <div style={{ display:"flex", gap:16, color:t.textFaint }}>
-              <Globe size={18} cursor="pointer" className="hover-accent" />
-              <Shield size={18} cursor="pointer" className="hover-accent" />
+              <div style={{ padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)", borderRadius: 8, display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500 }}>
+                <Globe size={16} /> Global
+              </div>
+              <div style={{ padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)", borderRadius: 8, display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500 }}>
+                <Shield size={16} /> Secure
+              </div>
             </div>
           </div>
 

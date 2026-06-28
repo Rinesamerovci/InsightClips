@@ -51,6 +51,9 @@
 --    Creates/normalizes private Supabase Storage buckets and policies for
 --    podcast-sources and clips.
 --
+-- 14. 100_add_clip_topic_hooks.sql
+--    Adds clip topic-match flags and persisted smart hook arrays.
+--
 -- Optional verification after all files finish:
 --
 -- select

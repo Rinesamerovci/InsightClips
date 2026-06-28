@@ -146,7 +146,7 @@ class ExportSettingsModelTests(unittest.TestCase):
         with self.assertRaises(ValidationError) as exc_info:
             GenerationSettings(topic_focus="AI <script>")
 
-        self.assertIn("topic_focus can only contain", str(exc_info.exception))
+        self.assertIn("cannot contain script brackets", str(exc_info.exception))
 
     def test_export_settings_can_persist_generation_preferences(self) -> None:
         settings = ExportSettingsInput(

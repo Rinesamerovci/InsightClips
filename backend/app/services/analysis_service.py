@@ -6,8 +6,16 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+import json
 from functools import lru_cache
 from typing import Any
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+from app.config import get_settings
 
 from app.models.clip_insights import ReferenceMention, ReferenceMentionType
 from app.database import service_supabase
@@ -129,6 +137,118 @@ class _ReferenceCandidate:
     topic_hints: tuple[str, ...]
 
 
+def generate_smart_hooks_with_groq(transcript_text: str) -> list[str]:
+    """
+    Analyzes a short clip transcript and generates 3 catchy social media hooks.
+    """
+    if not transcript_text or len(transcript_text.strip()) < 10:
+        return []
+
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        api_key = settings.groq_api_key.strip() if settings.groq_api_key else None
+        if not api_key:
+            return []
+
+        from openai import OpenAI
+        import json
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+            timeout=15.0,
+            max_retries=1
+        )
+        
+        prompt = (
+            "You are a viral social media manager. Read the following video clip transcript and write EXACTLY 3 catchy hooks (titles) for TikTok or Instagram Reels.\n"
+            "Each hook should be punchy, engaging, and make people want to watch the clip.\n"
+            "CRITICAL: You MUST write the hooks in the English language, regardless of the transcript's language.\n"
+            "Return ONLY a valid JSON array of 3 strings.\n"
+            "Example: [\"This secret will change your life 🤯\", \"Why you've been doing it wrong...\", \"The truth about success 👇\"]\n\n"
+            f"Transcript:\n{transcript_text[:3000]}"
+        )
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=150,
+        )
+
+        content = response.choices[0].message.content or "[]"
+        import re
+        match = re.search(r'\[(.*?)\]', content, re.DOTALL)
+        if match:
+            array_str = f"[{match.group(1)}]"
+            hooks = json.loads(array_str)
+            if isinstance(hooks, list) and all(isinstance(h, str) for h in hooks):
+                return [h.strip() for h in hooks][:3]
+        return []
+    except Exception as e:
+        print(f"Error generating smart hooks with Groq: {e}")
+        return []
+
+
+def _evaluate_topic_matches_with_groq(segments: list[_SegmentCandidate], topic_focus: str) -> set[int]:
+    if not OpenAI:
+        return set()
+    
+    settings = get_settings()
+    api_key = settings.groq_api_key.strip()
+    if not api_key:
+        return set()
+
+    # Use Groq's fast llama-3 model
+    client = OpenAI(
+        api_key=api_key,
+        base_url="https://api.groq.com/openai/v1",
+        timeout=15.0,
+        max_retries=1
+    )
+
+    matched_indices = set()
+    batch_size = 40
+    
+    for i in range(0, len(segments), batch_size):
+        batch = segments[i:i + batch_size]
+        snippets = []
+        for j, seg in enumerate(batch):
+            text = " ".join(w.word for w in seg.words)
+            snippets.append(f"{i + j}: {text}")
+        
+        prompt = (
+            f"You are a strict semantic analyzer. The user is looking for video clips about: '{topic_focus}'.\n"
+            "Below are numbered transcript snippets. Determine which snippets strongly match the semantics or meaning of the topic.\n"
+            "Return ONLY a valid JSON array containing the integer IDs of the matching snippets. For example: [0, 3, 4]. If none match, return [].\n"
+            "Snippets:\n" + "\n".join(snippets)
+        )
+        
+        try:
+            response = client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"} if False else None, # Llama 3 8B doesn't always support json_object strictly in Groq, but we can parse it
+                temperature=0.0
+            )
+            content = response.choices[0].message.content or "[]"
+            # Extract JSON array
+            import re
+            match = re.search(r'\[(.*?)\]', content, re.DOTALL)
+            if match:
+                array_str = f"[{match.group(1)}]"
+                indices = json.loads(array_str)
+                for idx in indices:
+                    if isinstance(idx, int):
+                        matched_indices.add(idx)
+        except Exception as e:
+            print(f"Groq topic matching failed: {e}")
+            pass
+
+    return matched_indices
+
+
 def analyze_and_score(podcast_id: str, transcription: TranscriptionResult, topic_focus: str | None = None) -> list[ScoreSegment]:
     podcast_id = podcast_id.strip()
     if not podcast_id:
@@ -140,7 +260,14 @@ def analyze_and_score(podcast_id: str, transcription: TranscriptionResult, topic
     if not segments:
         raise AnalysisError("Transcription did not contain enough coherent speech to analyze.")
 
-    scored_segments = [_score_segment(segment, topic_focus) for segment in segments]
+    matched_indices = set()
+    if topic_focus and topic_focus.strip():
+        matched_indices = _evaluate_topic_matches_with_groq(segments, topic_focus)
+
+    scored_segments = [
+        _score_segment(segment, topic_focus, i in matched_indices)
+        for i, segment in enumerate(segments)
+    ]
     scored_segments.sort(
         key=lambda item: (
             -item.virality_score,
@@ -383,12 +510,12 @@ def _is_sentence_break(token: str) -> bool:
     return token.strip().endswith((".", "!", "?"))
 
 
-def _score_segment(segment: _SegmentCandidate, topic_focus: str | None = None) -> ScoreSegment:
+def _score_segment(segment: _SegmentCandidate, topic_focus: str | None = None, topic_matched_from_groq: bool = False) -> ScoreSegment:
     snippet = segment.snippet
     terms = _extract_terms(snippet)
     sentiment = _resolve_sentiment(terms)
     keywords = _extract_keywords(snippet, terms)
-    score = _calculate_virality_score(snippet, terms, sentiment, segment.duration, topic_focus)
+    score, topic_matched = _calculate_virality_score(snippet, terms, sentiment, segment.duration, topic_focus, topic_matched_from_groq)
     return ScoreSegment(
         segment_start_seconds=round(segment.start, 3),
         segment_end_seconds=round(segment.end, 3),
@@ -397,6 +524,7 @@ def _score_segment(segment: _SegmentCandidate, topic_focus: str | None = None) -
         transcript_snippet=snippet,
         sentiment=sentiment,
         keywords=keywords,
+        topic_matched=topic_matched,
     )
 
 
@@ -492,7 +620,8 @@ def _calculate_virality_score(
     sentiment: str,
     duration: float,
     topic_focus: str | None = None,
-) -> float:
+    topic_matched_from_groq: bool = False,
+) -> tuple[float, bool]:
     score = 32.0
     score += min(18.0, sum(1 for term in terms if term in VIRAL_TERMS) * 4.5)
     score += min(12.0, sum(1 for term in terms if term in DIRECT_ADDRESS_TERMS) * 2.5)
@@ -505,14 +634,24 @@ def _calculate_virality_score(
         score += 8.0
     elif duration < 8.0 or duration > 55.0:
         score -= 6.0
-    if topic_focus:
+        
+    topic_matched = False
+    
+    # We first respect the Groq LLM semantic match
+    if topic_matched_from_groq:
+        score += 15.0
+        topic_matched = True
+    elif topic_focus:
+        # Fallback to string matching if Groq failed or didn't match anything
         topic_terms = [t.strip().lower() for t in topic_focus.split() if len(t.strip()) > 2]
         matches = sum(1 for term in terms if term in topic_terms)
         if matches > 0:
             score += min(15.0, matches * 5.0)
+            topic_matched = True
+            
     unique_ratio = (len(set(terms)) / len(terms)) if terms else 0.0
     score += round(unique_ratio * 12.0, 2)
-    return round(max(0.0, min(100.0, score)), 2)
+    return round(max(0.0, min(100.0, score)), 2), topic_matched
 
 
 def detect_reference_mentions(

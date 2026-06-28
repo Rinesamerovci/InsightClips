@@ -47,6 +47,18 @@ class StripeSessionConfirmRequest(BaseModel):
     session_id: str
 
 
+def _pick_public_frontend_origin() -> str:
+    for origin in settings.frontend_origins:
+        cleaned = origin.strip().rstrip("/")
+        if not cleaned:
+            continue
+        lowered = cleaned.lower()
+        if "localhost" in lowered or "127.0.0.1" in lowered or "::1" in lowered:
+            continue
+        return cleaned
+    return settings.frontend_origins[0].strip().rstrip("/") if settings.frontend_origins else ""
+
+
 def get_upload_dir() -> Path:
     """Get upload directory, preferring persistent storage when configured."""
     try:
@@ -185,9 +197,7 @@ async def create_checkout(
         raise HTTPException(status_code=409, detail="Podcast is not awaiting payment")
 
     price = float(podcast.price or 0.0)
-    frontend_origin = (settings.frontend_origins or [])[0] if settings.frontend_origins else ""
-    if not frontend_origin:
-        frontend_origin = ""
+    frontend_origin = _pick_public_frontend_origin()
     success_query = urlencode(
         {
             "payment": "success",

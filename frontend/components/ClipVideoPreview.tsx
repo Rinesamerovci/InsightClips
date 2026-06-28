@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { SubtitleStyle } from "@/lib/api";
+
 type SubtitleCue = {
   start: number;
   end: number;
@@ -12,6 +14,7 @@ type ClipVideoPreviewProps = {
   src: string;
   subtitleUrl?: string | null;
   subtitleText?: string | null;
+  subtitleStyle?: SubtitleStyle | null;
   aspectRatio: string;
   dark: boolean;
 };
@@ -131,10 +134,27 @@ function buildVttDocument(cues: SubtitleCue[]): string {
   return lines.join("\n");
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) {
+    return `rgba(0,0,0,${alpha})`;
+  }
+
+  const red = Number.parseInt(clean.slice(0, 2), 16);
+  const green = Number.parseInt(clean.slice(2, 4), 16);
+  const blue = Number.parseInt(clean.slice(4, 6), 16);
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+
+function getVisibleCue(cues: SubtitleCue[], time: number): SubtitleCue | null {
+  return cues.find((cue) => time >= cue.start && time <= cue.end) ?? null;
+}
+
 export default function ClipVideoPreview({
   src,
   subtitleUrl,
   subtitleText,
+  subtitleStyle,
   aspectRatio,
   dark,
 }: ClipVideoPreviewProps) {
@@ -142,9 +162,23 @@ export default function ClipVideoPreview({
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string | null>(null);
   const [subtitleLoadFailed, setSubtitleLoadFailed] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
 
   const fallbackText = wrapSubtitleText(subtitleText ?? "");
   const cueSource = subtitleUrl?.trim() ?? "";
+  const activeCue = getVisibleCue(subtitleCues, currentTime);
+  const style = subtitleStyle ?? {
+    preset: "classic" as const,
+    font_family: "Arial",
+    font_size: 18,
+    primary_color: "#FFFFFF",
+    outline_color: "#000000",
+    background_color: "#000000",
+    background_opacity: 0.2,
+    position: "bottom" as const,
+    bold: false,
+    italic: false,
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +238,7 @@ export default function ClipVideoPreview({
       return;
     }
 
+    const syncTime = () => setCurrentTime(video.currentTime || 0);
     const showCaptions = () => {
       for (const track of Array.from(video.textTracks)) {
         if (track.kind === "subtitles" || track.kind === "captions") {
@@ -216,15 +251,27 @@ export default function ClipVideoPreview({
     const raf = window.requestAnimationFrame(showCaptions);
     video.addEventListener("loadedmetadata", showCaptions);
     video.addEventListener("loadeddata", showCaptions);
+    video.addEventListener("timeupdate", syncTime);
+    video.addEventListener("seeked", syncTime);
 
     return () => {
       window.cancelAnimationFrame(raf);
       video.removeEventListener("loadedmetadata", showCaptions);
       video.removeEventListener("loadeddata", showCaptions);
+      video.removeEventListener("timeupdate", syncTime);
+      video.removeEventListener("seeked", syncTime);
     };
   }, [subtitleTrackUrl, src]);
 
-  const useOverlayFallback = Boolean(fallbackText) && !subtitleTrackUrl;
+  const useOverlayFallback = Boolean(fallbackText) && !cueSource;
+  const overlayText = activeCue?.text ?? (useOverlayFallback ? fallbackText : "");
+  const overlayVisible = Boolean(overlayText);
+  const positionStyle =
+    style.position === "top"
+      ? { top: "14%" }
+      : style.position === "center"
+        ? { top: "50%", transform: "translateY(-50%)" }
+        : { bottom: "14%" };
 
   return (
     <div
@@ -253,19 +300,16 @@ export default function ClipVideoPreview({
           background: "#000",
         }}
       >
-        {subtitleTrackUrl ? (
-          <track kind="captions" label="English" src={subtitleTrackUrl} srcLang="en" default />
-        ) : null}
       </video>
 
-      {useOverlayFallback ? (
+      {overlayVisible ? (
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             left: 0,
             right: 0,
-            bottom: "2.5rem",
+            ...positionStyle,
             display: "flex",
             justifyContent: "center",
             padding: "0 12px",
@@ -276,24 +320,28 @@ export default function ClipVideoPreview({
           <div
             style={{
               maxWidth: "88%",
-              borderRadius: 18,
-              padding: "8px 12px",
-              background: dark ? "rgba(6, 12, 7, 0.78)" : "rgba(12, 22, 10, 0.72)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,.14)",
+              borderRadius: style.preset === "boxed" ? 20 : 18,
+              padding: style.preset === "boxed" ? "10px 14px" : "8px 12px",
+              background: style.background_opacity > 0
+                ? hexToRgba(style.background_color, style.background_opacity)
+                : "transparent",
+              color: style.primary_color,
+              border: `1px solid ${hexToRgba(style.outline_color, 0.28)}`,
               boxShadow: dark ? "0 10px 20px rgba(0,0,0,.22)" : "0 10px 20px rgba(20,34,16,.16)",
               backdropFilter: "blur(8px)",
               WebkitBackdropFilter: "blur(8px)",
               textAlign: "center",
-              fontSize: 12,
+              fontFamily: style.font_family,
+              fontSize: Math.max(12, Math.round(style.font_size * (aspectRatio === "9 / 16" ? 0.72 : 0.62))),
               lineHeight: 1.35,
-              fontWeight: 800,
+              fontWeight: style.bold ? 900 : 800,
+              fontStyle: style.italic ? "italic" : "normal",
               letterSpacing: "0.01em",
-              textShadow: "0 1px 2px rgba(0,0,0,.45)",
+              textShadow: `0 1px 2px ${style.outline_color}, 0 0 10px ${hexToRgba(style.outline_color, 0.35)}`,
               whiteSpace: "pre-line",
             }}
           >
-            {fallbackText}
+            {overlayText}
           </div>
         </div>
       ) : null}

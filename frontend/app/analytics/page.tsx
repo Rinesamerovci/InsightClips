@@ -396,12 +396,12 @@ function AnalyticsPageContent() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "320px minmax(0, 1fr)",
+            gridTemplateColumns: "1fr",
             gap: 20,
             marginTop: 22,
           }}
         >
-          <aside style={{ display: "grid", gap: 18, alignSelf: "start" }}>
+          <aside style={{ display: "none" }}>
             <section
               className="ic-premium-card"
               style={{
@@ -576,3 +576,4 @@ export default function AnalyticsPage() {
     </Suspense>
   );
 }
+

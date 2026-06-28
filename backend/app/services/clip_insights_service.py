@@ -22,11 +22,11 @@ class ClipInsightsError(Exception):
 
 CLIP_SELECT_COLUMNS_WITH_METRICS = (
     "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,"
-    "storage_url,subtitle_text,status,published,download_url,published_at,view_count,download_count"
+    "storage_url,subtitle_url,subtitle_text,status,published,download_url,published_at,view_count,download_count"
 )
 CLIP_SELECT_COLUMNS_FALLBACK = (
     "id,podcast_id,clip_number,clip_start_sec,clip_end_sec,virality_score,"
-    "storage_url,subtitle_text,status,published,download_url,published_at"
+    "storage_url,subtitle_url,subtitle_text,status,published,download_url,published_at"
 )
 
 
@@ -355,6 +355,7 @@ def _build_search_item(
         ),
         virality_score=float(row.get("virality_score") or 0.0),
         video_url=str(row.get("storage_url") or "").strip() or f"/podcasts/clips/{clip_id}/download",
+        subtitle_url=str(row.get("subtitle_url") or "").strip() or None,
         subtitle_text=subtitle_text,
         status=str(row.get("status") or "ready"),
         published=bool(row.get("published")),

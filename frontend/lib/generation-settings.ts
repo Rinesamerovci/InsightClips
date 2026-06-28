@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ExportMode,
   ExportSettings,
   GenerationSettings,
@@ -16,6 +16,14 @@ export const GENERATION_SETTINGS_STORAGE_KEY = "insightclips-generation-settings
 export const CLIP_DURATION_OPTIONS = [15, 20, 30, 45, 60, 90] as const;
 export const CLIP_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
 export const MAX_TOPIC_LENGTH = 500;
+
+function normalizeGenerationLanguage(language?: string | null): string | undefined {
+  const cleaned = language?.trim();
+  if (!cleaned || cleaned.toLowerCase() === "auto") {
+    return undefined;
+  }
+  return cleaned;
+}
 
 type GenerationTemplateDefinition = {
   id: GenerationTemplateId;
@@ -205,6 +213,7 @@ export function buildDefaultGenerationSettings(): GenerationSettings {
     number_of_clips: 4,
     topic_focus: "",
     subtitles_enabled: true,
+    language: undefined,
   };
 }
 
@@ -227,6 +236,7 @@ export function normalizeGenerationSettings(
       typeof settings?.subtitles_enabled === "boolean"
         ? settings.subtitles_enabled
         : fallback.subtitles_enabled,
+    language: normalizeGenerationLanguage(settings?.language),
   };
 }
 
@@ -348,3 +358,5 @@ export function saveGenerationPreferences(
     }),
   );
 }
+
+

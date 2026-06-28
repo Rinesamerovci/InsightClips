@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+﻿import { useState, type CSSProperties } from "react";
 
 import type { PodcastClipMetrics } from "./api";
 
@@ -58,6 +58,73 @@ export function buildAnalyticsSnapshot(metrics: PodcastClipMetrics | null): {
   };
 }
 
+
+type TrendPoint = {
+  x: number;
+  y: number;
+  clip: PodcastClipMetrics["top_clips"][number];
+};
+
+function buildTrendChart(
+  clips: PodcastClipMetrics["top_clips"],
+  width = 720,
+  height = 320,
+) {
+  if (clips.length === 0) {
+    return {
+      points: [] as TrendPoint[],
+      linePath: "",
+      areaPath: "",
+      maxValue: 0,
+    };
+  }
+
+  const paddingX = 56;
+  const paddingY = 26;
+  const chartWidth = Math.max(1, width - paddingX * 2);
+  const chartHeight = Math.max(1, height - paddingY * 2);
+  const maxValue = Math.max(...clips.map((clip) => clip.downloads), 1);
+  const step = clips.length > 1 ? chartWidth / (clips.length - 1) : 0;
+
+  const points = clips.map((clip, index) => {
+    const normalized = clip.downloads / maxValue;
+    const x = paddingX + step * index;
+    const y = paddingY + chartHeight - normalized * chartHeight;
+    return { x, y, clip };
+  });
+
+  const linePath = points
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ");
+
+  const areaPath =
+    points.length > 0
+      ? `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${height - paddingY} L ${points[0].x.toFixed(2)} ${height - paddingY} Z`
+      : "";
+
+  return { points, linePath, areaPath, maxValue };
+}
+
+function buildYAxisTicks(maxValue: number): number[] {
+  if (maxValue <= 0) {
+    return [0];
+  }
+
+  return Array.from(
+    new Set(
+      [0, 0.25, 0.5, 0.75, 1].map((ratio) => Math.round(maxValue * ratio)),
+    ),
+  ).sort((left, right) => left - right);
+}
+
+function formatChartCount(value: number): string {
+  if (value >= 1000) {
+    const rounded = Math.round(value / 100) / 10;
+    return `${rounded.toFixed(rounded >= 10 ? 0 : 1)}k`;
+  }
+
+  return `${Math.round(value)}`;
+}
 type AnalyticsMetricsDisplayProps = {
   metrics: PodcastClipMetrics | null;
   loadingMetrics: boolean;
@@ -72,6 +139,10 @@ export function AnalyticsMetricsDisplay({
   theme = defaultAnalyticsTheme,
 }: AnalyticsMetricsDisplayProps) {
   const snapshot = buildAnalyticsSnapshot(metrics);
+  const chartClips = metrics?.top_clips ?? [];
+  const chart = buildTrendChart(chartClips);
+  const yTicks = buildYAxisTicks(chart.maxValue);
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const metricCards = metrics
     ? [
         { label: "Downloads", value: metrics.total_downloads },
@@ -217,76 +288,217 @@ export function AnalyticsMetricsDisplay({
 
       <section
         style={{
-          borderRadius: 24,
-          background: theme.cardAlt,
+          borderRadius: 26,
           border: `1px solid ${theme.borderSub}`,
-          padding: 20,
+          background: `linear-gradient(180deg, ${theme.cardAlt}, ${theme.card})`,
+          padding: 18,
           display: "grid",
-          gap: 14,
+          gap: 16,
+          boxShadow: "0 18px 40px rgba(0,0,0,.05)",
         }}
       >
-        <div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                letterSpacing: ".2em",
+                textTransform: "uppercase",
+                color: theme.textFaint,
+                marginBottom: 6,
+              }}
+            >
+              Download trend
+            </div>
+            <h3 style={{ margin: 0, fontSize: 28, lineHeight: 1.06 }}>
+              Top clips by downloads
+            </h3>
+          </div>
           <div
             style={{
-              fontSize: 11,
-              letterSpacing: ".2em",
-              textTransform: "uppercase",
-              color: theme.textFaint,
-              marginBottom: 6,
+              borderRadius: 999,
+              padding: "9px 14px",
+              background: theme.chip,
+              border: `1px solid ${theme.borderSub}`,
+              color: theme.textSub,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: ".02em",
             }}
           >
-            Clip trend chart
+            Hover to inspect
           </div>
-          <h3 style={{ margin: 0, fontSize: 26, lineHeight: 1.1 }}>
-            Top clips by downloads
-          </h3>
         </div>
 
-        {metrics.top_clips.length > 0 ? (
-          <div style={{ display: "grid", gap: 12 }}>
-            {metrics.top_clips.slice(0, 5).map((clip) => {
-              const maxDownloads = Math.max(...metrics.top_clips.map((item) => item.downloads), 1);
-              const width = Math.max(10, Math.round((clip.downloads / maxDownloads) * 100));
+        <div
+          style={{
+            position: "relative",
+            borderRadius: 20,
+            border: `1px solid ${theme.borderSub}`,
+            background: `linear-gradient(180deg, ${theme.card}, ${theme.cardAlt})`,
+            padding: 14,
+            overflow: "hidden",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,.06)",
+          }}
+        >
+          {chart.points.length > 0 ? (
+            <svg
+              viewBox="0 0 720 320"
+              width="100%"
+              height="320"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Download trend chart with hover details"
+              tabIndex={0}
+              onMouseMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                if (!rect.width || !rect.height || chart.points.length === 0) {
+                  return;
+                }
 
-              return (
-                <div key={clip.clip_id} style={{ display: "grid", gap: 6 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>
-                      Clip {clip.clip_number}
-                    </div>
-                    <div style={{ fontSize: 12, color: theme.textSub }}>
-                      {clip.downloads} downloads · {formatAnalyticsChange(clip.click_trend)}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      height: 10,
-                      borderRadius: 999,
-                      background: "rgba(255,255,255,.06)",
-                      border: `1px solid ${theme.borderSub}`,
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${width}%`,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent}88)`,
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{ color: theme.textSub, lineHeight: 1.75 }}>
-            Generate clips first, then the chart will show their ranking by downloads.
-          </div>
-        )}
+                const x = ((event.clientX - rect.left) / rect.width) * 720;
+                let nearestIndex = 0;
+                let nearestDistance = Number.POSITIVE_INFINITY;
+
+                chart.points.forEach((point, index) => {
+                  const distance = Math.abs(point.x - x);
+                  if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIndex = index;
+                  }
+                });
+
+                setHoveredPointIndex(nearestIndex);
+              }}
+              onMouseLeave={() => setHoveredPointIndex(null)}
+              onFocus={() => setHoveredPointIndex(0)}
+            >
+              <defs>
+                <linearGradient id="analyticsAreaFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={theme.accent} stopOpacity="0.24" />
+                  <stop offset="100%" stopColor={theme.accent} stopOpacity="0.02" />
+                </linearGradient>
+                <linearGradient id="analyticsLineGlow" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={theme.accent} stopOpacity="0.9" />
+                  <stop offset="100%" stopColor={theme.accent} stopOpacity="0.5" />
+                </linearGradient>
+              </defs>
+
+              <text x="56" y="16" fill={theme.textFaint} fontSize="10" fontWeight="700" letterSpacing=".18em">
+                Downloads
+              </text>
+
+              {yTicks.map((tick) => {
+                const ratio = chart.maxValue > 0 ? tick / chart.maxValue : 0;
+                const y = 26 + (320 - 52) * (1 - ratio);
+                return (
+                  <g key={`y-${tick}`}>
+                    <line x1="56" x2="688" y1={y} y2={y} stroke={theme.borderSub} strokeWidth="1" opacity="0.5" />
+                    <text x="46" y={y + 4} textAnchor="end" fill={theme.textFaint} fontSize="11" fontWeight="700">
+                      {formatChartCount(tick)}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {chart.points.map((point) => (
+                <line
+                  key={`v-${point.clip.clip_id}`}
+                  x1={point.x}
+                  x2={point.x}
+                  y1="26"
+                  y2="294"
+                  stroke={theme.borderSub}
+                  strokeWidth="1"
+                  opacity="0.4"
+                />
+              ))}
+
+              {chart.areaPath ? <path d={chart.areaPath} fill="url(#analyticsAreaFill)" /> : null}
+              {chart.linePath ? <path d={chart.linePath} fill="none" stroke="url(#analyticsLineGlow)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" /> : null}
+
+              {chart.points.map((point, index) => {
+                const isActive = hoveredPointIndex === index;
+                return (
+                  <g key={point.clip.clip_id}>
+                    {isActive ? <line x1={point.x} x2={point.x} y1="26" y2="294" stroke={theme.accent} strokeWidth="1.5" strokeDasharray="4 5" opacity="0.65" /> : null}
+                    <circle cx={point.x} cy={point.y} r={isActive ? 11 : 8} fill={theme.accent} fillOpacity={isActive ? 0.16 : 0.1} />
+                    <circle cx={point.x} cy={point.y} r={isActive ? 5.8 : 4.4} fill={theme.accent} stroke={theme.card} strokeWidth={2} />
+                    <text x={point.x} y="314" textAnchor="middle" fill={theme.text} fontSize="12" fontWeight="700">
+                      Clip {index + 1}
+                    </text>
+                    {isActive ? (
+                      <g>
+                        <rect
+                          x={Math.max(52, Math.min(point.x - 62, 560))}
+                          y={Math.max(12, point.y - 102)}
+                          width="124"
+                          height="54"
+                          rx="12"
+                          fill={theme.card}
+                          stroke={theme.borderSub}
+                        />
+                        <text
+                          x={Math.max(62, Math.min(point.x - 2, 622))}
+                          y={Math.max(30, point.y - 78)}
+                          textAnchor="middle"
+                          fill={theme.text}
+                          fontSize="11"
+                          fontWeight="800"
+                        >
+                          Clip {point.clip.clip_number}
+                        </text>
+                        <text
+                          x={Math.max(62, Math.min(point.x - 2, 622))}
+                          y={Math.max(46, point.y - 62)}
+                          textAnchor="middle"
+                          fill={theme.textSub}
+                          fontSize="10"
+                          fontWeight="700"
+                        >
+                          {point.clip.downloads} downloads
+                        </text>
+                      </g>
+                    ) : null}
+                  </g>
+                );
+              })}
+            </svg>
+          ) : (
+            <div style={{ color: theme.textSub, lineHeight: 1.75, minHeight: 320, display: "grid", placeItems: "center" }}>
+              Generate clips first, then the chart will show their ranking by downloads.
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+          {[
+            { label: "Peak", value: formatChartCount(chart.maxValue), sub: "highest download count" },
+            { label: "Average", value: formatChartCount(metrics.total_downloads / Math.max(chartClips.length || 1, 1)), sub: "downloads per clip" },
+            { label: "Ranking", value: `${chartClips.length} clips`, sub: "shown in chart" },
+          ].map((item) => (
+            <div
+              key={item.label}
+              style={{
+                borderRadius: 16,
+                border: `1px solid ${theme.borderSub}`,
+                background: theme.card,
+                padding: 12,
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: theme.textFaint, marginBottom: 4 }}>
+                {item.label}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: theme.text }}>
+                {item.value}
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSub, marginTop: 4 }}>
+                {item.sub}
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
-
       <section
         style={{
           borderRadius: 24,

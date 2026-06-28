@@ -21,6 +21,7 @@ import {
 
 import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
 import SubtitleStylePanel from "@/components/SubtitleStylePanel";
+import ClipVideoPreview from "@/components/ClipVideoPreview";
 import { useAuth } from "@/context/AuthContext";
 import {
   buildAuthenticatedBackendUrl,
@@ -2693,6 +2694,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       clip.video_url ?? "",
                       backendToken,
                     );
+                    const subtitlePreviewUrl =
+                      clip.subtitle_url && !/^[A-Za-z]:[\/]/.test(clip.subtitle_url)
+                        ? buildAuthenticatedBackendUrl(clip.subtitle_url, backendToken)
+                        : null;
                     const previewAspectRatio = getPreviewAspectRatio(
                       effectiveExportSettings,
                     );
@@ -2751,33 +2756,13 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           }}
                         >
                           {isPreviewable(previewUrl) ? (
-                            <div
-                              style={{
-                                width: "100%",
-                                maxWidth: portraitPreview ? 220 : 320,
-                                aspectRatio: previewAspectRatio,
-                                margin: "0 auto",
-                                borderRadius: 14,
-                                overflow: "hidden",
-                                background: "#000",
-                                boxShadow: dark
-                                  ? "0 10px 22px rgba(0,0,0,.28)"
-                                  : "0 10px 22px rgba(20,34,16,.12)",
-                              }}
-                            >
-                              <video
-                                controls
-                                preload="metadata"
-                                src={previewUrl}
-                                style={{
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "contain",
-                                  display: "block",
-                                  background: "#000",
-                                }}
-                              />
-                            </div>
+                            <ClipVideoPreview
+                              src={previewUrl}
+                              subtitleUrl={subtitlePreviewUrl}
+                              subtitleText={clip.subtitle_text}
+                              aspectRatio={previewAspectRatio}
+                              dark={dark}
+                            />
                           ) : (
                             <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
                               <PlayCircle size={34} />

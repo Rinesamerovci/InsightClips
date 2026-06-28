@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import shutil
@@ -134,13 +134,14 @@ def transcribe_media(file_path: Path, model: str = "base", language: str | None 
         )
 
     inspection = inspect_media(resolved_path)
+    normalized_language = _normalize_requested_language(language)
     try:
         resolved_model = resolve_transcription_model(model)
         transcript_text, all_words, detected_language, model_used = _transcribe_with_openai(
             resolved_path,
             resolved_model=resolved_model,
             duration_seconds=inspection.duration_seconds,
-            language=language,
+            language=normalized_language,
         )
     except TranscriptionError as exc:
         if not _should_fallback_to_local_whisper(exc):
@@ -148,7 +149,7 @@ def transcribe_media(file_path: Path, model: str = "base", language: str | None 
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(
-            "⚠️ Groq Transcription API failed: %s. "
+            "âš ï¸ Groq Transcription API failed: %s. "
             "Falling back to local CPU Whisper which is EXTREMELY SLOW (may take 10-30 minutes). "
             "To fix this speed issue, verify your GROQ_API_KEY is active and valid in .env.local.",
             exc
@@ -156,7 +157,7 @@ def transcribe_media(file_path: Path, model: str = "base", language: str | None 
         transcript_text, all_words, detected_language, model_used = _transcribe_with_local_whisper(
             resolved_path,
             requested_model=model,
-            language=language,
+            language=normalized_language,
         )
 
     processing_time_seconds = round(time.perf_counter() - start_time, 3)
@@ -182,17 +183,11 @@ def _transcribe_with_openai(
     language: str | None = None,
 ) -> tuple[str, list[TranscriptWord], str, str]:
     client = _build_openai_client()
-    if language == "sq":
-        prompt = "Transkripto bisedën saktësisht në gjuhën shqipe, duke përdorur shkronjat ë dhe ç ku duhet."
-    elif language == "en":
-        prompt = "Transcribe the conversation accurately, capturing spoken words and punctuation."
-    elif language:
-        prompt = f"Transcribe the conversation accurately in the {language} language."
-    else:
-        prompt = "Transkripto bisedën saktësisht në gjuhën e folur, qoftë Shqip, Anglisht, apo gjuhë tjetër."
+    normalized_language = _normalize_requested_language(language)
+    prompt = _build_transcription_prompt(normalized_language)
     transcript_parts: list[str] = []
     all_words: list[TranscriptWord] = []
-    detected_language = "en"
+    detected_language = "unknown"
 
     with _open_transcription_chunks(resolved_path, duration_seconds) as chunks:
         for chunk in chunks:
@@ -201,7 +196,7 @@ def _transcribe_with_openai(
                 chunk.path,
                 model=resolved_model,
                 prompt=prompt,
-                language=language,
+                language=normalized_language,
             )
             chunk_language = _normalize_language(payload.get("language"))
 
@@ -221,13 +216,29 @@ def _transcribe_with_openai(
             _raise_for_low_quality_audio(payload)
             transcript_parts.append(payload["text"].strip())
             all_words.extend(chunk_words)
-            detected_language = chunk_language
+            if chunk_language != "unknown":
+                detected_language = chunk_language
             
             # Groq's Whisper API has strict prompt length limits (around 896 chars).
             # We keep only the last 400 characters to be safe.
             prompt = payload["text"].strip()[-400:]
 
     return " ".join(part for part in transcript_parts if part).strip(), all_words, detected_language, resolved_model
+
+
+def _normalize_requested_language(language: str | None) -> str | None:
+    cleaned = _normalize_language(language)
+    return None if cleaned in {"unknown", "auto", "auto-detect", "auto detect"} else cleaned
+
+
+def _build_transcription_prompt(language: str | None) -> str | None:
+    if language == "sq":
+        return "Transkripto bisedën saktësisht në gjuhën shqipe, duke përdorur shkronjat ë dhe ç ku duhet."
+    if language == "en":
+        return "Transcribe the conversation accurately, capturing spoken words and punctuation."
+    if language:
+        return f"Transcribe the conversation accurately in the {language} language."
+    return None
 
 
 def _transcribe_with_local_whisper(
@@ -253,6 +264,8 @@ def _transcribe_with_local_whisper(
         ) from exc
 
     detected_language = _normalize_language(payload.get("language"))
+    if detected_language == "unknown":
+        detected_language = _normalize_requested_language(language) or "unknown"
 
     transcript_text = str(payload.get("text", "")).strip()
     if not transcript_text:
@@ -704,3 +717,4 @@ def _coerce_float(value: Any) -> float | None:
 
 def _clamp_confidence(value: float) -> float:
     return round(max(0.0, min(1.0, value)), 4)
+

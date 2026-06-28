@@ -2163,7 +2163,7 @@ export default function UploadWorkspace({
                               padding: "10px 16px",
                               background: "#9e8a20",
                               border: "1px solid rgba(255,255,255,.24)",
-                              color: "#fff",
+                              color: d ? "#fff" : text,
                               fontSize: 12,
                               fontWeight: 800,
                               cursor: "pointer",
@@ -2174,16 +2174,16 @@ export default function UploadWorkspace({
                           </button>
                         ) : null}
                         <Link
-                          href={`/clips?podcastId=${prep.podcast_id}`}
+                          href={`/clips?podcastId=${prep.podcast_id}&autogen=1`}
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
                             gap: 8,
                             borderRadius: 999,
                             padding: "10px 16px",
-                            background: "rgba(255,255,255,.18)",
-                            border: "1px solid rgba(255,255,255,.22)",
-                            color: "#fff",
+                            background: d ? "rgba(255,255,255,.18)" : "rgba(90,158,58,.12)",
+                            border: d ? "1px solid rgba(255,255,255,.22)" : `1px solid ${border}`, 
+                            color: d ? "#fff" : text,
                             fontSize: 12,
                             fontWeight: 700,
                             textDecoration: "none",
@@ -2302,7 +2302,7 @@ export default function UploadWorkspace({
                               padding: "12px 18px",
                               border: "1px solid rgba(158,138,32,.38)",
                               background: "#9e8a20",
-                              color: "#fff",
+                              color: d ? "#fff" : text,
                               fontSize: 13,
                               fontWeight: 800,
                               cursor: "pointer",
@@ -2321,9 +2321,10 @@ export default function UploadWorkspace({
                             gap: 8,
                             borderRadius: 14,
                             padding: "12px 18px",
-                            border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                            background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
-                            color: text,
+                            border: "none",
+                            background: `linear-gradient(135deg, #3e7a28, ${hi})`,
+                            color: d ? "#fff" : text,
+                            boxShadow: d ? "0 12px 28px rgba(90,158,58,.22)" : "0 10px 22px rgba(90,158,58,.08)",
                             fontSize: 13,
                             fontWeight: 700,
                             textDecoration: "none",
@@ -2845,3 +2846,4 @@ export default function UploadWorkspace({
     </>
   );
 }
+

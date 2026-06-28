@@ -391,53 +391,115 @@ def _download_youtube_media(source: YouTubeSource, user_id: str) -> YouTubeDownl
     target_dir = YOUTUBE_IMPORT_DIR / _safe_path_part(user_id)
     target_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(target_dir / f"{source.video_id}.%(ext)s")
-    options = {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+    base_options = {
         "merge_output_format": "mp4",
         "noplaylist": True,
         "outtmpl": output_template,
         "quiet": True,
         "no_warnings": True,
+        "js_runtimes": {"node": {}},
+        "remote_components": "ejs:github",
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "android"]
+                "player_client": ["web", "ios", "mweb", "android"],
             }
-        }
+        },
     }
+    format_candidates = [
+        "best",
+        "bestvideo*+bestaudio/best",
+        "bestvideo+bestaudio/best",
+        "bv*+ba/best",
+        "b[ext=mp4]/b/best",
+    ]
 
     import os
-    from app.config import ROOT_DIR, BACKEND_DIR
+    from app.config import ROOT_DIR, BACKEND_DIR, get_settings as _get_settings
+    _settings = _get_settings()
+    cookie_sources: list[tuple[str, str | None]] = []
+
+    # Priority 1: From Settings (pydantic reads .env.local correctly)
+    if _settings.youtube_cookies_path and Path(_settings.youtube_cookies_path).exists():
+        cookie_sources.append(("file", str(Path(_settings.youtube_cookies_path).resolve())))
+
+    # Priority 2: Hardcoded server paths (in case env var is missing)
+    for hardcoded in [
+        "/opt/InsightClips/.generated/cookies.txt",
+        "/opt/InsightClips/backend/cookies.txt",
+        "/opt/InsightClips/cookies.txt",
+    ]:
+        hp = Path(hardcoded)
+        if hp.exists() and ("file", str(hp)) not in cookie_sources:
+            cookie_sources.append(("file", str(hp)))
+
+    # Priority 3: os.environ fallback
     env_cookies = os.environ.get("YOUTUBE_COOKIES_PATH")
     if env_cookies and Path(env_cookies).exists():
-        options["cookiefile"] = str(Path(env_cookies).resolve())
-    else:
-        cookie_found = False
+        candidate = ("file", str(Path(env_cookies).resolve()))
+        if candidate not in cookie_sources:
+            cookie_sources.append(candidate)
+
+    # Priority 4: project-relative cookies.txt
+    if not cookie_sources:
         for candidate_dir in [ROOT_DIR, BACKEND_DIR, Path(".")]:
             candidate_file = candidate_dir / "cookies.txt"
             if candidate_file.exists():
-                options["cookiefile"] = str(candidate_file.resolve())
-                cookie_found = True
+                cookie_sources.append(("file", str(candidate_file.resolve())))
                 break
-        if not cookie_found:
-            # Automatic browser cookies lookup using Chrome as the default
-            options["cookiesfrombrowser"] = ("chrome",)
+
+    youtube_proxy = (_settings.youtube_proxy or os.environ.get("YOUTUBE_PROXY") or "").strip()
+
+    cookie_sources.extend(
+        [
+            ("browser", "chrome"),
+            ("browser", "chromium"),
+            ("browser", "edge"),
+            ("browser", "brave"),
+            ("browser", "firefox"),
+            ("none", None),
+        ]
+    )
+
+    requested_downloads: list[dict[str, object]] = []
+    downloaded_path = ""
+    last_error: Exception | None = None
+    info: dict[str, object] | None = None
+    downloader: object | None = None
 
     try:
-        try:
-            with YoutubeDL(options) as downloader:
-                info = downloader.extract_info(source.normalized_url, download=True)
-        except Exception as cookie_exc:
-            if "cookiesfrombrowser" in options:
-                import logging
-                logging.warning("Failed downloading with browser cookies (%s). Retrying without cookies.", cookie_exc)
-                options.pop("cookiesfrombrowser", None)
-                with YoutubeDL(options) as downloader:
-                    info = downloader.extract_info(source.normalized_url, download=True)
-            else:
-                raise
+        for cookie_mode, cookie_value in cookie_sources:
+            for format_selector in format_candidates:
+                options = dict(base_options)
+                options["format"] = format_selector
+                if youtube_proxy:
+                    options["proxy"] = youtube_proxy
+                if cookie_mode == "file" and cookie_value:
+                    options["cookiefile"] = cookie_value
+                elif cookie_mode == "browser" and cookie_value:
+                    options["cookiesfrombrowser"] = (cookie_value,)
 
-        requested_downloads = info.get("requested_downloads") or []
-        downloaded_path = ""
+                try:
+                    with YoutubeDL(options) as downloader_instance:
+                        info = downloader_instance.extract_info(source.normalized_url, download=True)
+                        downloader = downloader_instance
+                        break
+                except Exception as exc:
+                    last_error = exc
+                    message = str(exc).lower()
+                    if "requested format is not available" in message:
+                        continue
+                    if "sign in to confirm you're not a bot" in message or "sign in to confirm you’re not a bot" in message:
+                        continue
+                    if "cookies" in message or "bot" in message:
+                        continue
+                    continue
+            if info is not None:
+                break
+
+        if info is None or downloader is None:
+            raise last_error or RuntimeError("Unable to download YouTube media.")
+
+        requested_downloads = list(info.get("requested_downloads") or [])
         for item in requested_downloads:
             downloaded_path = str(item.get("filepath") or item.get("_filename") or "")
             if downloaded_path:

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { AuthScaffold } from "@/components/AuthScaffold";
+import { checkPasswordRecoveryEligibility } from "@/lib/api";
 import { getAuthTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 import { supabase } from "@/lib/supabase";
 
@@ -74,6 +75,8 @@ export default function ForgotPasswordPage() {
     if (!normalizedEmail) {
       throw new Error("Enter your email address before requesting a recovery code.");
     }
+
+    await checkPasswordRecoveryEligibility({ email: normalizedEmail });
 
     const { error: otpError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
       redirectTo: recoveryRedirectTo,

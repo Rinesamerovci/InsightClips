@@ -113,6 +113,9 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertIn("crop=", video_filter)
         self.assertIn("scale=720:1280", video_filter)
         self.assertIn("subtitles=", video_filter)
+        self.assertIn("WrapStyle=2", video_filter)
+        self.assertIn("MarginL=56", video_filter)
+        self.assertIn("MarginR=56", video_filter)
 
     def test_build_ffmpeg_clip_command_uses_filter_complex_when_overlay_is_enabled(self) -> None:
         overlay = OverlayDecision(
@@ -212,6 +215,8 @@ class ClippingServiceTests(unittest.TestCase):
             clip_path = args[1]
             clip_path.write_bytes(b"clip")
 
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
                 with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
@@ -225,7 +230,7 @@ class ClippingServiceTests(unittest.TestCase):
                                 clips = generate_clips(
                                     "podcast-123",
                                     self.score_segments,
-                                    self.transcription,
+                                    transcription,
                                     None,
                                     GenerationSettings(number_of_clips=1, clip_duration_seconds=30),
                                     "book_like",
@@ -275,6 +280,8 @@ class ClippingServiceTests(unittest.TestCase):
             clip_path = args[1]
             clip_path.write_bytes(b"clip")
 
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
                 with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
@@ -294,7 +301,7 @@ class ClippingServiceTests(unittest.TestCase):
                                         clips = generate_clips(
                                             "podcast-123",
                                             score_segments,
-                                            self.transcription,
+                                            transcription,
                                             generation_settings=GenerationSettings(number_of_clips=3, clip_duration_seconds=30),
                                         )
 
@@ -320,6 +327,8 @@ class ClippingServiceTests(unittest.TestCase):
             clip_path = args[1]
             clip_path.write_bytes(b"clip")
 
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
                 with patch.object(
@@ -337,7 +346,7 @@ class ClippingServiceTests(unittest.TestCase):
                                 clips = generate_clips(
                                     "podcast-123",
                                     self.score_segments,
-                                    self.transcription,
+                                    transcription,
                                     ExportSettingsInput(
                                         export_mode="portrait",
                                         crop_mode="smart_crop",
@@ -368,7 +377,7 @@ class ClippingServiceTests(unittest.TestCase):
             keywords=["viral", "hook"],
         )
 
-        clip_start, clip_end = _resolve_clip_window(stale_segment, self.transcription)
+        clip_start, clip_end = _resolve_clip_window(stale_segment, self.transcription, target_duration_seconds=30)
 
         self.assertGreaterEqual(clip_start, 0.0)
         self.assertLessEqual(clip_start, 0.2)
@@ -401,6 +410,8 @@ class ClippingServiceTests(unittest.TestCase):
             captured_command["duration"] = kwargs["duration_seconds"]
             clip_path = args[1]
             clip_path.write_bytes(b"clip")
+
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
 
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
@@ -437,6 +448,8 @@ class ClippingServiceTests(unittest.TestCase):
             insert=MagicMock(return_value=SimpleNamespace(execute=MagicMock())),
         )
 
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
                 with patch.object(clipping_service_module, "_get_podcast_row", return_value={"id": "podcast-123"}):
@@ -471,6 +484,8 @@ class ClippingServiceTests(unittest.TestCase):
             applied=True,
             render_status="mapped",
         )
+
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
 
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
@@ -534,6 +549,8 @@ class ClippingServiceTests(unittest.TestCase):
             render_status="mapped",
         )
 
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
         with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
             with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
                 with patch.object(clipping_service_module, "OVERLAY_ASSETS_ROOT", case_dir):
@@ -557,6 +574,48 @@ class ClippingServiceTests(unittest.TestCase):
         self.assertEqual(clips[0].overlay.render_status, "render_fallback")
         self.assertFalse(clips[0].overlay.rendered)
 
+    def test_generate_clips_caps_requested_count_for_short_source(self) -> None:
+        case_dir = self._workspace_case_dir("clipping-short-source-cap")
+        delete_execute = MagicMock()
+        insert_execute = MagicMock()
+        clips_table = SimpleNamespace(
+            delete=MagicMock(return_value=SimpleNamespace(eq=MagicMock(return_value=SimpleNamespace(execute=delete_execute)))),
+            insert=MagicMock(return_value=SimpleNamespace(execute=insert_execute)),
+        )
+        service_supabase_mock = MagicMock()
+        service_supabase_mock.table.side_effect = lambda name: clips_table if name == "clips" else MagicMock()
+
+        def fake_ffmpeg(*args, **kwargs):
+            clip_path = args[1]
+            clip_path.write_bytes(b"clip")
+
+        transcription = self.transcription.model_copy(update={"duration_seconds": 45.0})
+
+        with patch.object(clipping_service_module, "service_supabase", service_supabase_mock):
+            with patch.object(clipping_service_module, "GENERATED_CLIPS_ROOT", case_dir / "generated"):
+                with patch.object(
+                    clipping_service_module,
+                    "_get_podcast_row",
+                    return_value={"id": "podcast-123", "duration": 35.0},
+                ):
+                    with patch.object(clipping_service_module, "_resolve_source_media_path", return_value=Path("podcast.mp4")):
+                        with patch.object(clipping_service_module, "_run_ffmpeg_clip_generation", side_effect=fake_ffmpeg):
+                            with patch.object(
+                                clipping_service_module,
+                                "_store_clip_assets",
+                                return_value=("https://example.com/clip.mp4", "https://example.com/clip.srt"),
+                            ):
+                                clips = generate_clips(
+                                    "podcast-123",
+                                    self.score_segments,
+                                    transcription,
+                                    generation_settings=GenerationSettings(number_of_clips=3, clip_duration_seconds=30),
+                                )
+
+        self.assertEqual(len(clips), 1)
+        self.assertEqual(clips[0].generation_settings.number_of_clips, 3)
 
 if __name__ == "__main__":
     unittest.main()
+
+

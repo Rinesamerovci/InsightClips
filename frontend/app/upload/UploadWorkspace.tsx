@@ -1642,113 +1642,199 @@ export default function UploadWorkspace({
                 >
                   Select Style Template
                 </div>
+                <style>{`
+                  .responsive-template-grid {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 32px;
+                    max-width: 850px;
+                    margin: 0 auto;
+                  }
+                  .template-card-seventh {
+                    grid-column: 4;
+                    grid-row: 1 / span 2;
+                    align-self: center;
+                  }
+                  @media (max-width: 1024px) {
+                    .responsive-template-grid {
+                      grid-template-columns: repeat(3, 1fr);
+                      gap: 24px;
+                    }
+                    .template-card-seventh {
+                      grid-column: auto;
+                      grid-row: auto;
+                      align-self: stretch;
+                    }
+                  }
+                  @media (max-width: 768px) {
+                    .responsive-template-grid {
+                      grid-template-columns: repeat(2, 1fr);
+                      gap: 16px;
+                    }
+                  }
+                  @media (max-width: 480px) {
+                    .responsive-template-grid {
+                      grid-template-columns: 1fr;
+                    }
+                  }
+                `}</style>
                 <div
+                  className="responsive-template-grid"
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 158px), 1fr))",
-                    gap: 10,
-                    alignItems: "stretch",
+                    gridTemplateColumns: "repeat(4, 1fr)",
+                    gridTemplateRows: "1fr 1fr",
+                    gap: "24px",
                   }}
                 >
-                  {GENERATION_TEMPLATES.map((tpl) => {
+                  {GENERATION_TEMPLATES.map((tpl, index) => {
                     const active = generationTemplateId === tpl.id;
                     const clipCountText = tpl.generationSettings.number_of_clips === 1 ? "1 clip" : `${tpl.generationSettings.number_of_clips} clips`;
+                    const isPortrait = tpl.exportMode === "portrait";
+                    const subStyle = tpl.subtitleStyle;
 
+                    let gridCol = "auto";
+                    let gridRow = "auto";
+                    let alignSelf = "stretch";
+
+                    if (index === 6) {
+                      gridCol = "4";
+                      gridRow = "1 / 3";
+                      alignSelf = "center";
+                    } else {
+                      gridCol = `${(index % 3) + 1}`;
+                      gridRow = `${index < 3 ? 1 : 2}`;
+                    }
+                    
                     return (
-                      <button
-                        key={tpl.id}
-                        type="button"
-                        onClick={() => handleTemplateSelect(tpl.id)}
-                        className="lift-card"
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 14,
-                          padding: "14px",
-                          border: `1px solid ${active ? hi : subBorder}`,
-                          background: active
-                            ? d
-                              ? "rgba(90,158,58,.16)"
-                              : "rgba(90,158,58,.1)"
-                            : d
-                              ? "rgba(11,18,9,.52)"
-                              : "rgba(248,252,245,.82)",
-                          color: text,
-                          cursor: "pointer",
-                          transition: "all 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "space-between",
-                          minHeight: 124,
-                        }}
-                      >
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: active ? hi : text }}>
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          onClick={() => handleTemplateSelect(tpl.id)}
+                          style={{
+                            gridColumn: gridCol,
+                            gridRow: gridRow,
+                            alignSelf: alignSelf,
+                            position: "relative",
+                            width: "100%",
+                            aspectRatio: "4/5", // Shorter portrait poster ratio for a clean gallery look
+                            borderRadius: "16px",
+                            overflow: "hidden",
+                            border: active ? `2px solid ${hi}` : `1px solid ${d ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
+                            boxShadow: active ? `0 0 0 4px ${hi}20, 0 12px 24px rgba(0,0,0,0.3)` : `0 4px 12px ${d ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.05)"}`,
+                            transform: active ? "translateY(-4px) scale(1.02)" : "translateY(0) scale(1)",
+                            transition: "all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)",
+                            cursor: "pointer",
+                            padding: 0,
+                            display: "block",
+                            background: d ? "#111" : "#fff",
+                          }}
+                        >
+                          {/* Background Image with Zoom Effect */}
+                          <div style={{
+                            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                            backgroundImage: `url('${tpl.image || (isPortrait ? '/images/podcast_portrait.png' : '/images/podcast_landscape.png')}')`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                            transition: "transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1)",
+                            transform: active ? "scale(1.08)" : "scale(1)",
+                          }} />
+                          
+                          {/* Rich Gradient Overlay */}
+                          <div style={{
+                            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                            background: active 
+                              ? "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.95) 100%)"
+                              : "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.95) 100%)",
+                            transition: "background 0.4s ease"
+                          }} />
+
+                          {/* Top Badge: Format */}
+                          <div style={{
+                            position: "absolute", top: "12px", left: "12px",
+                            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                            color: isPortrait ? "#a7f3d0" : "#bfdbfe", // Green tint for portrait, blue tint for landscape
+                            fontSize: "10px", fontWeight: 800, padding: "4px 8px", borderRadius: "8px",
+                            border: "1px solid rgba(255,255,255,0.15)",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                            display: "flex", alignItems: "center", gap: "4px",
+                            textTransform: "uppercase", letterSpacing: "0.5px"
+                          }}>
+                            {isPortrait ? (
+                              <svg width="10" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="3" ry="3"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                            ) : (
+                              <svg width="14" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="3" ry="3"></rect><line x1="18" y1="12" x2="18.01" y2="12"></line></svg>
+                            )}
+                            {isPortrait ? "9:16 Portrait" : "16:9 Landscape"}
+                          </div>
+
+                          {/* Top Badge: Duration */}
+                          <div style={{
+                            position: "absolute", top: "12px", right: "12px",
+                            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                            color: "#fff", fontSize: "11px", fontWeight: 700, padding: "4px 8px", borderRadius: "8px",
+                            border: "1px solid rgba(255,255,255,0.15)",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
+                          }}>
+                            {tpl.generationSettings.clip_duration_seconds}s
+                          </div>
+
+                          {/* Play Button */}
+                          <div style={{
+                             position: "absolute", top: "45%", left: "50%", transform: "translate(-50%, -50%)",
+                             width: "42px", height: "42px", borderRadius: "50%",
+                             background: active ? hi : "rgba(255,255,255,0.15)",
+                             backdropFilter: "blur(8px)",
+                             display: "flex", alignItems: "center", justifyContent: "center",
+                             border: active ? "none" : "1px solid rgba(255,255,255,0.4)",
+                             boxShadow: active ? `0 8px 24px ${hi}80` : "0 4px 12px rgba(0,0,0,0.2)",
+                             transition: "all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          }}>
+                             <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: 3 }}><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          </div>
+
+                          {/* Content Area at Bottom */}
+                          <div style={{
+                            position: "absolute", bottom: "16px", left: "16px", right: "16px",
+                            textAlign: "left",
+                            display: "flex", flexDirection: "column", alignItems: "center"
+                          }}>
+                            {/* Subtitle Visual Demo */}
+                            <div style={{
+                              fontFamily: subStyle.font_family,
+                              fontSize: isPortrait ? "13px" : "11px",
+                              fontWeight: 900,
+                              color: subStyle.primary_color,
+                              backgroundColor: subStyle.background_opacity > 0 ? subStyle.background_color : "transparent",
+                              padding: subStyle.background_opacity > 0 ? "4px 10px" : "0",
+                              borderRadius: 6,
+                              textAlign: "center",
+                              lineHeight: 1.2,
+                              textTransform: subStyle.font_family === "DM Sans" ? "uppercase" : "none",
+                              textShadow: subStyle.background_opacity === 0 ? `1px 1px 2px ${subStyle.outline_color}, -1px -1px 2px ${subStyle.outline_color}, 1px -1px 2px ${subStyle.outline_color}, -1px 1px 2px ${subStyle.outline_color}` : "none",
+                              marginBottom: "16px",
+                              boxShadow: subStyle.background_opacity > 0 ? "0 4px 12px rgba(0,0,0,0.4)" : "none",
+                              maxWidth: "100%",
+                              wordBreak: "keep-all",
+                            }}>
                               {tpl.label}
-                            </span>
-                            <span
-                              style={{
-                                borderRadius: 4,
-                                background: active ? "rgba(255,255,255,.15)" : d ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)",
-                                border: `1px solid ${active ? "rgba(255,255,255,.2)" : subBorder}`,
-                                padding: "1px 5px",
-                                fontSize: 9,
-                                fontWeight: 600,
-                                textTransform: "uppercase",
-                                color: active ? hi : muted,
-                              }}
-                            >
-                              {tpl.badge}
-                            </span>
-                          </div>
-
-                          <div style={{ fontSize: 11, color: active ? text : muted, lineHeight: 1.4, marginBottom: 8, fontWeight: 400 }}>
-                            {tpl.title}
-                          </div>
-                        </div>
-
-                        <div style={{ marginTop: "auto" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              color: active ? hi : muted,
-                              textTransform: "uppercase",
-                              letterSpacing: ".02em",
-                              borderTop: `1px solid ${active ? "rgba(90,158,58,.15)" : subBorder}`,
-                              paddingTop: 8,
-                            }}
-                          >
-                            <span>
-                              {tpl.generationSettings.clip_duration_seconds}s • {clipCountText} • {tpl.exportMode}
-                            </span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: "50%",
-                                  border: `1px solid ${subBorder}`,
-                                  background: tpl.subtitleStyle.primary_color,
-                                  boxShadow: `0 0 0 1px ${tpl.subtitleStyle.background_color}`,
-                                }}
-                              />
-                              <span style={{ fontSize: 9, fontWeight: 700 }}>
-                                {tpl.subtitleStyle.font_size}px
-                              </span>
+                            </div>
+                            
+                            <div style={{ color: "#fff", fontSize: "15px", fontWeight: 800, letterSpacing: "-0.01em", marginBottom: "4px", width: "100%", textAlign: "left" }}>
+                               {tpl.label}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
+                              <div style={{ color: active ? hi : "rgba(255,255,255,0.7)", fontSize: "12px", fontWeight: 600, transition: "color 0.3s ease" }}>
+                                 {clipCountText}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
           </section>
 
           {sourceMode === "file" ? (
@@ -2163,7 +2249,7 @@ export default function UploadWorkspace({
                               padding: "10px 16px",
                               background: "#9e8a20",
                               border: "1px solid rgba(255,255,255,.24)",
-                              color: "#fff",
+                              color: d ? "#fff" : text,
                               fontSize: 12,
                               fontWeight: 800,
                               cursor: "pointer",
@@ -2174,16 +2260,16 @@ export default function UploadWorkspace({
                           </button>
                         ) : null}
                         <Link
-                          href={`/clips?podcastId=${prep.podcast_id}`}
+                          href={`/clips?podcastId=${prep.podcast_id}&autogen=1`}
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
                             gap: 8,
                             borderRadius: 999,
                             padding: "10px 16px",
-                            background: "rgba(255,255,255,.18)",
-                            border: "1px solid rgba(255,255,255,.22)",
-                            color: "#fff",
+                            background: d ? "rgba(255,255,255,.18)" : "rgba(90,158,58,.12)",
+                            border: d ? "1px solid rgba(255,255,255,.22)" : `1px solid ${border}`, 
+                            color: d ? "#fff" : text,
                             fontSize: 12,
                             fontWeight: 700,
                             textDecoration: "none",
@@ -2302,7 +2388,7 @@ export default function UploadWorkspace({
                               padding: "12px 18px",
                               border: "1px solid rgba(158,138,32,.38)",
                               background: "#9e8a20",
-                              color: "#fff",
+                              color: d ? "#fff" : text,
                               fontSize: 13,
                               fontWeight: 800,
                               cursor: "pointer",
@@ -2321,9 +2407,10 @@ export default function UploadWorkspace({
                             gap: 8,
                             borderRadius: 14,
                             padding: "12px 18px",
-                            border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                            background: d ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.84)",
-                            color: text,
+                            border: "none",
+                            background: `linear-gradient(135deg, #3e7a28, ${hi})`,
+                            color: d ? "#fff" : text,
+                            boxShadow: d ? "0 12px 28px rgba(90,158,58,.22)" : "0 10px 22px rgba(90,158,58,.08)",
                             fontSize: 13,
                             fontWeight: 700,
                             textDecoration: "none",
@@ -2845,3 +2932,4 @@ export default function UploadWorkspace({
     </>
   );
 }
+

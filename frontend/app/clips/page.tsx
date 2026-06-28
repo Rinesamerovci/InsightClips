@@ -17,11 +17,15 @@ import {
   Sparkles,
   SunMedium,
   Wand2,
+  Lightbulb,
+  BookOpen,
 } from "lucide-react";
 
 import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
 import SubtitleStylePanel from "@/components/SubtitleStylePanel";
+import ClipVideoPreview from "@/components/ClipVideoPreview";
 import { useAuth } from "@/context/AuthContext";
+import { MagicLoadingScreen } from "@/components/MagicLoadingScreen";
 import {
   buildAuthenticatedBackendUrl,
   getContentCalendar,
@@ -820,6 +824,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const handleGenerationSettingsChange = (
     changes: Partial<GenerationSettings>,
   ) => {
+    setGenerationTemplateId(null as any);
     setGenerationSettings((current) => {
       const normalized = normalizeGenerationSettings({
         ...current,
@@ -1057,6 +1062,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         if (!pendingAutoGenerateScoreSegmentsRef.current) {
           const analysis = await analyzePodcast(selectedPodcastId, {}, token);
           pendingAutoGenerateScoreSegmentsRef.current = analysis.top_scoring_segments ?? [];
+          
+          // Refresh podcasts list to get the updated import_metadata (which now contains key_takeaways)
+          const updatedPodcasts = await getJson<PodcastsResponse>("/podcasts", token);
+          setPodcasts(updatedPodcasts.podcasts);
         }
 
         const generated = await generateClips(
@@ -1948,12 +1957,14 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   />
 
                   <section
+                    className="lift-card"
                     style={{
                       borderRadius: 20,
-                      border: `1px solid ${t.borderSub}`,
-                      background: t.cardAlt,
-                      padding: "14px 15px",
+                      border: `1px solid ${t.border}`,
+                      background: `linear-gradient(135deg, ${t.cardAlt} 0%, ${t.chip} 100%)`,
+                      padding: "16px 20px",
                       marginBottom: 16,
+                      boxShadow: `0 4px 12px rgba(0,0,0,0.05)`,
                     }}
                   >
                     <div
@@ -1966,10 +1977,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
+                        <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.accent, marginBottom: 6, fontWeight: 800 }}>
                           Advanced controls
                         </div>
-                        <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
+                        <div style={{ fontSize: 13, color: t.text, lineHeight: 1.65, fontWeight: 500 }}>
                           Open visual mode and subtitle styling only when you need deeper polishing.
                         </div>
                       </div>
@@ -1977,13 +1988,15 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                         type="button"
                         onClick={() => setShowAdvancedControls((current) => !current)}
                         style={{
-                          border: `1px solid ${t.borderSub}`,
+                          border: `none`,
                           borderRadius: 999,
-                          padding: "10px 14px",
-                          background: showAdvancedControls ? t.chip : t.card,
-                          color: showAdvancedControls ? t.accent : t.textSub,
-                          fontWeight: 700,
+                          padding: "10px 20px",
+                          background: showAdvancedControls ? t.borderSub : t.accent,
+                          color: showAdvancedControls ? t.text : "#fff",
+                          fontWeight: 800,
                           cursor: "pointer",
+                          boxShadow: showAdvancedControls ? "none" : `0 4px 12px ${t.accent}60`,
+                          transition: "all 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
                         }}
                       >
                         {showAdvancedControls ? "Hide advanced" : "Open advanced"}
@@ -2600,24 +2613,22 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   }}
                 >
                   {generating ? (
-                    <Loader2 size={32} className="animate-spin" style={{ margin: "0 auto 12px" }} />
+                    <MagicLoadingScreen generating={generating} t={t} />
                   ) : (
-                    <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
+                    <>
+                      <Clapperboard size={32} style={{ margin: "0 auto 12px" }} />
+                      <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text }}>
+                        {clips.length === 0
+                          ? "No generated clips yet"
+                          : "No clips match this search"}
+                      </h3>
+                      <p style={{ marginTop: 10, lineHeight: 1.8 }}>
+                        {clips.length === 0
+                          ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, visual format, and subtitle behavior first."
+                          : "Try another search or filter to surface different clip candidates."}
+                      </p>
+                    </>
                   )}
-                  <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 28, color: t.text }}>
-                    {generating
-                      ? "Rendering clips..."
-                      : clips.length === 0
-                        ? "No generated clips yet"
-                        : "No clips match this search"}
-                  </h3>
-                  <p style={{ marginTop: 10, lineHeight: 1.8 }}>
-                    {generating
-                      ? "The backend is creating the MP4 files now. The first ready clips will appear here automatically when rendering finishes."
-                      : clips.length === 0
-                        ? "Generate clips for this podcast to unlock discovery, recommendations, and publish actions. Use the settings above to choose the template, clip length, visual format, and subtitle behavior first."
-                      : "Try another search or filter to surface different clip candidates."}
-                  </p>
                   {clips.length > 0 && activeSearch ? (
                     <button
                       type="button"
@@ -2693,6 +2704,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       clip.video_url ?? "",
                       backendToken,
                     );
+                    const subtitlePreviewUrl =
+                      clip.subtitle_url && !/^[A-Za-z]:[\/]/.test(clip.subtitle_url)
+                        ? buildAuthenticatedBackendUrl(clip.subtitle_url, backendToken)
+                        : null;
                     const previewAspectRatio = getPreviewAspectRatio(
                       effectiveExportSettings,
                     );
@@ -2742,6 +2757,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                         <div
                           className="ic-clip-media"
                           style={{
+                            position: "relative",
                             background: dark ? "rgba(255,255,255,.025)" : "rgba(246,250,240,.82)",
                             display: "flex",
                             alignItems: "center",
@@ -2750,34 +2766,41 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                             borderBottom: `1px solid ${t.borderSub}`,
                           }}
                         >
-                          {isPreviewable(previewUrl) ? (
+                          {clip.topic_matched ? (
                             <div
                               style={{
-                                width: "100%",
-                                maxWidth: portraitPreview ? 220 : 320,
-                                aspectRatio: previewAspectRatio,
-                                margin: "0 auto",
-                                borderRadius: 14,
-                                overflow: "hidden",
-                                background: "#000",
-                                boxShadow: dark
-                                  ? "0 10px 22px rgba(0,0,0,.28)"
-                                  : "0 10px 22px rgba(20,34,16,.12)",
+                                position: "absolute",
+                                top: 16,
+                                left: 16,
+                                zIndex: 10,
+                                background: "rgba(0,0,0,0.75)",
+                                backdropFilter: "blur(4px)",
+                                color: "#fff",
+                                padding: "4px 10px",
+                                borderRadius: 12,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                border: "1px solid rgba(255,255,255,0.15)",
+                                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                                pointerEvents: "none"
                               }}
                             >
-                              <video
-                                controls
-                                preload="metadata"
-                                src={previewUrl}
-                                style={{
-                                  width: "100%",
-                                  height: "100%",
-                                  objectFit: "contain",
-                                  display: "block",
-                                  background: "#000",
-                                }}
-                              />
+                              <span>🎯</span>
+                              <span>Topic Match</span>
                             </div>
+                          ) : null}
+                          {isPreviewable(previewUrl) ? (
+                            <ClipVideoPreview
+                              src={previewUrl}
+                              subtitleUrl={subtitlePreviewUrl}
+                              subtitleText={clip.subtitle_text}
+                              subtitleStyle={effectiveExportSettings?.subtitle_style ?? null}
+                              aspectRatio={previewAspectRatio}
+                              dark={dark}
+                            />
                           ) : (
                             <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
                               <PlayCircle size={34} />
@@ -3293,6 +3316,54 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                             </div>
                           ) : null}
                           </details>
+
+                          {clip.smart_hooks && clip.smart_hooks.length > 0 ? (
+                            <div
+                              style={{
+                                marginTop: 14,
+                                borderRadius: 16,
+                                background: dark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                                border: `1px solid ${t.borderSub}`,
+                                padding: "16px 20px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                                <Lightbulb size={16} color={t.accent} />
+                                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: t.text }}>
+                                  Smart Hooks
+                                </h4>
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                {clip.smart_hooks.map((hook, idx) => (
+                                  <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                    <div style={{ flex: 1, fontSize: 13, color: t.textSub, lineHeight: 1.5 }}>
+                                      {hook}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCopyPlanning(hook, "Smart Hook")}
+                                      style={{
+                                        border: `1px solid ${t.borderSub}`,
+                                        borderRadius: 999,
+                                        background: "transparent",
+                                        color: t.textSub,
+                                        padding: "6px 10px",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 6,
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                        fontSize: 11,
+                                      }}
+                                    >
+                                      <Copy size={12} />
+                                      Copy
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
                             {clip.published ? (

@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, ClassVar, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 ExportMode = Literal["landscape", "portrait"]
 CropMode = Literal["none", "center_crop", "smart_crop"]
@@ -174,9 +174,35 @@ class GenerationSettings(BaseModel):
         cleaned = " ".join(value.split())
         if not cleaned:
             return None
-        if not re.fullmatch(r"[A-Za-z0-9\s,.'\-#/&]+", cleaned):
-            raise ValueError("topic_focus can only contain letters, numbers, spaces, and simple punctuation.")
+        if re.search(r"[<>{}]", cleaned):
+            raise ValueError("topic_focus cannot contain script brackets like <, >, {, or }.")
         return cleaned
+
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split()).lower()
+        if not cleaned or cleaned in {"auto", "auto-detect", "auto detect", "unknown"}:
+            return None
+        return cleaned
+
+    def resolve(self, base: GenerationSettings | None = None) -> GenerationSettings:
+        resolved_base = base or GenerationSettings()
+        return resolved_base.model_copy(
+            update={
+                key: value
+                for key, value in {
+                    "clip_duration_seconds": self.clip_duration_seconds,
+                    "number_of_clips": self.number_of_clips,
+                    "topic_focus": self.topic_focus,
+                    "subtitles_enabled": self.subtitles_enabled,
+                    "language": self.language,
+                }.items()
+                if value is not None
+            }
+        )
 
 
 class GenerationSettingsInput(BaseModel):
@@ -192,6 +218,11 @@ class GenerationSettingsInput(BaseModel):
     @classmethod
     def normalize_topic_focus(cls, value: str | None) -> str | None:
         return GenerationSettings.normalize_topic_focus(value)
+
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str | None) -> str | None:
+        return GenerationSettings.normalize_language(value)
 
     def resolve(self, base: GenerationSettings | None = None) -> GenerationSettings:
         resolved_base = base or GenerationSettings()
@@ -378,3 +409,6 @@ def coerce_persisted_export_settings(value: Any) -> ExportSettings:
         audio_enhancement=_coerce_persisted_audio_enhancement(raw.get("audio_enhancement")),
         generation_settings=_coerce_persisted_generation_settings(raw.get("generation_settings")),
     )
+
+
+

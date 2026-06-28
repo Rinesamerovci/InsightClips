@@ -267,9 +267,9 @@ async def analyze_podcast(
                     model=payload.transcription_model,
                     language=payload.language,
                 )
-                updated_metadata = dict(podcast.import_metadata)
-                updated_metadata["transcription_data"] = transcription.model_dump()
-                update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
+                podcast.import_metadata["transcription_data"] = transcription.model_dump()
+                update_podcast_import_metadata_for_user(podcast_id, current_user.id, podcast.import_metadata)
+                
 
         # Run CPU-bound semantic scoring off the event loop so the API remains responsive.
         scored_segments = await asyncio.to_thread(analyze_and_score, podcast_id, transcription, topic_focus=payload.topic_focus)

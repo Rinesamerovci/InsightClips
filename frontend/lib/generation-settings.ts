@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ExportMode,
   ExportSettings,
   GenerationSettings,
@@ -17,6 +17,14 @@ export const CLIP_DURATION_OPTIONS = [15, 20, 30, 45, 60, 90] as const;
 export const CLIP_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10] as const;
 export const MAX_TOPIC_LENGTH = 500;
 
+function normalizeGenerationLanguage(language?: string | null): string | undefined {
+  const cleaned = language?.trim();
+  if (!cleaned || cleaned.toLowerCase() === "auto") {
+    return undefined;
+  }
+  return cleaned;
+}
+
 type GenerationTemplateDefinition = {
   id: GenerationTemplateId;
   label: string;
@@ -26,6 +34,7 @@ type GenerationTemplateDefinition = {
   generationSettings: GenerationSettings;
   exportMode: ExportMode;
   subtitleStyle: SubtitleStyle;
+  image?: string;
 };
 
 export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
@@ -52,6 +61,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0.62,
       position: "center",
     },
+    image: "/images/single_gem.png",
   },
   {
     id: "hook_spotlight",
@@ -76,6 +86,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0.28,
       position: "bottom",
     },
+    image: "/images/hook_spotlight.png",
   },
   {
     id: "highlight_pair",
@@ -100,6 +111,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0.34,
       position: "bottom",
     },
+    image: "/images/highlight_pair.png",
   },
   {
     id: "story_arc",
@@ -124,6 +136,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0.58,
       position: "bottom",
     },
+    image: "/images/story_arc.png",
   },
   {
     id: "expert_take",
@@ -148,6 +161,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0,
       position: "top",
     },
+    image: "/images/expert_take.png",
   },
   {
     id: "tiktok_viral",
@@ -167,11 +181,12 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       font_family: "DM Sans",
       font_size: 28,
       primary_color: "#FFFFFF",
-      outline_color: "#111111",
-      background_color: "#7A3FF2",
-      background_opacity: 0.32,
+      outline_color: "#2A114B",
+      background_color: "#8B5CF6",
+      background_opacity: 0.58,
       position: "center",
     },
+    image: "/images/tiktok_viral.png",
   },
   {
     id: "deep_conversation",
@@ -196,6 +211,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_opacity: 0.24,
       position: "bottom",
     },
+    image: "/images/deep_conversation.png",
   },
 ];
 
@@ -205,6 +221,7 @@ export function buildDefaultGenerationSettings(): GenerationSettings {
     number_of_clips: 4,
     topic_focus: "",
     subtitles_enabled: true,
+    language: undefined,
   };
 }
 
@@ -227,6 +244,7 @@ export function normalizeGenerationSettings(
       typeof settings?.subtitles_enabled === "boolean"
         ? settings.subtitles_enabled
         : fallback.subtitles_enabled,
+    language: normalizeGenerationLanguage(settings?.language),
   };
 }
 
@@ -348,3 +366,5 @@ export function saveGenerationPreferences(
     }),
   );
 }
+
+

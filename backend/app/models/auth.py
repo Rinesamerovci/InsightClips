@@ -29,6 +29,17 @@ class EmailAvailabilityResponse(BaseModel):
     message: str
 
 
+class PasswordRecoveryRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordRecoveryResponse(BaseModel):
+    email: EmailStr
+    exists: bool
+    confirmed: bool
+    message: str
+
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

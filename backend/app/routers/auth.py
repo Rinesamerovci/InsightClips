@@ -6,10 +6,18 @@ from app.models.auth import (
     EmailAvailabilityRequest,
     EmailAvailabilityResponse,
     LoginRequest,
+    PasswordRecoveryRequest,
+    PasswordRecoveryResponse,
     RegisterRequest,
     VerifyRequest,
 )
-from app.services.auth_service import check_email_availability, login_user, register_user, verify_session
+from app.services.auth_service import (
+    check_email_availability,
+    check_password_recovery_eligibility,
+    login_user,
+    register_user,
+    verify_session,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -22,6 +30,11 @@ async def register(payload: RegisterRequest) -> AuthResponse:
 @router.post("/check-email", response_model=EmailAvailabilityResponse)
 async def check_email(payload: EmailAvailabilityRequest) -> EmailAvailabilityResponse:
     return check_email_availability(str(payload.email))
+
+
+@router.post("/forgot-password/check", response_model=PasswordRecoveryResponse)
+async def check_password_recovery(payload: PasswordRecoveryRequest) -> PasswordRecoveryResponse:
+    return check_password_recovery_eligibility(str(payload.email))
 
 
 @router.post("/login", response_model=AuthResponse)

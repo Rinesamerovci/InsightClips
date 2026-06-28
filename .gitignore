@@ -20,6 +20,11 @@ backend/.env.local
 .compile-check/
 .sixth/
 bin/
+backend/.env.local.bak-*
+backend/app/routers/upload.py.save
+backend/debug_youtube.py
+backend/cookies.txt
+cookies.txt
 
 # Media Files
 *.mp4

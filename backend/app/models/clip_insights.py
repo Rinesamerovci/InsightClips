@@ -126,6 +126,7 @@ class ClipSearchItem(BaseModel):
     duration_seconds: float = Field(gt=0)
     virality_score: float = Field(ge=0, le=100)
     video_url: str
+    subtitle_url: str | None = None
     subtitle_text: str
     status: str
     published: bool = False
@@ -145,6 +146,14 @@ class ClipSearchItem(BaseModel):
         if not cleaned:
             raise ValueError("Field cannot be empty.")
         return cleaned
+
+    @field_validator("subtitle_url")
+    @classmethod
+    def normalize_subtitle_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ClipSearchResponse(BaseModel):

@@ -110,6 +110,14 @@ class Settings(BaseSettings):
         default=600,
         validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
     )
+    youtube_cookies_path: str = Field(
+        default="",
+        validation_alias=AliasChoices("YOUTUBE_COOKIES_PATH"),
+    )
+    youtube_proxy: str = Field(
+        default="",
+        validation_alias=AliasChoices("YOUTUBE_PROXY"),
+    )
     stripe_secret_key: str = Field(default="", validation_alias=AliasChoices("STRIPE_SECRET_KEY"))
     stripe_webhook_secret: str = Field(default="", validation_alias=AliasChoices("STRIPE_WEBHOOK_SECRET"))
     clip_ffmpeg_preset: str = Field(

@@ -1,4 +1,4 @@
-import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
+﻿import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
@@ -180,30 +180,27 @@ export default function GenerationSettingsPanel({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: 16,
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gridTemplateRows: "1fr 1fr",
+              gap: "10px",
             }}
           >
-            {GENERATION_TEMPLATES.map((tpl) => {
+            {GENERATION_TEMPLATES.map((tpl, index) => {
               const active = selectedTemplateId === tpl.id;
-              
-              // Give each template a unique flavor
-              let icon = "✨";
-              let gradient = "linear-gradient(135deg, rgba(90,158,58,0.2) 0%, rgba(90,158,58,0.05) 100%)";
-              let activeBorder = palette.hi;
-              
-              if (tpl.id.includes("viral")) {
-                icon = "🔥";
-                gradient = dark ? "linear-gradient(135deg, rgba(255,107,107,0.2) 0%, rgba(200,80,192,0.1) 100%)" : "linear-gradient(135deg, rgba(255,107,107,0.1) 0%, rgba(200,80,192,0.05) 100%)";
-                activeBorder = "#ff6b6b";
-              } else if (tpl.id.includes("bomb") || tpl.id.includes("value")) {
-                icon = "💎";
-                gradient = dark ? "linear-gradient(135deg, rgba(74,144,226,0.2) 0%, rgba(80,227,194,0.1) 100%)" : "linear-gradient(135deg, rgba(74,144,226,0.1) 0%, rgba(80,227,194,0.05) 100%)";
-                activeBorder = "#4a90e2";
-              } else if (tpl.id.includes("hook")) {
-                icon = "🎣";
-                gradient = dark ? "linear-gradient(135deg, rgba(245,166,35,0.2) 0%, rgba(248,231,28,0.1) 100%)" : "linear-gradient(135deg, rgba(245,166,35,0.1) 0%, rgba(248,231,28,0.05) 100%)";
-                activeBorder = "#f5a623";
+              const isPortrait = tpl.exportMode === "portrait";
+              const subStyle = tpl.subtitleStyle;
+
+              let gridCol = "auto";
+              let gridRow = "auto";
+              let alignSelf = "stretch";
+
+              if (index === 6) {
+                gridCol = "4";
+                gridRow = "1 / 3";
+                alignSelf = "center";
+              } else {
+                gridCol = `${(index % 3) + 1}`;
+                gridRow = `${index < 3 ? 1 : 2}`;
               }
 
               return (
@@ -211,70 +208,137 @@ export default function GenerationSettingsPanel({
                   key={tpl.id}
                   type="button"
                   onClick={() => onTemplateSelect?.(tpl.id)}
-                  className="lift-card"
                   style={{
-                    textAlign: "left",
-                    borderRadius: 20,
-                    padding: "16px",
-                    border: `2px solid ${active ? activeBorder : palette.subBorder}`,
-                    background: active
-                      ? gradient
-                      : dark
-                        ? "rgba(20,24,20,.6)"
-                        : "rgba(255,255,255,.8)",
-                    color: "inherit",
-                    cursor: "pointer",
+                    gridColumn: gridCol,
+                    gridRow: gridRow,
+                    alignSelf: alignSelf,
+                    position: "relative",
+                    width: "100%",
+                    aspectRatio: "4/5", // Shorter poster ratio
+                    borderRadius: "12px",
+                    overflow: "hidden",
+                    border: active ? `2px solid ${palette.hi}` : `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
+                    boxShadow: active ? `0 0 0 4px ${palette.hi}30, 0 8px 16px rgba(0,0,0,0.2)` : `0 2px 8px ${dark ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.05)"}`,
+                    transform: active ? "translateY(-2px) scale(1.02)" : "translateY(0) scale(1)",
                     transition: "all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    minHeight: 110,
-                    boxShadow: active ? `0 8px 24px -8px ${activeBorder}40` : "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    display: "block",
+                    background: dark ? "#111" : "#fff"
                   }}
                 >
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 20, filter: active ? "grayscale(0%)" : "grayscale(100%)", opacity: active ? 1 : 0.5, transition: "all 0.3s" }}>{icon}</span>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: active ? activeBorder : "inherit", letterSpacing: "-0.01em" }}>
-                          {tpl.label}
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          borderRadius: 8,
-                          background: active ? `${activeBorder}20` : dark ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.04)",
-                          padding: "4px 8px",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: active ? activeBorder : palette.muted,
-                        }}
-                      >
-                        {tpl.badge}
-                      </span>
-                    </div>
+                  {/* Background Image with Zoom Effect */}
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundImage: `url('${tpl.image || (isPortrait ? '/images/podcast_portrait.png' : '/images/podcast_landscape.png')}')`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    transition: "transform 0.5s ease",
+                    transform: active ? "scale(1.05)" : "scale(1)",
+                  }} />
+
+                  {/* Rich Gradient Overlay */}
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    background: active
+                      ? "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.95) 100%)"
+                      : "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.95) 100%)",
+                    transition: "background 0.3s ease"
+                  }} />
+
+                  {/* Format Badge (Portrait vs Landscape) */}
+                  <div style={{
+                    position: "absolute", top: "6px", left: "6px",
+                    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                    color: isPortrait ? "#a7f3d0" : "#bfdbfe", // Green tint for portrait, blue tint for landscape
+                    fontSize: "8px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                    display: "flex", alignItems: "center", gap: "2px",
+                    textTransform: "uppercase", letterSpacing: "0.5px",
+                    zIndex: 2
+                  }}>
+                    {isPortrait ? (
+                      <svg width="6" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="3" ry="3"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                    ) : (
+                      <svg width="10" height="6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="3" ry="3"></rect><line x1="18" y1="12" x2="18.01" y2="12"></line></svg>
+                    )}
+                    {isPortrait ? "9:16" : "16:9"}
                   </div>
 
-                  <div style={{ marginTop: "auto" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: active ? activeBorder : palette.muted,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        {tpl.generationSettings.clip_duration_seconds}s
-                      </div>
-                      <div style={{ width: 4, height: 4, borderRadius: "50%", background: "currentColor", opacity: 0.3 }} />
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        {tpl.generationSettings.number_of_clips} clip{tpl.generationSettings.number_of_clips === 1 ? "" : "s"}
-                      </div>
+                  {/* Top Badge: Duration */}
+                  <div style={{
+                    position: "absolute", top: "6px", right: "6px",
+                    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                    color: "#fff", fontSize: "9px", fontWeight: 700, padding: "2px 4px", borderRadius: "4px",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    zIndex: 2
+                  }}>
+                    {tpl.generationSettings.clip_duration_seconds}s
+                  </div>
+
+                  {/* Checkmark for Active State */}
+                  {active && (
+                    <div style={{
+                      position: "absolute", top: "24px", left: "6px",
+                      width: "16px", height: "16px", borderRadius: "50%",
+                      background: palette.hi,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                      zIndex: 3
+                    }}>
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  )}
+
+                  {/* Play Button */}
+                  <div style={{
+                    position: "absolute", top: "45%", left: "50%", transform: "translate(-50%, -50%)",
+                    width: "28px", height: "28px", borderRadius: "50%",
+                    background: active ? palette.hi : "rgba(255,255,255,0.15)",
+                    backdropFilter: "blur(8px)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: active ? "none" : "1px solid rgba(255,255,255,0.4)",
+                    boxShadow: active ? `0 4px 12px ${palette.hi}80` : "0 4px 12px rgba(0,0,0,0.2)",
+                    transition: "all 0.3s ease",
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: 2 }}><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                  </div>
+
+                  {/* Content Area at Bottom */}
+                  <div style={{
+                    position: "absolute", bottom: "8px", left: "8px", right: "8px",
+                    textAlign: "left",
+                    display: "flex", flexDirection: "column", alignItems: "center"
+                  }}>
+                    {/* Subtitle Visual Demo */}
+                    <div style={{
+                      fontFamily: subStyle.font_family,
+                      fontSize: isPortrait ? "8px" : "7px",
+                      fontWeight: 900,
+                      color: subStyle.primary_color,
+                      backgroundColor: subStyle.background_opacity > 0 ? subStyle.background_color : "transparent",
+                      padding: subStyle.background_opacity > 0 ? "2px 4px" : "0",
+                      borderRadius: 4,
+                      textAlign: "center",
+                      lineHeight: 1.2,
+                      textTransform: subStyle.font_family === "DM Sans" ? "uppercase" : "none",
+                      textShadow: subStyle.background_opacity === 0 ? `1px 1px 2px ${subStyle.outline_color}, -1px -1px 2px ${subStyle.outline_color}, 1px -1px 2px ${subStyle.outline_color}, -1px 1px 2px ${subStyle.outline_color}` : "none",
+                      marginBottom: "8px",
+                      boxShadow: subStyle.background_opacity > 0 ? "0 2px 8px rgba(0,0,0,0.4)" : "none",
+                      maxWidth: "100%",
+                      wordBreak: "keep-all",
+                    }}>
+                      {tpl.label}
+                    </div>
+
+                    <div style={{ color: "#fff", fontSize: "11px", fontWeight: 800, letterSpacing: "-0.01em", marginBottom: "2px", width: "100%", textAlign: "left" }}>
+                      {tpl.label}
+                    </div>
+                    <div style={{ color: active ? palette.hi : "rgba(255,255,255,0.7)", fontSize: "9px", fontWeight: 600, transition: "color 0.3s ease", width: "100%", textAlign: "left" }}>
+                      {tpl.generationSettings.number_of_clips} {tpl.generationSettings.number_of_clips === 1 ? "clip" : "clips"}
                     </div>
                   </div>
                 </button>
@@ -413,28 +477,32 @@ export default function GenerationSettingsPanel({
             padding: "16px 16px 14px",
           }}
         >
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: ".2em",
-                textTransform: "uppercase",
-                color: palette.hi2,
-                fontWeight: 700,
-                marginBottom: 10,
-              }}
-            >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: ".2em",
+              textTransform: "uppercase",
+              color: palette.hi2,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
             Spoken language (optional)
-            </div>
+          </div>
           <select
             value={settings.language ?? "auto"}
-            onChange={(e) => onSettingsChange({ language: e.target.value })}
+            onChange={(e) =>
+              onSettingsChange({
+                language: e.target.value === "auto" ? undefined : e.target.value,
+              })
+            }
             style={{
               width: "100%",
               borderRadius: 12,
               border: `1px solid ${palette.subBorder}`,
               background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
               color: dark ? "#dff0d8" : "#1e3418",
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: 700,
               padding: "10px 14px",
               cursor: "pointer",
@@ -442,9 +510,13 @@ export default function GenerationSettingsPanel({
               appearance: "none",
             }}
           >
-            <option value="auto">Auto-detect (Recommended)</option>
-            <option value="sq">Albanian (Shqip)</option>
+            <option value="auto">Auto-Detect Language</option>
             <option value="en">English</option>
+            <option value="sq">Albanian (Shqip)</option>
+            <option value="de">German (Deutsch)</option>
+            <option value="it">Italian (Italiano)</option>
+            <option value="fr">French (Français)</option>
+            <option value="es">Spanish (Español)</option>
           </select>
         </div>
 
@@ -582,8 +654,52 @@ export default function GenerationSettingsPanel({
             lineHeight: 1.6,
             whiteSpace: "pre-wrap",
             outline: "none",
+            transition: "border-color 0.2s",
           }}
+          onFocus={(e) => e.target.style.borderColor = palette.hi}
+          onBlur={(e) => e.target.style.borderColor = palette.subBorder}
         />
+
+        {/* Quick Topic Suggestions */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+          {["🔥 Motivation", "😂 Funny Moments", "🧠 Educational", "📈 Success Story", "💡 Quick Tips"].map((topic) => (
+            <button
+              key={topic}
+              type="button"
+              onClick={() => {
+                const current = settings.topic_focus.trim();
+                const newTopic = current ? `${current}, ${topic}` : topic;
+                onSettingsChange({ topic_focus: newTopic.slice(0, MAX_TOPIC_LENGTH) });
+              }}
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: dark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)",
+                background: dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+                border: `1px solid ${palette.subBorder}`,
+                borderRadius: 20,
+                padding: "6px 12px",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)";
+                e.currentTarget.style.color = palette.hi;
+                e.currentTarget.style.borderColor = palette.hi;
+                e.currentTarget.style.transform = "scale(1.05)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)";
+                e.currentTarget.style.color = dark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)";
+                e.currentTarget.style.borderColor = palette.subBorder;
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
+              {topic}
+            </button>
+          ))}
+        </div>
+
         <div style={{ marginTop: 8, fontSize: 12, color: palette.muted, lineHeight: 1.6 }}>
           Use this to tell InsightClips what to look for inside this video. Put the theme, hook style,
           story angle, or exact moments you want surfaced.
@@ -593,3 +709,4 @@ export default function GenerationSettingsPanel({
     </section>
   );
 }
+

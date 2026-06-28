@@ -15,6 +15,7 @@ export type ClipInsightInput = {
   clip_end_seconds: number;
   duration_seconds: number;
   virality_score: number;
+  topic_matched?: boolean;
   subtitle_text: string;
   status: "ready" | "processing" | "failed";
   published?: boolean;
@@ -24,6 +25,7 @@ export type ClipInsightInput = {
   subtitle_url?: string | null;
   overlay?: ClipOverlay | null;
   export_settings?: ExportSettings | null;
+  smart_hooks?: string[] | null;
 };
 
 export type PodcastInsightInput = {

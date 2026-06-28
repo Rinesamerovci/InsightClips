@@ -241,12 +241,13 @@ export default function ExportSettingsPage() {
   const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
 
   const [viewportWidth, setViewportWidth] = useState(1280);
-  const [dark, setDark] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setDark(window.localStorage.getItem("insightclips-theme") === "dark");
     }
-    return window.localStorage.getItem("insightclips-theme") === "dark";
-  });
+  }, []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsForm, setSettingsForm] = useState<ExportSettings>(() =>

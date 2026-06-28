@@ -255,6 +255,7 @@ export type PrepareUploadResponse = {
   currency: "USD";
   export_settings?: ExportSettings | null;
   is_mock?: boolean;
+  smart_hooks?: string[];
 };
 
 export type YouTubeImportPayload = {
@@ -316,6 +317,7 @@ export type ScoreSegment = {
   transcript_snippet: string;
   sentiment: "positive" | "neutral" | "negative";
   keywords: string[];
+  topic_matched?: boolean;
 };
 
 export type AnalysisResult = {
@@ -386,6 +388,7 @@ export type ClipResult = {
   clip_end_seconds: number;
   duration_seconds: number;
   virality_score: number;
+  topic_matched?: boolean;
   video_url: string;
   subtitle_url?: string | null;
   subtitle_text: string;

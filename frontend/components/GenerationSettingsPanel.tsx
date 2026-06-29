@@ -1,4 +1,4 @@
-﻿import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
+import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
@@ -517,6 +517,53 @@ export default function GenerationSettingsPanel({
             <option value="it">Italian (Italiano)</option>
             <option value="fr">French (Français)</option>
             <option value="es">Spanish (Español)</option>
+          </select>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 18,
+            border: `1px solid ${palette.subBorder}`,
+            background: dark ? "rgba(11,18,9,.6)" : "rgba(248,252,245,.82)",
+            padding: "16px 16px 14px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: ".2em",
+              textTransform: "uppercase",
+              color: palette.hi2,
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            Target Platform
+          </div>
+          <select
+            value={settings.target_platform ?? "tiktok"}
+            onChange={(e) =>
+              onSettingsChange({
+                target_platform: e.target.value as any,
+              })
+            }
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              border: `1px solid ${palette.subBorder}`,
+              background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
+              color: dark ? "#dff0d8" : "#1e3418",
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "10px 14px",
+              cursor: "pointer",
+              outline: "none",
+              appearance: "none",
+            }}
+          >
+            <option value="tiktok">TikTok</option>
+            <option value="youtube">YouTube Shorts</option>
+            <option value="linkedin">LinkedIn</option>
           </select>
         </div>
 

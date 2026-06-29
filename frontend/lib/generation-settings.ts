@@ -222,6 +222,7 @@ export function buildDefaultGenerationSettings(): GenerationSettings {
     topic_focus: "",
     subtitles_enabled: true,
     language: undefined,
+    target_platform: undefined,
   };
 }
 
@@ -245,6 +246,7 @@ export function normalizeGenerationSettings(
         ? settings.subtitles_enabled
         : fallback.subtitles_enabled,
     language: normalizeGenerationLanguage(settings?.language),
+    target_platform: settings?.target_platform ?? fallback.target_platform,
   };
 }
 

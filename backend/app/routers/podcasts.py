@@ -497,6 +497,7 @@ async def get_podcast_clip_metrics(
 @router.get("/{podcast_id}/content-calendar", response_model=ContentCalendarResponse)
 async def get_podcast_content_calendar(
     podcast_id: str,
+    platform: str | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ContentCalendarResponse:
     if not podcast_belongs_to_user(podcast_id, current_user.id):
@@ -505,7 +506,7 @@ async def get_podcast_content_calendar(
             detail="Podcast not found for the current user.",
         )
     try:
-        return build_content_calendar(podcast_id)
+        return build_content_calendar(podcast_id, target_platform=platform)
     except PublishingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

@@ -5,11 +5,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
-  CalendarDays,
   Clapperboard,
   Copy,
   Download,
-  Hash,
   Loader2,
   Moon,
   PlayCircle,
@@ -18,7 +16,6 @@ import {
   SunMedium,
   Wand2,
   Lightbulb,
-  BookOpen,
 } from "lucide-react";
 
 import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
@@ -43,7 +40,6 @@ import {
   type ClipOverlay,
   type ClipResult,
   type ClipSearchResult,
-  type ContentCalendarPlatform,
   type ContentCalendarResponse,
   type ContentCalendarSuggestion,
   type ExportSettings,
@@ -57,7 +53,6 @@ import {
 import {
   buildGenerationRequestPayload,
   buildDefaultGenerationSettings,
-  describeGenerationSettings,
   loadSavedGenerationPreferences,
   normalizeGenerationSettings,
   saveGenerationPreferences,
@@ -70,8 +65,6 @@ import {
 import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 import {
   buildSubtitleStyleFromPreset,
-  formatCropMode,
-  formatExportMode,
   normalizeExportSettings,
 } from "@/lib/subtitle-style";
 import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
@@ -126,48 +119,12 @@ function formatTime(seconds: number): string {
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
 }
 
-function formatDate(value?: string | null): string {
-  if (!value) {
-    return "Not published yet";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Not published yet";
-  }
-
-  return date.toLocaleString();
-}
-
-function truncateText(value: string, maxLength: number): string {
-  const normalized = String(value ?? "")
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength).trimEnd()}...`;
-}
-
 function isPreviewable(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
 function getPreviewAspectRatio(exportSettings?: ClipResult["export_settings"] | null): string {
   return exportSettings?.export_mode === "portrait" ? "9 / 16" : "16 / 9";
-}
-
-function formatPlatformLabel(platform: ContentCalendarPlatform): string {
-  if (platform === "tiktok") {
-    return "TikTok";
-  }
-  if (platform === "linkedin") {
-    return "LinkedIn";
-  }
-  return "YouTube";
 }
 
 function collectPlanningHashtags(suggestions: ContentCalendarSuggestion[]): string[] {
@@ -190,18 +147,6 @@ function collectPlanningHashtags(suggestions: ContentCalendarSuggestion[]): stri
   }
 
   return hashtags.slice(0, 8);
-}
-
-function buildPlanningPostCopy(suggestion: ContentCalendarSuggestion): string {
-  return [
-    suggestion.title,
-    suggestion.caption,
-    suggestion.hashtags.join(" "),
-    suggestion.call_to_action,
-  ]
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join("\n\n");
 }
 
 function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSearchResult[] {
@@ -449,20 +394,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
     return next;
   }, [calendarSuggestions]);
-  const calendarPreview = calendarSuggestions.slice(0, 6);
-  const plannedClipCount = contentCalendarByClipId.size;
-  const planningHashtagPreview = useMemo(
-    () => collectPlanningHashtags(calendarSuggestions).slice(0, 6),
-    [calendarSuggestions],
-  );
-  const generationSummary = useMemo(
-    () => describeGenerationSettings(generationSettings),
-    [generationSettings],
-  );
   const hasCompleteClipSet = clips.length >= generationSettings.number_of_clips;
-  const projectPromptSummary = generationSettings.topic_focus.trim();
-  const selectedVisualModeSummary =
-    VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode) ?? VISUAL_OUTPUT_MODES[0];
 
   const publishedCount = clips.filter((clip) => clip.published).length;
   const overlayEnabledCount = clips.filter(
@@ -515,6 +447,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         : savedPreferences.exportSettings,
     );
   }, [mounted]);
+
+  useEffect(() => {
+    generationTemplateIdRef.current = generationTemplateId;
+  }, [generationTemplateId]);
 
   useEffect(() => {
     generationSettingsRef.current = generationSettings;
@@ -577,7 +513,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     const loadClipData = async () => {
       setLoadingClips(true);
       setLoadingRecommendations(true);
-      setLoadingCalendar(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -585,10 +520,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           return;
         }
 
-        const [clipsResult, recommendationsResult, calendarResult] = await Promise.allSettled([
+        const [clipsResult, recommendationsResult] = await Promise.allSettled([
           getClips(selectedPodcastId, token),
           getRecommendations(selectedPodcastId, token),
-          getContentCalendar(selectedPodcastId, token),
         ]);
 
         if (clipsResult.status === "fulfilled") {
@@ -612,12 +546,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           setRecommendationsEstimated(false);
         }
 
-        if (calendarResult.status === "fulfilled") {
-          setContentCalendar(calendarResult.value);
-        } else {
-          setContentCalendar(null);
-        }
-
         setError("");
       } catch (loadError) {
         setClips([]);
@@ -627,7 +555,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           loadError instanceof Error ? loadError.message : "Unable to load clips.",
         );
       } finally {
-        setLoadingCalendar(false);
         setLoadingClips(false);
         setLoadingRecommendations(false);
       }
@@ -816,7 +743,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         token,
       );
       const recommended = await getRecommendations(selectedPodcastId, token).catch(() => null);
-      const calendar = await getContentCalendar(selectedPodcastId, token).catch(() => null);
 
       setClips(generated.clips);
       setSearchResults(
@@ -825,9 +751,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       if (recommended) {
         setRecommendations(recommended.recommendations);
         setRecommendationsEstimated(Boolean(recommended.estimated));
-      }
-      if (calendar) {
-        setContentCalendar(calendar);
       }
       setWorkspaceView("results");
       if (mode === "generate") {
@@ -888,6 +811,44 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     router,
     syncBackendSession,
     visualOutputMode,
+  ]);
+
+  const loadContentCalendar = useCallback(async () => {
+    if (!selectedPodcastId || authLoading || loadingCalendar) {
+      return;
+    }
+
+    setLoadingCalendar(true);
+    setContentCalendar(null);
+
+    try {
+      const token = backendToken ?? (await syncBackendSession());
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      const calendar = await getContentCalendar(selectedPodcastId, token, generationSettings.target_platform);
+      setContentCalendar(calendar);
+      setError("");
+    } catch (loadError) {
+      setContentCalendar(null);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load the content calendar.",
+      );
+    } finally {
+      setLoadingCalendar(false);
+    }
+  }, [
+    authLoading,
+    backendToken,
+    generationSettings.target_platform,
+    loadingCalendar,
+    router,
+    selectedPodcastId,
+    syncBackendSession,
   ]);
 
   useEffect(() => {
@@ -1797,12 +1758,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           color: active ? "#fff" : t.textSub,
                           fontWeight: 700,
                           cursor: "pointer",
-                        }}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
                 </div>
               </section>
 
@@ -1812,7 +1773,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     dark={dark}
                     settings={generationSettings}
                     onSettingsChange={handleGenerationSettingsChange}
-                    selectedTemplateId={generationTemplateId}
+                    selectedTemplateId={generationTemplateId ?? undefined}
                     onTemplateSelect={handleTemplateSelect}
                     storageHint="These preferences are reused across the upload and clips workflow on this device."
                     palette={{
@@ -2053,296 +2014,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
               {workspaceView === "results" ? (
                 <div style={{ display: "grid", gap: 18 }}>
-              <section
-                style={{
-                  borderRadius: 24,
-                  background: t.card,
-                  border: `1px solid ${t.border}`,
-                  padding: 20,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    marginBottom: 16,
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        letterSpacing: ".22em",
-                        textTransform: "uppercase",
-                        color: t.accentLt,
-                        fontWeight: 700,
-                        marginBottom: 8,
-                      }}
-                    >
-                      Content Calendar
-                    </div>
-                    <h2
-                      style={{
-                        fontFamily: "'DM Serif Display',serif",
-                        fontStyle: "italic",
-                        fontSize: 24,
-                        fontWeight: 400,
-                        marginBottom: 8,
-                      }}
-                    >
-                      Reuse planning content right after generation
-                    </h2>
-                    <p style={{ fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 640 }}>
-                      Suggested posting slots, captions, and hashtags are grouped per clip so you can move from generation to publishing faster.
-                    </p>
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 18,
-                      border: `1px solid ${t.borderSub}`,
-                      background: t.cardAlt,
-                      padding: "14px 16px",
-                      minWidth: 0,
-                      width: "100%",
-                      maxWidth: 320,
-                    }}
-                  >
-                    <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                      Planning coverage
-                    </div>
-                    <div style={{ fontSize: 14, color: t.text, fontWeight: 700 }}>
-                      {plannedClipCount} planned clip{plannedClipCount === 1 ? "" : "s"} / {calendarSuggestions.length} total slots
-                    </div>
-                    <div style={{ marginTop: 6, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
-                      {contentCalendar?.estimated
-                        ? "Showing estimated planning suggestions from current clip data."
-                        : "Using structured planning data from the backend calendar endpoint."}
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 8,
-                    marginBottom: 16,
-                    fontSize: 13,
-                    lineHeight: 1.7,
-                    color: t.textSub,
-                  }}
-                >
-                  <div style={{ overflowWrap: "anywhere" }}>
-                    <strong style={{ color: t.text }}>Generation setup:</strong> {generationSummary}.
-                  </div>
-                  <div style={{ overflowWrap: "anywhere" }}>
-                    <strong style={{ color: t.text }}>Video topic:</strong>{" "}
-                    {projectPromptSummary || "Not set yet."}
-                  </div>
-                  <div style={{ overflowWrap: "anywhere" }}>
-                    <strong style={{ color: t.text }}>Hashtags:</strong>{" "}
-                    {planningHashtagPreview.length > 0
-                      ? planningHashtagPreview.join(" ")
-                      : "Waiting for hashtags."}
-                  </div>
-                  <div style={{ overflowWrap: "anywhere" }}>
-                    <strong style={{ color: t.text }}>Visual mode:</strong>{" "}
-                    {selectedVisualModeSummary.label} - {selectedVisualModeSummary.title}.
-                  </div>
-                </div>
-
-                {loadingCalendar ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: t.textSub }}>
-                    <Loader2 size={18} className="animate-spin" />
-                    Building the content calendar...
-                  </div>
-                ) : !selectedPodcast ? (
-                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                    Pick a podcast to load its planning suggestions.
-                  </div>
-                ) : clips.length === 0 ? (
-                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                    Generate clips first and the posting calendar will appear here automatically.
-                  </div>
-                ) : calendarPreview.length === 0 ? (
-                  <div style={{ color: t.textSub, lineHeight: 1.75 }}>
-                    No planning suggestions are available yet for these clips. The clip cards below will still show gracefully if planning data is partial.
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-                      gap: 12,
-                      alignItems: "stretch",
-                    }}
-                  >
-                    {calendarPreview.map((suggestion) => (
-                      <details
-                        key={`${suggestion.clip_id}-${suggestion.platform}`}
-                        style={{
-                          borderRadius: 18,
-                          border: `1px solid ${t.borderSub}`,
-                          background: t.cardAlt,
-                          padding: 0,
-                          minHeight: 168,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <summary
-                          style={{
-                            listStyle: "none",
-                            cursor: "pointer",
-                            padding: 14,
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                            <div>
-                              <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                                Clip {suggestion.clip_number}
-                              </div>
-                              <div style={{ marginTop: 4, fontWeight: 800, color: t.text }}>
-                                {formatPlatformLabel(suggestion.platform)}
-                              </div>
-                            </div>
-                            <div
-                              style={{
-                                borderRadius: 999,
-                                border: `1px solid ${t.borderSub}`,
-                                background: t.chip,
-                                color: t.accent,
-                                padding: "6px 10px",
-                                fontSize: 11,
-                                fontWeight: 800,
-                                height: "fit-content",
-                              }}
-                            >
-                              Day {suggestion.scheduled_day}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.45, marginBottom: 6 }}>
-                            {truncateText(suggestion.title, 64)}
-                          </div>
-                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>
-                            Best time: {suggestion.best_time_local}
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 10,
-                              width: "fit-content",
-                              borderRadius: 999,
-                              border: `1px solid ${t.borderSub}`,
-                              background: "transparent",
-                              color: t.textSub,
-                              padding: "6px 9px",
-                              fontSize: 11,
-                              fontWeight: 800,
-                            }}
-                          >
-                            Open caption
-                          </div>
-                        </summary>
-                        <div
-                          style={{
-                            borderTop: `1px solid ${t.borderSub}`,
-                            padding: 14,
-                            display: "grid",
-                            gap: 12,
-                          }}
-                        >
-                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
-                            {suggestion.caption}
-                          </div>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {suggestion.hashtags.slice(0, 6).map((hashtag) => (
-                              <span
-                                key={hashtag}
-                                style={{
-                                  borderRadius: 999,
-                                  border: `1px solid ${t.borderSub}`,
-                                  background: "transparent",
-                                  color: t.textSub,
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  padding: "5px 9px",
-                                }}
-                              >
-                                {hashtag}
-                              </span>
-                            ))}
-                          </div>
-                          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
-                            {suggestion.repurpose_angle}
-                          </div>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyPlanning(buildPlanningPostCopy(suggestion), "Post")}
-                              style={{
-                                border: "none",
-                                borderRadius: 999,
-                                background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                                color: "#fff",
-                                padding: "8px 12px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                fontWeight: 800,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <Copy size={13} />
-                              Copy post
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
-                              style={{
-                                border: `1px solid ${t.borderSub}`,
-                                borderRadius: 999,
-                                background: "transparent",
-                                color: t.textSub,
-                                padding: "8px 12px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <Copy size={13} />
-                              Caption
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
-                              style={{
-                                border: `1px solid ${t.borderSub}`,
-                                borderRadius: 999,
-                                background: "transparent",
-                                color: t.textSub,
-                                padding: "8px 12px",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <Hash size={13} />
-                              Hashtags
-                            </button>
-                          </div>
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                )}
-              </section>
-
-
               <div
                 style={{
                   display: "grid",
@@ -2564,10 +2235,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
                     const overlayState = getOverlayState(clip.overlay);
-                    const clipPlanningSuggestions =
-                      contentCalendarByClipId.get(clip.id) ?? [];
                     const clipPlanningHashtags =
-                      collectPlanningHashtags(clipPlanningSuggestions);
+                      collectPlanningHashtags(contentCalendarByClipId.get(clip.id) ?? []);
                     const effectiveExportSettings =
                       clip.export_settings ?? selectedPodcast?.export_settings ?? null;
                     const previewUrl = buildAuthenticatedBackendUrl(
@@ -2582,7 +2251,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     const previewAspectRatio = getPreviewAspectRatio(
                       effectiveExportSettings,
                     );
-                    const portraitPreview = previewAspectRatio === "9 / 16";
                     const audioFeedback = getAudioEnhancementFeedback({
                       audioEnhancement: effectiveExportSettings?.audio_enhancement ?? null,
                       clipStatus: clip.status,
@@ -2798,6 +2466,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                             style={{
                               marginTop: 14,
                             }}
+                            onToggle={(event) => {
+                              const target = event.currentTarget;
+                              if (target.open && !contentCalendar && !loadingCalendar) {
+                                void loadContentCalendar();
+                              }
+                            }}
                           >
                             <summary
                               style={{
@@ -2813,379 +2487,61 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                                 width: "fit-content",
                               }}
                             >
-                              Details
+                              Hashtags
                             </summary>
-                          <div
+                          {loadingCalendar && !contentCalendar ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textSub, fontSize: 12 }}>
+                              <Loader2 size={14} className="animate-spin" />
+                              Loading AI hashtags...
+                            </div>
+                          ) : (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                              {clipPlanningHashtags.length > 0 ? (
+                                clipPlanningHashtags.map((hashtag) => (
+                                  <span
+                                    key={hashtag}
+                                    style={{
+                                      borderRadius: 999,
+                                      border: `1px solid ${t.borderSub}`,
+                                      background: "transparent",
+                                      color: t.textSub,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      padding: "6px 10px",
+                                    }}
+                                  >
+                                    {hashtag}
+                                  </span>
+                                ))
+                              ) : (
+                                <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.65 }}>
+                                  No hashtags are available yet for this clip.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleCopyPlanning(clipPlanningHashtags.join(" "), "Hashtags")}
+                            disabled={clipPlanningHashtags.length === 0}
                             style={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-                              gap: 10,
-                              marginTop: 12,
+                              border: `1px solid ${t.borderSub}`,
+                              borderRadius: 999,
+                              background: "transparent",
+                              color: t.textSub,
+                              padding: "8px 12px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontWeight: 700,
+                              cursor: clipPlanningHashtags.length === 0 ? "default" : "pointer",
+                              opacity: clipPlanningHashtags.length === 0 ? 0.65 : 1,
+                              width: "fit-content",
                             }}
                           >
-                            <div
-                              style={{
-                                borderRadius: 14,
-                                border: `1px solid ${t.borderSub}`,
-                                background: t.chip,
-                                padding: "11px 12px",
-                              }}
-                            >
-                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                                Publish State
-                              </div>
-                              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                {clip.published
-                                  ? `Published ${formatDate(clip.published_at)}.`
-                                  : "Private. Publish to enable downloads."}
-                              </div>
-                              {clip.match_reason ? (
-                                <div style={{ marginTop: 8, fontSize: 12, color: t.textSub }}>
-                                  Search: {clip.match_reason}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            <div
-                              style={{
-                                borderRadius: 14,
-                                border: `1px solid ${t.borderSub}`,
-                                background:
-                                  audioFeedback.tone === "enabled"
-                                    ? t.chip
-                                    : audioFeedback.tone === "failed"
-                                      ? t.errorBg
-                                      : "transparent",
-                                padding: "11px 12px",
-                              }}
-                            >
-                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                                Audio Status
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  color:
-                                    audioFeedback.tone === "enabled"
-                                      ? t.accent
-                                      : audioFeedback.tone === "failed"
-                                        ? t.errorText
-                                        : t.text,
-                                  lineHeight: 1.55,
-                                }}
-                              >
-                                {audioFeedback.title}
-                              </div>
-                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                {audioFeedback.description}
-                              </div>
-                            </div>
-
-                            <div
-                              style={{
-                                borderRadius: 14,
-                                border: `1px solid ${t.borderSub}`,
-                                background: overlayState.variant === "enabled" ? t.chip : "transparent",
-                                padding: "11px 12px",
-                              }}
-                            >
-                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                                Overlay Status
-                              </div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: overlayState.variant === "enabled" ? t.accent : t.text, lineHeight: 1.55 }}>
-                                {overlayState.title}
-                              </div>
-                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                {overlayState.description}
-                              </div>
-                              {overlayState.keyword || overlayState.category || overlayState.asset ? (
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                                  {overlayState.keyword ? (
-                                    <span
-                                      style={{
-                                        borderRadius: 999,
-                                        background: "transparent",
-                                        border: `1px solid ${t.borderSub}`,
-                                        color: t.textSub,
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        letterSpacing: ".08em",
-                                        textTransform: "uppercase",
-                                        padding: "6px 10px",
-                                      }}
-                                    >
-                                      Keyword: {overlayState.keyword}
-                                    </span>
-                                  ) : null}
-                                  {overlayState.category ? (
-                                    <span
-                                      style={{
-                                        borderRadius: 999,
-                                        background: "transparent",
-                                        border: `1px solid ${t.borderSub}`,
-                                        color: t.textSub,
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        letterSpacing: ".08em",
-                                        textTransform: "uppercase",
-                                        padding: "6px 10px",
-                                      }}
-                                    >
-                                      Category: {overlayState.category}
-                                    </span>
-                                  ) : null}
-                                  {overlayState.asset ? (
-                                    <span
-                                      style={{
-                                        borderRadius: 999,
-                                        background: "transparent",
-                                        border: `1px solid ${t.borderSub}`,
-                                        color: t.textSub,
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        letterSpacing: ".08em",
-                                        textTransform: "uppercase",
-                                        padding: "6px 10px",
-                                      }}
-                                    >
-                                      Asset: {overlayState.asset}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                              {overlayState.matchedText ? (
-                                <div
-                                  style={{
-                                    marginTop: 8,
-                                    fontSize: 12,
-                                    color: t.textSub,
-                                    lineHeight: 1.6,
-                                    display: "-webkit-box",
-                                    WebkitLineClamp: 3,
-                                    WebkitBoxOrient: "vertical",
-                                    overflow: "hidden",
-                                  }}
-                                  title={overlayState.matchedText}
-                                >
-                                  Matched text: {truncateText(overlayState.matchedText, 120)}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            <div
-                              style={{
-                                borderRadius: 14,
-                                border: `1px solid ${t.borderSub}`,
-                                background: "transparent",
-                                padding: "11px 12px",
-                              }}
-                            >
-                              <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                                Export Profile
-                              </div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, lineHeight: 1.55 }}>
-                                {effectiveExportSettings
-                                  ? `${formatExportMode(effectiveExportSettings.export_mode)} / ${formatCropMode(effectiveExportSettings.crop_mode)}`
-                                  : "Inherited from the current workflow"}
-                              </div>
-                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                Subtitle preset: {effectiveExportSettings?.subtitle_style?.preset ?? "classic"}
-                                {effectiveExportSettings?.face_tracking_enabled
-                                  ? " / Face tracking on"
-                                  : ""}
-                              </div>
-                              <div style={{ marginTop: 4, fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
-                                {effectiveExportSettings?.mobile_optimized
-                                  ? "Optimized for mobile-first publishing."
-                                  : "Uses the original frame without mobile optimization."}
-                              </div>
-                            </div>
-
-                            <div
-                              style={{
-                                borderRadius: 14,
-                                border: `1px solid ${t.borderSub}`,
-                                background: clipPlanningSuggestions.length > 0 ? t.chip : "transparent",
-                                padding: "11px 12px",
-                              }}
-                            >
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                                <CalendarDays size={14} color={clipPlanningSuggestions.length > 0 ? t.accent : t.textSub} />
-                                <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                                  Planning
-                                </div>
-                              </div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: clipPlanningSuggestions.length > 0 ? t.accent : t.text, lineHeight: 1.55 }}>
-                                {clipPlanningSuggestions.length > 0
-                                  ? `${clipPlanningSuggestions.length} posting suggestion${clipPlanningSuggestions.length === 1 ? "" : "s"} ready`
-                                  : "No planning suggestions yet"}
-                              </div>
-                              <div style={{ marginTop: 4, fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                {clipPlanningSuggestions.length > 0
-                                  ? `${formatPlatformLabel(clipPlanningSuggestions[0]!.platform)} on day ${clipPlanningSuggestions[0]!.scheduled_day} at ${clipPlanningSuggestions[0]!.best_time_local}.`
-                                  : "The UI stays usable even if content calendar data is empty or still loading."}
-                              </div>
-                              {clipPlanningHashtags.length > 0 ? (
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                                  {clipPlanningHashtags.map((hashtag) => (
-                                    <span
-                                      key={hashtag}
-                                      style={{
-                                        borderRadius: 999,
-                                        border: `1px solid ${t.borderSub}`,
-                                        background: "transparent",
-                                        color: t.textSub,
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        padding: "6px 10px",
-                                      }}
-                                    >
-                                      {hashtag}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          {clipPlanningSuggestions.length > 0 ? (
-                            <div
-                              style={{
-                                marginTop: 14,
-                                display: "grid",
-                                gap: 10,
-                              }}
-                            >
-                              {clipPlanningSuggestions.map((suggestion) => (
-                                <details
-                                  key={`${clip.id}-${suggestion.platform}`}
-                                  style={{
-                                    borderRadius: 16,
-                                    border: `1px solid ${t.borderSub}`,
-                                    background: "transparent",
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  <summary
-                                    style={{
-                                      listStyle: "none",
-                                      cursor: "pointer",
-                                      padding: "12px 14px",
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                                      <div>
-                                        <div style={{ fontSize: 11, letterSpacing: ".16em", textTransform: "uppercase", color: t.textFaint }}>
-                                          {formatPlatformLabel(suggestion.platform)}
-                                        </div>
-                                        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 800, color: t.text }}>
-                                          Day {suggestion.scheduled_day} at {suggestion.best_time_local}
-                                        </div>
-                                      </div>
-                                      <div style={{ borderRadius: 999, border: `1px solid ${t.borderSub}`, color: t.textSub, padding: "6px 9px", fontSize: 11, fontWeight: 800, height: "fit-content" }}>
-                                        Open
-                                      </div>
-                                    </div>
-                                  </summary>
-                                  <div
-                                    style={{
-                                      borderTop: `1px solid ${t.borderSub}`,
-                                      padding: "12px 14px",
-                                      display: "grid",
-                                      gap: 10,
-                                    }}
-                                  >
-                                    <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                                      {suggestion.caption}
-                                    </div>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      {suggestion.hashtags.slice(0, 6).map((hashtag) => (
-                                        <span
-                                          key={hashtag}
-                                          style={{
-                                            borderRadius: 999,
-                                            border: `1px solid ${t.borderSub}`,
-                                            color: t.textSub,
-                                            padding: "5px 9px",
-                                            fontSize: 11,
-                                            fontWeight: 700,
-                                          }}
-                                        >
-                                          {hashtag}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6 }}>
-                                      {suggestion.repurpose_angle}
-                                    </div>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleCopyPlanning(buildPlanningPostCopy(suggestion), "Post")}
-                                        className="ic-action"
-                                        style={{
-                                          border: "none",
-                                          borderRadius: 999,
-                                          background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                                          color: "#fff",
-                                          padding: "8px 12px",
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: 6,
-                                          fontWeight: 800,
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        <Copy size={13} />
-                                        Post
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleCopyPlanning(suggestion.caption, "Caption")}
-                                        className="ic-premium-card"
-                                        style={{
-                                          border: `1px solid ${t.borderSub}`,
-                                          borderRadius: 999,
-                                          background: "transparent",
-                                          color: t.textSub,
-                                          padding: "8px 12px",
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: 6,
-                                          fontWeight: 700,
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        <Copy size={13} />
-                                        Caption
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleCopyPlanning(suggestion.hashtags.join(" "), "Hashtags")}
-                                        className="ic-premium-card"
-                                        style={{
-                                          border: `1px solid ${t.borderSub}`,
-                                          borderRadius: 999,
-                                          background: "transparent",
-                                          color: t.textSub,
-                                          padding: "8px 12px",
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: 6,
-                                          fontWeight: 700,
-                                          cursor: "pointer",
-                                        }}
-                                      >
-                                        <Hash size={13} />
-                                        Hashtags
-                                      </button>
-                                    </div>
-                                  </div>
-                                </details>
-                              ))}
-                            </div>
-                          ) : null}
+                            <Copy size={13} />
+                            Copy hashtags
+                          </button>
                           </details>
 
                           {clip.smart_hooks && clip.smart_hooks.length > 0 ? (

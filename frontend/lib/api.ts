@@ -119,6 +119,7 @@ export type GenerationSettings = {
   topic_focus: string;
   subtitles_enabled: boolean;
   language?: string;
+  target_platform?: ContentCalendarPlatform;
 };
 
 export type GenerateClipsPayload = {
@@ -1233,10 +1234,12 @@ export function buildEstimatedContentCalendar(
 export async function getContentCalendar(
   podcastId: string,
   token?: string | null,
+  platform?: string,
 ): Promise<ContentCalendarResponse> {
   try {
+    const query = platform ? `?platform=${encodeURIComponent(platform)}` : "";
     return await getJson<ContentCalendarResponse>(
-      `/podcasts/${podcastId}/content-calendar`,
+      `/podcasts/${podcastId}/content-calendar${query}`,
       token,
     );
   } catch {

@@ -339,6 +339,7 @@ def build_content_calendar(
     *,
     days: int = 7,
     max_clips: int = 5,
+    target_platform: str | None = None,
 ) -> ContentCalendarResponse:
     cleaned_podcast_id = podcast_id.strip()
     if not cleaned_podcast_id:
@@ -366,7 +367,7 @@ def build_content_calendar(
     )[:max_clips]
 
     suggestions: list[ContentCalendarSuggestion] = []
-    platforms = ("tiktok", "linkedin", "youtube")
+    platforms = (target_platform,) if target_platform else ("tiktok", "linkedin", "youtube")
     for clip_index, row in enumerate(ranked_rows):
         for platform_index, platform in enumerate(platforms):
             scheduled_day = ((clip_index + platform_index) % days) + 1

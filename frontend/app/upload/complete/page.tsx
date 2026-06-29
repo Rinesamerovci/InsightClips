@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Moon, Sparkles, SunMedium } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
-import { analyzePodcast, confirmStripeCheckoutSession, getPodcastById } from "@/lib/api";
+import { confirmStripeCheckoutSession, getPodcastById } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 type CompletionPhase = "loading" | "processing" | "redirect" | "error";
@@ -60,7 +60,7 @@ export default function UploadCompletePage() {
 
     let cancelled = false;
 
-    const clipsUrl = `/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`;
+    const clipsUrl = `/clips/generate?podcastId=${encodeURIComponent(podcastId)}&fresh=1`;
     const pollIntervalMs = 2500;
     const maxWaitMs = 90000;
     const getCurrentSessionId = () => {
@@ -140,9 +140,8 @@ export default function UploadCompletePage() {
 
         if (!cancelled) {
           if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-          setDetail("Payment confirmed! Redirecting to your clips...");
+          setDetail("Payment confirmed! Redirecting to clip setup...");
           setPhase("redirect");
-          await analyzePodcast(podcastId, {}, token);
           router.replace(clipsUrl);
         }
       } catch (err) {
@@ -165,7 +164,7 @@ export default function UploadCompletePage() {
     };
   }, [authLoading, backendToken, initialError, podcastId, router, syncBackendSession]);
 
-  const clipsUrl = `/clips/generated?podcastId=${encodeURIComponent(podcastId)}&autogen=1`;
+  const clipsUrl = `/clips/generate?podcastId=${encodeURIComponent(podcastId)}&fresh=1`;
 
   if (authLoading || phase === "processing" || phase === "redirect") {
     return (

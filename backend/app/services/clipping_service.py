@@ -214,6 +214,8 @@ def generate_clips(
         subtitle_filename = f"clip-{clip_number:02d}.srt"
         clip_path = output_dir / clip_filename
         subtitle_path = output_dir / subtitle_filename
+        clip_path.parent.mkdir(parents=True, exist_ok=True)
+        subtitle_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             srt_content, subtitle_text = build_srt_content(
@@ -249,6 +251,8 @@ def generate_clips(
                 segment,
             )
             subtitle_path.write_text(srt_content, encoding="utf-8")
+            clip_path.parent.mkdir(parents=True, exist_ok=True)
+            subtitle_path.parent.mkdir(parents=True, exist_ok=True)
             final_overlay = _render_clip_with_optional_overlay(
                 source_path,
                 clip_path,

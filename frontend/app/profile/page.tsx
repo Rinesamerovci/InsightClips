@@ -96,17 +96,22 @@ function SignalCard({
   );
 }
 
+let cachedProfileId: string | null = null;
+let cachedProfileData: ProfileResponse | null = null;
+
 export default function ProfilePage() {
   const router = useRouter();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const { backendToken, loading: authLoading, syncBackendSession, signOut } = useAuth();
+  const { user, backendToken, loading: authLoading, syncBackendSession, signOut } = useAuth();
 
-  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const isCacheValid = Boolean(user?.id && user.id === cachedProfileId);
+
+  const [profile, setProfile] = useState<ProfileResponse | null>(isCacheValid ? cachedProfileData : null);
   const [form, setForm] = useState<ProfileForm>({
-    full_name: "",
-    profile_picture_url: "",
+    full_name: isCacheValid ? (cachedProfileData?.full_name ?? "") : "",
+    profile_picture_url: isCacheValid ? (cachedProfileData?.profile_picture_url ?? "") : "",
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isCacheValid || !cachedProfileData);
   const [saving, setSaving] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [dark, setDark] = useState(() => {
@@ -155,7 +160,7 @@ export default function ProfilePage() {
     }
 
     const load = async () => {
-      setLoading(true);
+      if (!isCacheValid || !cachedProfileData) setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -164,6 +169,10 @@ export default function ProfilePage() {
         }
 
         const data = await getUserProfile(token);
+        
+        cachedProfileId = user?.id ?? null;
+        cachedProfileData = data;
+        
         setProfile(data);
         setForm({
           full_name: data.full_name ?? "",
@@ -401,7 +410,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading || authLoading) {
+  if (authLoading && !user) {
     return (
       <div
         style={{

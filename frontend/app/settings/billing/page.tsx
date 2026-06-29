@@ -117,14 +117,34 @@ export default function BillingSettingsPage() {
   const { user, loading: authLoading, profile, backendToken, syncBackendSession } = useAuth();
 
   const [viewportWidth, setViewportWidth] = useState(1280);
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark";
+  });
+  const [savedCards, setSavedCards] = useState<SavedCard[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    const stored = window.localStorage.getItem("mockSavedCards");
+    if (!stored) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(stored) as SavedCard[];
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setDark(window.localStorage.getItem(THEME_STORAGE_KEY) === "dark");
+      window.localStorage.setItem("mockSavedCards", JSON.stringify(savedCards));
     }
-  }, []);
-  const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
+  }, [savedCards]);
   const [billingHistory] = useState<BillingHistoryItem[]>([
     { id: "pay_mock_001", date: "2025-05-14", description: "Processing fee - 45 min podcast", amount: 2.0, currency: "USD", status: "paid" },
     { id: "pay_mock_002", date: "2025-04-30", description: "Processing fee - 90 min podcast", amount: 4.0, currency: "USD", status: "paid" },

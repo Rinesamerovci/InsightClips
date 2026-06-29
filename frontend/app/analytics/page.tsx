@@ -29,20 +29,27 @@ import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 const T = studioTheme;
 
+let cachedAnalyticsUserId: string | null = null;
+let cachedAnalyticsPodcasts: Podcast[] | null = null;
+let cachedAnalyticsMetrics: PodcastClipMetrics | null = null;
+let cachedAnalyticsSelectedId: string | null = null;
+
 function AnalyticsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
+  const { user, backendToken, loading: authLoading, syncBackendSession } = useAuth();
+
+  const isCacheValid = Boolean(user?.id && user.id === cachedAnalyticsUserId);
 
   const [mounted, setMounted] = useState(false);
   const [dark, setDark] = useState(true);
   const [viewportWidth, setViewportWidth] = useState(1280);
-  const [loading, setLoading] = useState(true);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [loading, setLoading] = useState(!isCacheValid || !cachedAnalyticsPodcasts);
+  const [loadingMetrics, setLoadingMetrics] = useState(!isCacheValid || !cachedAnalyticsMetrics);
   const [error, setError] = useState("");
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
-  const [selectedPodcastId, setSelectedPodcastId] = useState("");
-  const [metrics, setMetrics] = useState<PodcastClipMetrics | null>(null);
+  const [podcasts, setPodcasts] = useState<Podcast[]>(isCacheValid ? (cachedAnalyticsPodcasts ?? []) : []);
+  const [selectedPodcastId, setSelectedPodcastId] = useState(isCacheValid ? (cachedAnalyticsSelectedId ?? "") : "");
+  const [metrics, setMetrics] = useState<PodcastClipMetrics | null>(isCacheValid ? cachedAnalyticsMetrics : null);
 
   const t = dark ? T.dark : T.light;
   const isMobile = viewportWidth < 960;
@@ -80,7 +87,7 @@ function AnalyticsPageContent() {
     }
 
     const loadPodcasts = async () => {
-      setLoading(true);
+      if (!isCacheValid || !cachedAnalyticsPodcasts) setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -97,7 +104,13 @@ function AnalyticsPageContent() {
           podcastsResponse.podcasts.find((podcast) => podcast.status === "done") ??
           podcastsResponse.podcasts[0];
 
-        setSelectedPodcastId(preferredPodcast?.id ?? "");
+        const newSelectedId = preferredPodcast?.id ?? "";
+        setSelectedPodcastId(newSelectedId);
+        
+        cachedAnalyticsUserId = user?.id ?? null;
+        cachedAnalyticsPodcasts = podcastsResponse.podcasts;
+        cachedAnalyticsSelectedId = newSelectedId;
+        
         setError("");
       } catch (loadError) {
         setError(
@@ -119,7 +132,9 @@ function AnalyticsPageContent() {
     }
 
     const loadMetrics = async () => {
-      setLoadingMetrics(true);
+      if (!isCacheValid || !cachedAnalyticsMetrics || cachedAnalyticsSelectedId !== selectedPodcastId) {
+          setLoadingMetrics(true);
+      }
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -128,6 +143,8 @@ function AnalyticsPageContent() {
         }
 
         const result = await getClipMetrics(selectedPodcastId, token);
+        cachedAnalyticsMetrics = result;
+        cachedAnalyticsSelectedId = selectedPodcastId;
         setMetrics(result);
         setError("");
       } catch (metricsError) {

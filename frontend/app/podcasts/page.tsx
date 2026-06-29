@@ -48,19 +48,26 @@ function getEffectivePodcastStatus(
   return podcast.status;
 }
 
+let cachedPodcastsUserId: string | null = null;
+let cachedPodcastsList: Podcast[] | null = null;
+let cachedPodcastsAnalytics: Record<string, PodcastAnalyticsSummary> | null = null;
+let cachedPodcastsAnalysis: Record<string, AnalysisSummary | null> | null = null;
+
 export default function PodcastsPage() {
   const router = useRouter();
-  const { backendToken, loading: authLoading, syncBackendSession } = useAuth();
+  const { user, backendToken, loading: authLoading, syncBackendSession } = useAuth();
+
+  const isCacheValid = Boolean(user?.id && user.id === cachedPodcastsUserId);
 
   const [mounted, setMounted] = useState(false);
   const [dark, setDark] = useState(true);
   const [viewportWidth, setViewportWidth] = useState(1280);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isCacheValid || !cachedPodcastsList);
   const [error, setError] = useState("");
-  const [podcasts, setPodcasts] = useState<Podcast[]>([]);
-  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
+  const [podcasts, setPodcasts] = useState<Podcast[]>(isCacheValid ? (cachedPodcastsList ?? []) : []);
+  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>(isCacheValid ? (cachedPodcastsAnalysis ?? {}) : {});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
-  const [analyticsByPodcastId, setAnalyticsByPodcastId] = useState<Record<string, PodcastAnalyticsSummary>>({});
+  const [analyticsByPodcastId, setAnalyticsByPodcastId] = useState<Record<string, PodcastAnalyticsSummary>>(isCacheValid ? (cachedPodcastsAnalytics ?? {}) : {});
   const [deletingByPodcast, setDeletingByPodcast] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "processing" | "payments" | "done">("all");
@@ -87,7 +94,7 @@ export default function PodcastsPage() {
     if (authLoading) return;
 
     const load = async () => {
-      setLoading(true);
+      if (!isCacheValid || !cachedPodcastsList) setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -100,11 +107,11 @@ export default function PodcastsPage() {
           getPodcastAnalytics(token).catch(() => null),
         ]);
         setPodcasts(podcastsResponse.podcasts);
-        setAnalyticsByPodcastId(
-          Object.fromEntries(
+        const parsedAnalyticsSummary = Object.fromEntries(
             (analyticsResponse?.podcasts ?? []).map((podcast) => [podcast.podcast_id, podcast]),
-          ) as Record<string, PodcastAnalyticsSummary>,
-        );
+          ) as Record<string, PodcastAnalyticsSummary>;
+          
+        setAnalyticsByPodcastId(parsedAnalyticsSummary);
 
         const analysisEntries = await Promise.all(
           podcastsResponse.podcasts.map(async (podcast) => {
@@ -121,7 +128,14 @@ export default function PodcastsPage() {
           }),
         );
 
-        setAnalysisByPodcast(Object.fromEntries(analysisEntries));
+        const parsedAnalysis = Object.fromEntries(analysisEntries);
+        
+        cachedPodcastsUserId = user?.id ?? null;
+        cachedPodcastsList = podcastsResponse.podcasts;
+        cachedPodcastsAnalytics = parsedAnalyticsSummary;
+        cachedPodcastsAnalysis = parsedAnalysis;
+        
+        setAnalysisByPodcast(parsedAnalysis);
         setError("");
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load library.");

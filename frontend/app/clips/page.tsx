@@ -16,6 +16,7 @@ import {
   SunMedium,
   Wand2,
   Lightbulb,
+  CheckCircle2,
 } from "lucide-react";
 
 import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
@@ -341,7 +342,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     message: string;
   } | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"setup" | "results">(lockedWorkspaceView);
-  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [showAdvancedControls, setShowAdvancedControls] = useState(true);
   const [generationTemplateId, setGenerationTemplateId] =
     useState<GenerationTemplateId | null>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
@@ -362,6 +363,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const isMobile = viewportWidth < 960;
   const selectedPodcast =
     podcasts.find((podcast) => podcast.id === selectedPodcastId) ?? null;
+  const selectedPodcastNeedsPayment =
+    selectedPodcast?.status === "awaiting_payment" && selectedPodcast?.payment_status === "pending";
+  const paymentCheckoutHref = selectedPodcast
+    ? `/checkout?podcastId=${encodeURIComponent(selectedPodcast.id)}&amount=${encodeURIComponent(String(selectedPodcast.price ?? 0))}&currency=USD`
+    : "/upload";
   const generationPath = selectedPodcastId ? `/clips?podcastId=${selectedPodcastId}` : "/clips";
   const resultsPath = selectedPodcastId
     ? `/clips/generated?podcastId=${selectedPodcastId}`
@@ -394,8 +400,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
     return next;
   }, [calendarSuggestions]);
-  const hasCompleteClipSet = clips.length >= generationSettings.number_of_clips;
-
   const publishedCount = clips.filter((clip) => clip.published).length;
   const overlayEnabledCount = clips.filter(
     (clip) => (clip.overlay?.rendered ?? clip.overlay?.applied) === true,
@@ -446,6 +450,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         ? applyGenerationTemplate(savedPreferences.templateId, null, savedPreferences.settings).exportSettings
         : savedPreferences.exportSettings,
     );
+    setVisualOutputMode("original_people");
   }, [mounted]);
 
   useEffect(() => {
@@ -645,9 +650,25 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     generationSettingsRef.current = applied.generationSettings;
     setGenerationSettings(applied.generationSettings);
     setGenerationExportSettings(applied.exportSettings);
+    setVisualOutputMode("original_people");
   };
 
+  const resolveGenerationExportSettings = useCallback(() => {
+    const baseExportSettings = generationExportSettings ?? selectedPodcast?.export_settings ?? null;
+    if (generationTemplateIdRef.current) {
+      return applyGenerationTemplate(
+        generationTemplateIdRef.current,
+        baseExportSettings,
+        generationSettingsRef.current,
+      ).exportSettings;
+    }
+
+    return baseExportSettings ? normalizeExportSettings(baseExportSettings) : normalizeExportSettings(null);
+  }, [generationExportSettings, selectedPodcast]);
+
   const handleVisualOutputModeChange = (mode: VisualOutputMode) => {
+    setGenerationTemplateId(null);
+    generationTemplateIdRef.current = null;
     setVisualOutputMode(mode);
     if (mode === "stylized_animated") {
       setGenerationExportSettings((current) => ({
@@ -684,6 +705,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   ) => {
     setGenerationTemplateId(null);
     generationTemplateIdRef.current = null;
+    setVisualOutputMode("original_people");
     setGenerationExportSettings((current) => {
       const resolved = normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null);
       return {
@@ -701,13 +723,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       setActionFeedback({
         tone: "error",
         message: "Select a podcast before generating clips.",
-      });
-      return;
-    }
-    if (hasCompleteClipSet) {
-      setActionFeedback({
-        tone: "info",
-        message: "Clips already exist for this podcast. Use the existing clips instead of generating them again.",
       });
       return;
     }
@@ -733,12 +748,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         {
           score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
           generation_settings: buildGenerationRequestPayload(generationSettings),
-          export_settings:
-            generationExportSettings ??
-            normalizeExportSettings(selectedPodcast?.export_settings ?? null),
+          export_settings: resolveGenerationExportSettings(),
           visual_output_mode: visualOutputMode,
           save_generation_settings: true,
           use_preferred_generation_settings: true,
+          force_regenerate: true,
         },
         token,
       );
@@ -801,14 +815,13 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
   }, [
     backendToken,
-    generationExportSettings,
     generationSettings,
     selectedPodcast,
     selectedPodcastId,
-    hasCompleteClipSet,
     mode,
     resultsPath,
     router,
+    resolveGenerationExportSettings,
     syncBackendSession,
     visualOutputMode,
   ]);
@@ -902,12 +915,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           {
             score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
             generation_settings: buildGenerationRequestPayload(generationSettings),
-            export_settings:
-              generationExportSettings ??
-              normalizeExportSettings(selectedPodcast.export_settings ?? null),
+            export_settings: resolveGenerationExportSettings(),
             visual_output_mode: visualOutputMode,
             save_generation_settings: true,
             use_preferred_generation_settings: true,
+            force_regenerate: true,
           },
           token,
         );
@@ -1154,6 +1166,79 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
 
   if (!mounted) {
     return null;
+  }
+
+  if (selectedPodcastNeedsPayment) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: t.bg,
+          color: t.text,
+          fontFamily: "'DM Sans', sans-serif",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "28px 16px",
+        }}
+      >
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
+        `}</style>
+        <main
+          style={{
+            width: "100%",
+            maxWidth: 720,
+            borderRadius: 28,
+            border: `1px solid ${t.border}`,
+            background: t.card,
+            padding: 28,
+            boxShadow: "0 24px 60px rgba(0,0,0,.16)",
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 10 }}>
+            Payment required
+          </div>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 42, lineHeight: 1.02, margin: 0 }}>
+            Complete payment before opening clips.
+          </h1>
+          <p style={{ marginTop: 12, color: t.textSub, lineHeight: 1.75, fontSize: 15, maxWidth: 620 }}>
+            This podcast is still marked as awaiting payment, so clip generation is locked until checkout is complete.
+            Once payment is confirmed, you can choose a template or style manually and then generate clips.
+          </p>
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 22 }}>
+            <Link
+              href={paymentCheckoutHref}
+              style={{
+                borderRadius: 999,
+                padding: "12px 18px",
+                background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                color: "#fff",
+                textDecoration: "none",
+                fontWeight: 800,
+              }}
+            >
+              Continue to payment
+            </Link>
+            <Link
+              href="/dashboard"
+              style={{
+                borderRadius: 999,
+                padding: "12px 18px",
+                border: `1px solid ${t.borderSub}`,
+                background: t.cardAlt,
+                color: t.textSub,
+                textDecoration: "none",
+                fontWeight: 700,
+              }}
+            >
+              Back to dashboard
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -1679,10 +1764,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       router.push(generationPath);
                       return;
                     }
-                    if (hasCompleteClipSet) {
-                      router.push(resultsPath);
-                      return;
-                    }
                     void handleGenerateClips();
                   }}
                   disabled={!selectedPodcastId || generating || loadingClips}
@@ -1697,77 +1778,23 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     alignItems: "center",
                     gap: 10,
                     fontWeight: 700,
-                    cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
-                    opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
-                    boxShadow: `0 14px 30px ${t.accentGlow}`,
+                    cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
+                    opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                    boxShadow: clips.length > 0 ? "none" : `0 14px 30px ${t.accentGlow}`,
                   }}
                 >
-                  {generating ? <Loader2 size={16} className="animate-spin" /> : hasCompleteClipSet ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <CheckCircle2 size={16} /> : <Wand2 size={16} />}
                   {generating
                     ? "Rendering clips..."
-                    : mode === "results"
-                      ? "Open generation setup"
-                      : hasCompleteClipSet
-                        ? "View generated clips"
-                        : clips.length > 0
-                          ? "Continue generation"
-                          : "Generate clips"}
+                    : clips.length > 0
+                      ? "Clips generated"
+                      : mode === "results"
+                        ? "Open generation setup"
+                        : "Generate clips"}
                 </button>
               </div>
 
-              <section
-                style={{
-                  borderRadius: 20,
-                  border: `1px solid ${t.borderSub}`,
-                  background: t.cardAlt,
-                  padding: "14px 15px",
-                  marginBottom: 18,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                    Workspace view
-                  </div>
-                  <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                    Setup keeps generation controls separate. Results keeps previews, search, planning, and publish actions separate.
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {([
-                    { id: "setup", label: "Generation", href: generationPath },
-                    { id: "results", label: "Results", href: resultsPath },
-                  ] as const).map((item) => {
-                    const active = workspaceView === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => router.push(item.href)}
-                        style={{
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "10px 14px",
-                          background: active
-                            ? `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`
-                            : t.card,
-                          color: active ? "#fff" : t.textSub,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-                </div>
-              </section>
-
-              {workspaceView === "setup" ? (
+              {(!generating && clips.length === 0) ? (
                 <>
                   <GenerationSettingsPanel
                     dark={dark}
@@ -1813,28 +1840,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           Open visual mode and subtitle styling only when you need deeper polishing.
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvancedControls((current) => !current)}
-                        style={{
-                          border: `none`,
-                          borderRadius: 999,
-                          padding: "10px 20px",
-                          background: showAdvancedControls ? t.borderSub : t.accent,
-                          color: showAdvancedControls ? t.text : "#fff",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                          boxShadow: showAdvancedControls ? "none" : `0 4px 12px ${t.accent}60`,
-                          transition: "all 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
-                        }}
-                      >
-                        {showAdvancedControls ? "Hide advanced" : "Open advanced"}
-                      </button>
                     </div>
                   </section>
 
-                  {showAdvancedControls ? (
-                    <div style={{ display: "grid", gap: 16 }}>
               <section
                 className="glass a2"
                 style={{
@@ -2007,12 +2015,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   hi2: t.accentLt,
                 }}
               />
-                    </div>
-                  ) : null}
                 </>
               ) : null}
 
-              {workspaceView === "results" ? (
+              {true ? (
                 <div style={{ display: "grid", gap: 18 }}>
               <div
                 style={{
@@ -2195,31 +2201,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       Reset search
                     </button>
                   ) : null}
-                  {clips.length === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerateClips()}
-                      disabled={generating}
-                      className="ic-action"
-                      style={{
-                        marginTop: 18,
-                        border: "none",
-                        borderRadius: 999,
-                        background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                        color: "#fff",
-                        padding: "12px 18px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontWeight: 700,
-                        cursor: generating ? "default" : "pointer",
-                        opacity: generating ? 0.7 : 1,
-                      }}
-                    >
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                      {generating ? "Rendering..." : "Generate now"}
-                    </button>
-                  ) : null}
+
                 </div>
               ) : (
                 <div
@@ -2703,15 +2685,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       : "Generate clips first, then switch to the results view for previews, planning, publishing, and download actions. This keeps the main screen cleaner while you set things up."}
                   </p>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (hasCompleteClipSet) {
-                          router.push(resultsPath);
-                          return;
-                        }
-                        void handleGenerateClips();
-                      }}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleGenerateClips();
+                    }}
                       disabled={!selectedPodcastId || generating || loadingClips}
                       style={{
                         border: "none",
@@ -2727,9 +2705,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                         opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
                       }}
                     >
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : hasCompleteClipSet ? <PlayCircle size={16} /> : <Wand2 size={16} />}
-                      {generating ? "Rendering clips..." : hasCompleteClipSet ? "View generated clips" : clips.length > 0 ? "Continue generation" : "Generate clips"}
-                    </button>
+                    {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <CheckCircle2 size={16} /> : <Wand2 size={16} />}
+                    {generating ? "Rendering clips..." : clips.length > 0 ? "Regenerate clips" : "Generate clips"}
+                  </button>
                     <button
                       type="button"
                       onClick={() => setShowAdvancedControls(true)}

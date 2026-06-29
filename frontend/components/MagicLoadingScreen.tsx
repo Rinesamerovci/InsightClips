@@ -10,17 +10,22 @@ const LOADING_MESSAGES = [
   "Getting everything ready for you..."
 ];
 
-export function MagicLoadingScreen({ generating, t }: { generating: boolean, t: any }) {
-  const [index, setIndex] = useState(0);
+type MagicLoadingTheme = {
+  accent: string;
+  text: string;
+};
+
+export function MagicLoadingScreen({ generating, t }: { generating: boolean; t: MagicLoadingTheme }) {
+  const [tick, setTick] = useState(0);
+  const index = generating ? tick % LOADING_MESSAGES.length : 0;
 
   useEffect(() => {
     if (!generating) {
-      setIndex(0);
       return;
     }
 
     const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+      setTick((prev) => prev + 1);
     }, 2800);
 
     return () => clearInterval(interval);

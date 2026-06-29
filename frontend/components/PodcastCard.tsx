@@ -670,7 +670,13 @@ export function PodcastCard({
                   </span>
 
                   <Link
-                    href={hasGeneratedVideos ? `/clips/generated?podcastId=${podcast.id}` : `/clips?podcastId=${podcast.id}`}
+                      href={
+                      needsPayment
+                        ? `/checkout?podcastId=${encodeURIComponent(podcast.id)}&amount=${encodeURIComponent(String(podcast.price ?? 0))}&currency=USD`
+                        : hasGeneratedVideos
+                          ? `/clips/generated?podcastId=${podcast.id}`
+                          : `/clips/generate?podcastId=${podcast.id}&fresh=1`
+                    }
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -687,7 +693,11 @@ export function PodcastCard({
                       flexShrink: 0,
                     }}
                   >
-                    {hasGeneratedVideos ? "Open clips" : "Generate clips"} <ChevronRight size={10} />
+                    {needsPayment
+                      ? "Pay to continue"
+                      : hasGeneratedVideos
+                        ? "Open clips"
+                        : "Generate clips"} <ChevronRight size={10} />
                   </Link>
                 </div>
               </div>

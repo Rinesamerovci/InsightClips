@@ -790,7 +790,7 @@ export function buildAuthenticatedBackendUrl(
     const backendUrl = new URL(getBackendBaseUrl());
     const isBackendDownloadRoute =
       url.origin === backendUrl.origin &&
-      /\/podcasts\/clips\/[^/]+\/download$/i.test(url.pathname);
+      /\/podcasts\/clips\/[^/]+\/(download|subtitles)$/i.test(url.pathname);
 
     if (isBackendDownloadRoute && !url.searchParams.has("access_token")) {
       url.searchParams.set("access_token", token);

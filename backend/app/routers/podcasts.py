@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.dependencies.auth import AuthenticatedUser, get_current_user, get_current_user_for_download
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest
@@ -43,6 +43,7 @@ from app.services.clipping_service import (
     get_clip_download_target,
     get_clip_podcast_id,
     get_clips_for_podcast,
+    get_clip_subtitle_target,
 )
 from app.services.publishing_service import (
     PublishingError,
@@ -126,6 +127,7 @@ def _build_local_file_response(
     request: Request,
     file_path: Path,
     *,
+    media_type: str = "video/mp4",
     filename: str | None = None,
 ) -> Response:
     headers = {"Cache-Control": "no-store"}
@@ -137,7 +139,7 @@ def _build_local_file_response(
         safe_filename = (filename or file_path.name).replace('"', "")
         return Response(
             content=file_path.read_bytes(),
-            media_type="video/mp4",
+            media_type=media_type,
             headers={
                 **headers,
                 "Accept-Ranges": "bytes",
@@ -148,7 +150,7 @@ def _build_local_file_response(
 
     return FileResponse(
         path=file_path,
-        media_type="video/mp4",
+        media_type=media_type,
         filename=(filename or file_path.name),
         headers=headers,
     )
@@ -157,11 +159,12 @@ def _build_local_file_response(
 def _build_basic_file_response(
     file_path: Path,
     *,
+    media_type: str = "video/mp4",
     filename: str | None = None,
 ) -> FileResponse:
     return FileResponse(
         path=file_path,
-        media_type="video/mp4",
+        media_type=media_type,
         filename=(filename or file_path.name),
         headers={"Cache-Control": "no-store"},
     )
@@ -570,3 +573,23 @@ async def download_generated_clip(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Clip download is unavailable or has been revoked.",
     )
+
+
+@router.get("/clips/{clip_id}/subtitles")
+def download_clip_subtitles(clip_id: str, _: AuthenticatedUser = Depends(get_current_user)):
+    subtitle_url, file_path = get_clip_subtitle_target(clip_id)
+
+    if subtitle_url:
+        return RedirectResponse(url=subtitle_url)
+
+    if file_path and file_path.exists():
+        return _build_basic_file_response(file_path, media_type="text/vtt", filename=file_path.name)
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Clip subtitles are unavailable.",
+    )
+
+
+
+

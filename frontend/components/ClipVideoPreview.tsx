@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
 import type { SubtitleStyle } from "@/lib/api";
 
 type SubtitleCue = {
@@ -23,131 +22,74 @@ function normalizeSubtitleText(value: string | null | undefined): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function wrapSubtitleText(text: string): string {
+function generateCuesFromText(text: string, duration: number): SubtitleCue[] {
   const words = normalizeSubtitleText(text).split(" ").filter(Boolean);
-  if (words.length === 0) {
-    return "";
+  if (words.length === 0 || !duration) return [];
+
+  const cues: SubtitleCue[] = [];
+  const wordsPerCue = 4; 
+  const totalCues = Math.ceil(words.length / wordsPerCue);
+  const timePerCue = duration / totalCues;
+
+  for (let i = 0; i < totalCues; i++) {
+    const start = i * timePerCue;
+    const end = (i + 1) * timePerCue;
+    const cueText = words.slice(i * wordsPerCue, (i + 1) * wordsPerCue).join(" ");
+    cues.push({ start, end, text: cueText });
   }
-
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (current && candidate.length > 34) {
-      lines.push(current);
-      current = word;
-      continue;
-    }
-
-    current = candidate;
-  }
-
-  if (current) {
-    lines.push(current);
-  }
-
-  return lines.slice(0, 3).join("\n");
+  return cues;
 }
 
 function parseTimestamp(value: string): number {
   const cleaned = value.trim().replace(",", ".");
   const parts = cleaned.split(":");
-  if (parts.length !== 3) {
-    return 0;
+  
+  if (parts.length === 3) {
+    const hours = Number(parts[0] ?? 0);
+    const minutes = Number(parts[1] ?? 0);
+    const seconds = Number(parts[2] ?? 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  } else if (parts.length === 2) {
+    const minutes = Number(parts[0] ?? 0);
+    const seconds = Number(parts[1] ?? 0);
+    return minutes * 60 + seconds;
   }
-
-  const hours = Number(parts[0] ?? 0);
-  const minutes = Number(parts[1] ?? 0);
-  const seconds = Number(parts[2] ?? 0);
-  if ([hours, minutes, seconds].some((part) => Number.isNaN(part))) {
-    return 0;
-  }
-
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-function formatTimestamp(seconds: number): string {
-  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
-  const hours = Math.floor(totalMilliseconds / 3_600_000);
-  const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
-  const remainingMilliseconds = totalMilliseconds % 60_000;
-  const wholeSeconds = Math.floor(remainingMilliseconds / 1000);
-  const milliseconds = remainingMilliseconds % 1000;
-
-  return [
-    hours.toString().padStart(2, "0"),
-    minutes.toString().padStart(2, "0"),
-    wholeSeconds.toString().padStart(2, "0"),
-  ].join(":") + `.${milliseconds.toString().padStart(3, "0")}`;
+  
+  const sec = Number(cleaned);
+  return Number.isNaN(sec) ? 0 : sec;
 }
 
 function parseSubtitleFile(content: string): SubtitleCue[] {
   const cleaned = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-  if (!cleaned) {
-    return [];
-  }
+  if (!cleaned) return [];
 
   return cleaned.split(/\n{2,}/).flatMap((block) => {
-    const lines = block
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0 || lines[0].toUpperCase() === "WEBVTT") {
-      return [];
-    }
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0 || lines[0].toUpperCase() === "WEBVTT") return [];
 
     const timeIndex = lines.findIndex((line) => line.includes("-->"));
-    if (timeIndex === -1) {
-      return [];
-    }
+    if (timeIndex === -1) return [];
 
-    const [startRaw, endRaw] = lines[timeIndex]
-      .split("-->")
-      .map((part) => part.trim().split(/\s+/)[0] ?? "");
-    const text = lines
-      .slice(timeIndex + 1)
-      .filter((line) => !/^\d+$/.test(line))
-      .join(" ")
+    const [startRaw, endRaw] = lines[timeIndex].split("-->").map((part) => part.trim().split(/\s+/)[0] ?? "");
+    const text = lines.slice(timeIndex + 1).filter((line) => !/^\d+$/.test(line)).join(" ")
       .replace(/\s+/g, " ")
       .trim();
+    
     const start = parseTimestamp(startRaw);
     const end = parseTimestamp(endRaw);
-    if (!text || end < start) {
-      return [];
-    }
+    if (!text || end < start) return [];
 
     return [{ start, end, text }];
   });
 }
 
-function buildVttDocument(cues: SubtitleCue[]): string {
-  const lines = ["WEBVTT", ""];
-
-  for (const cue of cues) {
-    lines.push(`${formatTimestamp(cue.start)} --> ${formatTimestamp(cue.end)}`);
-    lines.push(cue.text);
-    lines.push("");
-  }
-
-  return lines.join("\n");
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace("#", "");
-  if (clean.length !== 6) {
-    return `rgba(0,0,0,${alpha})`;
-  }
-
-  const red = Number.parseInt(clean.slice(0, 2), 16);
-  const green = Number.parseInt(clean.slice(2, 4), 16);
-  const blue = Number.parseInt(clean.slice(4, 6), 16);
-  return `rgba(${red},${green},${blue},${alpha})`;
-}
-
-function getVisibleCue(cues: SubtitleCue[], time: number): SubtitleCue | null {
-  return cues.find((cue) => time >= cue.start && time <= cue.end) ?? null;
+// Funksioni kritik për të kthyer kohën në formatin zyrtar WebVTT (HH:MM:SS.mmm)
+function formatVTTTime(secs: number): string {
+  const h = Math.floor(secs / 3600).toString().padStart(2, "0");
+  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, "0");
+  const s = Math.floor(secs % 60).toString().padStart(2, "0");
+  const ms = Math.floor((secs % 1) * 1000).toString().padStart(3, "0");
+  return `${h}:${m}:${s}.${ms}`;
 }
 
 export default function ClipVideoPreview({
@@ -160,53 +102,38 @@ export default function ClipVideoPreview({
 }: ClipVideoPreviewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
-  const [subtitleTrackUrl, setSubtitleTrackUrl] = useState<string | null>(null);
-  const [subtitleLoadFailed, setSubtitleLoadFailed] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [vttBlobUrl, setVttBlobUrl] = useState<string>("");
+  const [duration, setDuration] = useState(0);
 
-  const fallbackText = wrapSubtitleText(subtitleText ?? "");
   const cueSource = subtitleUrl?.trim() ?? "";
-  const activeCue = getVisibleCue(subtitleCues, currentTime);
-  const style = subtitleStyle ?? {
-    preset: "classic" as const,
-    font_family: "Arial",
-    font_size: 18,
-    primary_color: "#FFFFFF",
-    outline_color: "#000000",
-    background_color: "#000000",
-    background_opacity: 0.2,
-    position: "bottom" as const,
-    bold: false,
-    italic: false,
-  };
 
+  // Hapi 1: Ngarkimi dhe leximi i të dhënave të titrave
   useEffect(() => {
     let cancelled = false;
 
     async function loadSubtitles() {
       if (!cueSource) {
-        setSubtitleCues([]);
-        setSubtitleLoadFailed(false);
+        if (subtitleText && duration) {
+          setSubtitleCues(generateCuesFromText(subtitleText, duration));
+        }
         return;
       }
 
       try {
         const response = await fetch(cueSource);
-        if (!response.ok) {
-          throw new Error("Unable to load subtitle file.");
-        }
-
+        if (!response.ok) throw new Error();
         const content = await response.text();
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
-        setSubtitleCues(parseSubtitleFile(content));
-        setSubtitleLoadFailed(false);
+        const parsed = parseSubtitleFile(content);
+        if (parsed.length > 0) {
+          setSubtitleCues(parsed);
+        } else if (subtitleText && duration) {
+          setSubtitleCues(generateCuesFromText(subtitleText, duration));
+        }
       } catch {
-        if (!cancelled) {
-          setSubtitleCues([]);
-          setSubtitleLoadFailed(true);
+        if (!cancelled && subtitleText && duration) {
+          setSubtitleCues(generateCuesFromText(subtitleText, duration));
         }
       }
     }
@@ -215,63 +142,62 @@ export default function ClipVideoPreview({
     return () => {
       cancelled = true;
     };
-  }, [cueSource]);
+  }, [cueSource, subtitleText, duration]);
 
+  // Hapi 2: Krijimi i skedarit WebVTT dinamik nga kuesit që kemi mbledhur
   useEffect(() => {
-    if (!subtitleCues.length) {
-      setSubtitleTrackUrl(null);
+    if (subtitleCues.length === 0) {
+      setVttBlobUrl("");
       return;
     }
 
-    const blob = new Blob([buildVttDocument(subtitleCues)], { type: "text/vtt" });
-    const blobUrl = URL.createObjectURL(blob);
-    setSubtitleTrackUrl(blobUrl);
+    // Ndërtojmë strukturën zyrtare të një skedari .vtt
+    let vttContent = "WEBVTT\n\n";
+    subtitleCues.forEach((cue, index) => {
+      vttContent += `${index + 1}\n`;
+      vttContent += `${formatVTTTime(cue.start)} --> ${formatVTTTime(cue.end)}\n`;
+      vttContent += `${cue.text}\n\n`;
+    });
+
+    // E kthejmë në Blob URL që videoja ta lexojë si skedar lokal
+    const blob = new Blob([vttContent], { type: "text/vtt" });
+    const url = URL.createObjectURL(blob);
+    setVttBlobUrl(url);
 
     return () => {
-      URL.revokeObjectURL(blobUrl);
+      URL.revokeObjectURL(url);
     };
   }, [subtitleCues]);
 
+  // Hapi 3: Ndjekja e kohëzgjatjes së videos
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) {
-      return;
-    }
+    if (!video) return;
 
-    const syncTime = () => setCurrentTime(video.currentTime || 0);
-    const showCaptions = () => {
-      for (const track of Array.from(video.textTracks)) {
-        if (track.kind === "subtitles" || track.kind === "captions") {
-          track.mode = "showing";
-        }
+    const syncDuration = () => {
+      if (video.duration) {
+        setDuration(video.duration);
       }
     };
 
-    video.load();
-    const raf = window.requestAnimationFrame(showCaptions);
-    video.addEventListener("loadedmetadata", showCaptions);
-    video.addEventListener("loadeddata", showCaptions);
-    video.addEventListener("timeupdate", syncTime);
-    video.addEventListener("seeked", syncTime);
+    video.addEventListener("loadedmetadata", syncDuration);
+    if (video.duration) syncDuration();
 
     return () => {
-      window.cancelAnimationFrame(raf);
-      video.removeEventListener("loadedmetadata", showCaptions);
-      video.removeEventListener("loadeddata", showCaptions);
-      video.removeEventListener("timeupdate", syncTime);
-      video.removeEventListener("seeked", syncTime);
+      video.removeEventListener("loadedmetadata", syncDuration);
     };
-  }, [subtitleTrackUrl, src]);
+  }, [src]);
 
-  const useOverlayFallback = Boolean(fallbackText) && !cueSource;
-  const overlayText = activeCue?.text ?? (useOverlayFallback ? fallbackText : "");
-  const overlayVisible = Boolean(overlayText);
-  const positionStyle =
-    style.position === "top"
-      ? { top: "14%" }
-      : style.position === "center"
-        ? { top: "50%", transform: "translateY(-50%)" }
-        : { bottom: "14%" };
+  // Kur track-u aktivizohet, i tregojmë browser-it t'i shfaqë titrat menjëherë
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !vttBlobUrl) return;
+
+    const textTracks = video.textTracks;
+    if (textTracks && textTracks[0]) {
+      textTracks[0].mode = "showing";
+    }
+  }, [vttBlobUrl]);
 
   return (
     <div
@@ -287,66 +213,33 @@ export default function ClipVideoPreview({
         position: "relative",
       }}
     >
-      <video
-        ref={videoRef}
-        controls
-        preload="metadata"
-        src={src}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "contain",
-          display: "block",
-          background: "#000",
-        }}
-      >
-      </video>
-
-      {overlayVisible ? (
-        <div
-          aria-hidden="true"
+      <div style={{ position: "relative", width: "100%", height: "100%" }}>
+        <video
+          ref={videoRef}
+          controls
+          preload="metadata"
+          crossOrigin="anonymous"
+          src={src}
           style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            ...positionStyle,
-            display: "flex",
-            justifyContent: "center",
-            padding: "0 12px",
-            pointerEvents: "none",
-            zIndex: 2,
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            display: "block",
+            background: "#000",
           }}
         >
-          <div
-            style={{
-              maxWidth: "88%",
-              borderRadius: style.preset === "boxed" ? 20 : 18,
-              padding: style.preset === "boxed" ? "10px 14px" : "8px 12px",
-              background: style.background_opacity > 0
-                ? hexToRgba(style.background_color, style.background_opacity)
-                : "transparent",
-              color: style.primary_color,
-              border: `1px solid ${hexToRgba(style.outline_color, 0.28)}`,
-              boxShadow: dark ? "0 10px 20px rgba(0,0,0,.22)" : "0 10px 20px rgba(20,34,16,.16)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-              textAlign: "center",
-              fontFamily: style.font_family,
-              fontSize: Math.max(12, Math.round(style.font_size * (aspectRatio === "9 / 16" ? 0.72 : 0.62))),
-              lineHeight: 1.35,
-              fontWeight: style.bold ? 900 : 800,
-              fontStyle: style.italic ? "italic" : "normal",
-              letterSpacing: "0.01em",
-              textShadow: `0 1px 2px ${style.outline_color}, 0 0 10px ${hexToRgba(style.outline_color, 0.35)}`,
-              whiteSpace: "pre-line",
-            }}
-          >
-            {overlayText}
-          </div>
-        </div>
-      ) : null}
+          {/* Kjo pjesë e re fut titrat direkt brenda videos për Fullscreen nativ */}
+          {vttBlobUrl && (
+            <track
+              src={vttBlobUrl}
+              kind="subtitles"
+              srcLang="en"
+              label="English"
+              default
+            />
+          )}
+        </video>
+      </div>
     </div>
   );
 }
-
-

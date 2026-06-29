@@ -398,11 +398,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const [workspaceView, setWorkspaceView] = useState<"setup" | "results">(lockedWorkspaceView);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [generationTemplateId, setGenerationTemplateId] =
-    useState<GenerationTemplateId>("hook_spotlight");
+    useState<GenerationTemplateId | null>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
     buildDefaultGenerationSettings(),
   );
-  const generationTemplateIdRef = useRef<GenerationTemplateId>("hook_spotlight");
+  const generationTemplateIdRef = useRef<GenerationTemplateId | null>("hook_spotlight");
   const generationSettingsRef = useRef<GenerationSettings>(buildDefaultGenerationSettings());
   const [generationExportSettings, setGenerationExportSettings] =
     useState<ExportSettings | null>(null);
@@ -505,21 +505,16 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
 
     const savedPreferences = loadSavedGenerationPreferences();
-    const applied = applyGenerationTemplate(
-      savedPreferences.templateId,
-      null,
-      savedPreferences.settings,
-    );
     generationTemplateIdRef.current = savedPreferences.templateId;
-    generationSettingsRef.current = applied.generationSettings;
+    generationSettingsRef.current = savedPreferences.settings;
     setGenerationTemplateId(savedPreferences.templateId);
-    setGenerationSettings(applied.generationSettings);
-    setGenerationExportSettings(applied.exportSettings);
+    setGenerationSettings(savedPreferences.settings);
+    setGenerationExportSettings(
+      savedPreferences.templateId
+        ? applyGenerationTemplate(savedPreferences.templateId, null, savedPreferences.settings).exportSettings
+        : savedPreferences.exportSettings,
+    );
   }, [mounted]);
-
-  useEffect(() => {
-    generationTemplateIdRef.current = generationTemplateId;
-  }, [generationTemplateId]);
 
   useEffect(() => {
     generationSettingsRef.current = generationSettings;
@@ -530,8 +525,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       return;
     }
 
-    saveGenerationPreferences(generationTemplateId, generationSettings);
-  }, [generationSettings, generationTemplateId, mounted]);
+    saveGenerationPreferences(generationTemplateId, generationSettings, generationExportSettings);
+  }, [generationSettings, generationTemplateId, generationExportSettings, mounted]);
 
   useEffect(() => {
     if (authLoading) {
@@ -641,141 +636,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     void loadClipData();
   }, [authLoading, backendToken, router, selectedPodcastId, syncBackendSession]);
 
-  useEffect(() => {
-    if (!generating || !selectedPodcastId || authLoading) {
-      return;
-    }
-
-    let cancelled = false;
-    const startedAt = generationStartedAt ?? Date.now();
-    const generationTimeoutMs = estimateGenerationTimeoutMs(generationSettings);
-    const generationTimeoutMinutes = formatTimeoutMinutes(generationTimeoutMs);
-
-    const refreshGeneratedClips = async () => {
-      try {
-        const token = backendToken ?? (await syncBackendSession());
-        if (!token || cancelled) {
-          return;
-        }
-
-        if (Date.now() - startedAt > generationTimeoutMs) {
-          throw new Error(
-            `Clip generation timed out after ${generationTimeoutMinutes} minutes. The backend may be stuck on rendering or waiting on storage.`,
-          );
-        }
-
-        const result = await getClips(selectedPodcastId, token);
-        if (cancelled || result.clips.length === 0) {
-          return;
-        }
-
-        setClips(result.clips);
-        if (selectedPodcast) {
-          setSearchResults(toDiscoveryClips(result.clips, selectedPodcast));
-        }
-        setWorkspaceView("results");
-      } catch {
-        if (!cancelled && Date.now() - startedAt > generationTimeoutMs) {
-          setGenerating(false);
-          setGenerationStartedAt(null);
-          setError("");
-          setActionFeedback({
-            tone: "error",
-            message:
-              `Clip generation timed out after ${generationTimeoutMinutes} minutes. Try fewer clips, a shorter duration, or rerun generation.`,
-          });
-        }
-      }
-    };
-
-    void refreshGeneratedClips();
-    const intervalId = window.setInterval(() => {
-      void refreshGeneratedClips();
-    }, 5000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [
-    authLoading,
-    backendToken,
-    generationStartedAt,
-    generationSettings,
-    generating,
-    selectedPodcast,
-    selectedPodcastId,
-    syncBackendSession,
-  ]);
-
-  useEffect(() => {
-    if (!selectedPodcastId || !selectedPodcast) {
-      return;
-    }
-
-    if (!activeSearch) {
-      setSearchResults(toDiscoveryClips(clips, selectedPodcast));
-      setSearchEstimated(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      const runSearch = async () => {
-        setSearching(true);
-        try {
-          const token = backendToken ?? (await syncBackendSession());
-          if (!token || controller.signal.aborted) {
-            return;
-          }
-
-          const result = await searchClips(
-            {
-              query: searchQuery,
-              podcastId: selectedPodcastId,
-              status: filter,
-            },
-            token,
-          );
-
-          if (controller.signal.aborted) {
-            return;
-          }
-
-          setSearchResults(result.clips);
-          setSearchEstimated(Boolean(result.estimated));
-        } catch (searchError) {
-          if (!controller.signal.aborted) {
-            setError(
-              searchError instanceof Error
-                ? searchError.message
-                : "Unable to search clips.",
-            );
-          }
-        } finally {
-          if (!controller.signal.aborted) {
-            setSearching(false);
-          }
-        }
-      };
-
-      void runSearch();
-    }, 250);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [
-    activeSearch,
-    backendToken,
-    clips,
-    filter,
-    searchQuery,
-    selectedPodcast,
-    selectedPodcastId,
-    syncBackendSession,
-  ]);
 
   useEffect(() => {
     if (!selectedPodcast) {
@@ -783,12 +643,17 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       return;
     }
 
-    const applied = applyGenerationTemplate(
-      generationTemplateIdRef.current,
-      selectedPodcast.export_settings,
-      generationSettingsRef.current,
-    );
-    setGenerationExportSettings(applied.exportSettings);
+    if (generationTemplateIdRef.current) {
+      const applied = applyGenerationTemplate(
+        generationTemplateIdRef.current,
+        selectedPodcast.export_settings,
+        generationSettingsRef.current,
+      );
+      setGenerationExportSettings(applied.exportSettings);
+      return;
+    }
+
+    setGenerationExportSettings((current) => current ?? normalizeExportSettings(selectedPodcast.export_settings ?? null));
   }, [selectedPodcast]);
 
   useEffect(() => {
@@ -824,7 +689,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const handleGenerationSettingsChange = (
     changes: Partial<GenerationSettings>,
   ) => {
-    setGenerationTemplateId(null as any);
+    setGenerationTemplateId(null);
+    generationTemplateIdRef.current = null;
     setGenerationSettings((current) => {
       const normalized = normalizeGenerationSettings({
         ...current,
@@ -889,6 +755,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       >
     >,
   ) => {
+    setGenerationTemplateId(null);
+    generationTemplateIdRef.current = null;
     setGenerationExportSettings((current) => {
       const resolved = normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null);
       return {
@@ -2150,12 +2018,14 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                 dark={dark}
                 exportMode={activeGenerationExportSettings.export_mode}
                 styleValue={activeSubtitleStyle}
-                onPresetChange={(preset) =>
+                onPresetChange={(preset) => {
+                  setGenerationTemplateId(null);
+                  generationTemplateIdRef.current = null;
                   setGenerationExportSettings((current) => ({
                     ...normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null),
                     subtitle_style: buildSubtitleStyleFromPreset(preset),
-                  }))
-                }
+                  }));
+                }}
                 onFontFamilyChange={(fontFamily) =>
                   handleSubtitleStyleChange({ font_family: fontFamily })
                 }
@@ -2704,10 +2574,11 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       clip.video_url ?? "",
                       backendToken,
                     );
-                    const subtitlePreviewUrl =
-                      clip.subtitle_url && !/^[A-Za-z]:[\/]/.test(clip.subtitle_url)
-                        ? buildAuthenticatedBackendUrl(clip.subtitle_url, backendToken)
-                        : null;
+                    const isLocalSubtitle = !clip.subtitle_url || /^[A-Za-z]:[\/]/.test(clip.subtitle_url) || !clip.subtitle_url.startsWith("http");
+                    const subtitlePreviewUrl = buildAuthenticatedBackendUrl(
+                      isLocalSubtitle ? `/podcasts/clips/${clip.id}/subtitles` : (clip.subtitle_url ?? ""),
+                      backendToken
+                    );
                     const previewAspectRatio = getPreviewAspectRatio(
                       effectiveExportSettings,
                     );
@@ -3539,3 +3410,10 @@ export default function ClipsPage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
+

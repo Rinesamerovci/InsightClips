@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ExportMode,
   ExportSettings,
   GenerationSettings,
@@ -293,17 +293,12 @@ export function applyGenerationTemplate(
     generationSettings,
     exportSettings: buildDefaultExportSettings(
       template.exportMode,
-      {
-        ...template.subtitleStyle,
-      },
+      template.subtitleStyle,
       {
         ...resolvedBaseExportSettings,
         export_mode: template.exportMode,
         face_tracking_enabled: template.exportMode === "portrait" ? true : resolvedBaseExportSettings.face_tracking_enabled,
-        subtitle_style: {
-          ...resolvedBaseExportSettings.subtitle_style,
-          ...template.subtitleStyle,
-        },
+        subtitle_style: template.subtitleStyle,
         generation_settings: generationSettings,
       },
     ),
@@ -311,13 +306,15 @@ export function applyGenerationTemplate(
 }
 
 export function loadSavedGenerationPreferences(): {
-  templateId: GenerationTemplateId;
+  templateId: GenerationTemplateId | null;
   settings: GenerationSettings;
+  exportSettings: ExportSettings | null;
 } {
   if (typeof window === "undefined") {
     return {
       templateId: "hook_spotlight",
       settings: buildDefaultGenerationSettings(),
+      exportSettings: null,
     };
   }
 
@@ -327,32 +324,37 @@ export function loadSavedGenerationPreferences(): {
       return {
         templateId: "hook_spotlight",
         settings: buildDefaultGenerationSettings(),
+        exportSettings: null,
       };
     }
 
     const parsed = JSON.parse(stored) as {
-      templateId?: GenerationTemplateId;
+      templateId?: GenerationTemplateId | null;
       settings?: Partial<GenerationSettings>;
+      exportSettings?: ExportSettings | null;
     };
 
     return {
       templateId:
         parsed.templateId && GENERATION_TEMPLATES.some((template) => template.id === parsed.templateId)
           ? parsed.templateId
-          : "hook_spotlight",
+          : null,
       settings: normalizeGenerationSettings(parsed.settings),
+      exportSettings: parsed.exportSettings ? normalizeExportSettings(parsed.exportSettings) : null,
     };
   } catch {
     return {
       templateId: "hook_spotlight",
       settings: buildDefaultGenerationSettings(),
+      exportSettings: null,
     };
   }
 }
 
 export function saveGenerationPreferences(
-  templateId: GenerationTemplateId,
+  templateId: GenerationTemplateId | null,
   settings: GenerationSettings,
+  exportSettings: ExportSettings | null = null,
 ): void {
   if (typeof window === "undefined") {
     return;
@@ -363,8 +365,7 @@ export function saveGenerationPreferences(
     JSON.stringify({
       templateId,
       settings: normalizeGenerationSettings(settings),
+      exportSettings: exportSettings ? normalizeExportSettings(exportSettings) : null,
     }),
   );
 }
-
-

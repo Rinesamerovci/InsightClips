@@ -409,6 +409,30 @@ def get_clip_download_target(clip_id: str) -> tuple[str | None, Path | None]:
     return storage_url, file_path
 
 
+def get_clip_subtitle_target(clip_id: str) -> tuple[str | None, Path | None]:
+    if isinstance(service_supabase, UnconfiguredSupabaseClient):
+        return None, None
+
+    response = (
+        service_supabase.table("clips")
+        .select("id,subtitle_url")
+        .eq("id", clip_id)
+        .limit(1)
+        .execute()
+    )
+    rows = response.data or []
+    if not rows:
+        return None, None
+
+    row = rows[0]
+    subtitle_url = str(row.get("subtitle_url") or "").strip() or None
+    
+    if subtitle_url and not subtitle_url.startswith("http"):
+        file_path = Path(subtitle_url)
+        return None, file_path
+    
+    return subtitle_url, None
+
 def get_clip_podcast_id(clip_id: str) -> str | None:
     if isinstance(service_supabase, UnconfiguredSupabaseClient):
         return None

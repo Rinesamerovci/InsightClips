@@ -1,4 +1,4 @@
-﻿import { useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
 import type { PodcastClipMetrics } from "./api";
 
@@ -373,14 +373,15 @@ export function AnalyticsMetricsDisplay({
               onMouseLeave={() => setHoveredPointIndex(null)}
               onFocus={() => setHoveredPointIndex(0)}
             >
+              {/* Force the chart line and fill to be this brownish color, regardless of light/dark mode */}
               <defs>
                 <linearGradient id="analyticsAreaFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={theme.accent} stopOpacity="0.24" />
-                  <stop offset="100%" stopColor={theme.accent} stopOpacity="0.02" />
+                  <stop offset="0%" stopColor="#B08D70" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="#B08D70" stopOpacity="0.02" />
                 </linearGradient>
                 <linearGradient id="analyticsLineGlow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={theme.accent} stopOpacity="0.9" />
-                  <stop offset="100%" stopColor={theme.accent} stopOpacity="0.5" />
+                  <stop offset="0%" stopColor="#B08D70" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#B08D70" stopOpacity="0.6" />
                 </linearGradient>
               </defs>
 
@@ -421,45 +422,13 @@ export function AnalyticsMetricsDisplay({
                 const isActive = hoveredPointIndex === index;
                 return (
                   <g key={point.clip.clip_id}>
-                    {isActive ? <line x1={point.x} x2={point.x} y1="26" y2="294" stroke={theme.accent} strokeWidth="1.5" strokeDasharray="4 5" opacity="0.65" /> : null}
-                    <circle cx={point.x} cy={point.y} r={isActive ? 11 : 8} fill={theme.accent} fillOpacity={isActive ? 0.16 : 0.1} />
-                    <circle cx={point.x} cy={point.y} r={isActive ? 5.8 : 4.4} fill={theme.accent} stroke={theme.card} strokeWidth={2} />
+                    {isActive ? <line x1={point.x} x2={point.x} y1="26" y2="294" stroke="#B08D70" strokeWidth="1.5" strokeDasharray="4 5" opacity="0.65" /> : null}
+                    <circle cx={point.x} cy={point.y} r={isActive ? 11 : 8} fill="#B08D70" fillOpacity={isActive ? 0.25 : 0.1} />
+                    <circle cx={point.x} cy={point.y} r={isActive ? 5.8 : 4.4} fill="#B08D70" stroke={theme.card} strokeWidth={2} />
                     <text x={point.x} y="314" textAnchor="middle" fill={theme.text} fontSize="12" fontWeight="700">
                       Clip {index + 1}
                     </text>
-                    {isActive ? (
-                      <g>
-                        <rect
-                          x={Math.max(52, Math.min(point.x - 62, 560))}
-                          y={Math.max(12, point.y - 102)}
-                          width="124"
-                          height="54"
-                          rx="12"
-                          fill={theme.card}
-                          stroke={theme.borderSub}
-                        />
-                        <text
-                          x={Math.max(62, Math.min(point.x - 2, 622))}
-                          y={Math.max(30, point.y - 78)}
-                          textAnchor="middle"
-                          fill={theme.text}
-                          fontSize="11"
-                          fontWeight="800"
-                        >
-                          Clip {point.clip.clip_number}
-                        </text>
-                        <text
-                          x={Math.max(62, Math.min(point.x - 2, 622))}
-                          y={Math.max(46, point.y - 62)}
-                          textAnchor="middle"
-                          fill={theme.textSub}
-                          fontSize="10"
-                          fontWeight="700"
-                        >
-                          {point.clip.downloads} downloads
-                        </text>
-                      </g>
-                    ) : null}
+                    {/* SVG tooltip removed in favor of HTML overlay */}
                   </g>
                 );
               })}
@@ -469,6 +438,51 @@ export function AnalyticsMetricsDisplay({
               Generate clips first, then the chart will show their ranking by downloads.
             </div>
           )}
+
+          {/* HTML Overlay Tooltip */}
+          {hoveredPointIndex !== null && chart.points[hoveredPointIndex] ? (() => {
+            const point = chart.points[hoveredPointIndex];
+            const clip = point.clip;
+            // Map the SVG X coordinate (0-720) to a percentage for CSS positioning
+            const leftPercent = (point.x / 720) * 100;
+            // Decide whether to anchor the tooltip to the left or right of the cursor based on its position
+            const isRightSide = point.x > 360;
+            
+            return (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 24,
+                  left: isRightSide ? "auto" : `${leftPercent}%`,
+                  right: isRightSide ? `${100 - leftPercent}%` : "auto",
+                  marginLeft: isRightSide ? 0 : 20,
+                  marginRight: isRightSide ? 20 : 0,
+                  width: "max-content",
+                  maxWidth: 320,
+                  background: theme.card,
+                  border: `1px solid ${theme.borderSub}`,
+                  borderRadius: 12,
+                  padding: "12px 16px",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                  pointerEvents: "none",
+                  zIndex: 10,
+                }}
+              >
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".15em", color: theme.errorText, textTransform: "uppercase", marginBottom: 6 }}>
+                  Hover Detail
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, lineHeight: 1.4, marginBottom: 8 }}>
+                  Clip {clip.clip_number} – {clip.title}
+                </div>
+                <div style={{ fontSize: 11, color: theme.textSub, fontWeight: 600, marginBottom: 4 }}>
+                  {clip.downloads} downloads
+                </div>
+                <div style={{ fontSize: 11, color: clip.click_trend > 0 ? theme.errorText : theme.textSub, fontWeight: 700 }}>
+                  {clip.click_trend > 0 ? "+" : ""}{clip.click_trend.toFixed(1)}% click trend
+                </div>
+              </div>
+            );
+          })() : null}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 10 }}>

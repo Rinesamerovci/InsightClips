@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ from app.models.upload import (
 )
 from app.models.export_settings import ExportSettings
 from app.services.media_service import inspect_staged_media
-from app.services.podcast_service import create_imported_podcast_record
+from app.services.podcast_service import create_imported_podcast_record, get_podcasts_for_user
 from app.services.profile_service import (
     get_free_trial_remaining_seconds,
     get_profile_by_id,
@@ -100,6 +101,43 @@ class YouTubeDownloadResult:
     mime_type: str
     detected_format: str
     metadata: dict[str, Any]
+
+
+def _normalize_import_metadata(import_metadata: Any) -> dict[str, Any]:
+    return import_metadata if isinstance(import_metadata, dict) else {}
+
+
+def find_existing_file_upload(user_id: str, file_hash: str) -> dict[str, Any] | None:
+    cleaned_user_id = user_id.strip()
+    cleaned_hash = file_hash.strip().lower()
+    if not cleaned_user_id or not cleaned_hash:
+        return None
+
+    try:
+        podcasts, _ = get_podcasts_for_user(cleaned_user_id)
+    except Exception:
+        return None
+
+    for podcast in podcasts:
+        metadata = _normalize_import_metadata(podcast.import_metadata)
+        if str(podcast.source_type or "").strip().lower() != "upload":
+            continue
+        stored_hash = str(metadata.get("file_hash") or "").strip().lower()
+        if stored_hash and stored_hash == cleaned_hash:
+            return {
+                "id": podcast.id,
+                "title": podcast.title,
+            }
+    return None
+
+
+def _compute_file_hash(storage_path: str, *, filename: str | None = None) -> str:
+    digest = hashlib.sha256()
+    with source_media_path(storage_path, filename=filename) as local_media_path:
+        with local_media_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _get_latest_free_trial_state(current_user: AuthenticatedUser) -> bool:
@@ -664,6 +702,7 @@ def prepare_upload(
     current_user: AuthenticatedUser,
 ) -> UploadPrepareResponse:
     resolved_export_settings = payload.export_settings.resolve() if payload.export_settings else ExportSettings()
+    file_hash: str | None = None
 
     if payload.storage_path:
         if payload.filesize_bytes is None:
@@ -682,6 +721,10 @@ def prepare_upload(
             ),
             current_user,
         )
+        try:
+            file_hash = _compute_file_hash(payload.storage_path, filename=payload.filename)
+        except SourceStorageError as exc:
+            raise UploadWorkflowError(exc.detail, status_code=exc.status_code, code="source_storage_error") from exc
     else:
         if payload.duration_seconds is None or payload.price is None or payload.status is None:
             raise UploadWorkflowError(
@@ -714,6 +757,15 @@ def prepare_upload(
     storage_ready = persisted_status == "ready_for_processing"
     checkout_required = persisted_status == "awaiting_payment"
 
+    if file_hash:
+        existing = find_existing_file_upload(current_user.id, file_hash)
+        if existing is not None:
+            raise UploadWorkflowError(
+                f'This video already exists in your library as "{existing.get("title") or "an existing podcast"}".',
+                status_code=409,
+                code="upload_already_exists",
+            )
+
     insert_payload = {
         "user_id": current_user.id,
         "title": payload.title,
@@ -725,6 +777,11 @@ def prepare_upload(
         "storage_path": payload.storage_path,
         "mime_type": payload.mime_type,
         "detected_format": calculated_response.detected_format,
+        "import_metadata": {
+            "source_type": "upload",
+            "source_filename": payload.filename,
+            **({"file_hash": file_hash} if file_hash else {}),
+        },
     }
     insert_payload.update(
         {

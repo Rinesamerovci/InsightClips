@@ -428,24 +428,7 @@ export default function ExportSettingsPage() {
     }
   };
 
-  if (loading || authLoading) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: palette.bg,
-          color: palette.text,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "'DM Sans', sans-serif",
-        }}
-      >
-        <style>{CSS}</style>
-        <Loader2 size={28} className="animate-spin" />
-      </div>
-    );
-  }
+  // Removed full page loader to let the page open immediately
 
   const feedbackStyles =
     feedback?.tone === "success"

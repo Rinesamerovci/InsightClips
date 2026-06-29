@@ -111,21 +111,22 @@ class UploadServiceTests(unittest.TestCase):
                 "get_profile_by_id",
                 return_value=SimpleNamespace(free_trial_used=False),
             ):
-                with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
-                    with patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock:
-                        response = prepare_upload(
-                            UploadPrepareRequest(
-                                title="Episode 1",
-                                filename="episode.mp4",
-                                filesize_bytes=100,
-                                storage_path="tmp/episode.mp4",
-                                mime_type="video/mp4",
-                                duration_seconds=1800.0,
-                                price=0.0,
-                                status="free_ready",
-                            ),
-                            self.user,
-                        )
+                with patch.object(upload_service_module, "_compute_file_hash", return_value="hash-123"):
+                    with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
+                        with patch.object(upload_service_module, "record_free_trial_usage") as record_free_trial_usage_mock:
+                            response = prepare_upload(
+                                UploadPrepareRequest(
+                                    title="Episode 1",
+                                    filename="episode.mp4",
+                                    filesize_bytes=100,
+                                    storage_path="tmp/episode.mp4",
+                                    mime_type="video/mp4",
+                                    duration_seconds=1800.0,
+                                    price=0.0,
+                                    status="free_ready",
+                                ),
+                                self.user,
+                            )
 
         self.assertEqual(response.podcast_id, "podcast-123")
         self.assertEqual(response.status, "ready_for_processing")
@@ -150,34 +151,35 @@ class UploadServiceTests(unittest.TestCase):
                 "get_profile_by_id",
                 return_value=SimpleNamespace(free_trial_used=False),
             ):
-                with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
-                    with patch.object(upload_service_module, "record_free_trial_usage"):
-                        response = prepare_upload(
-                            UploadPrepareRequest(
-                                title="Portrait Episode",
-                                filename="portrait.mp4",
-                                filesize_bytes=100,
-                                storage_path="tmp/portrait.mp4",
-                                mime_type="video/mp4",
-                                duration_seconds=1800.0,
-                                price=0.0,
-                                status="free_ready",
-                                export_settings={
-                                    "export_mode": "portrait",
-                                    "mobile_optimized": True,
-                                    "subtitle_style": {
-                                        "preset": "boxed",
-                                        "background_opacity": 0.5,
+                with patch.object(upload_service_module, "_compute_file_hash", return_value="hash-456"):
+                    with patch.object(upload_service_module, "service_supabase", service_supabase_mock):
+                        with patch.object(upload_service_module, "record_free_trial_usage"):
+                            response = prepare_upload(
+                                UploadPrepareRequest(
+                                    title="Portrait Episode",
+                                    filename="portrait.mp4",
+                                    filesize_bytes=100,
+                                    storage_path="tmp/portrait.mp4",
+                                    mime_type="video/mp4",
+                                    duration_seconds=1800.0,
+                                    price=0.0,
+                                    status="free_ready",
+                                    export_settings={
+                                        "export_mode": "portrait",
+                                        "mobile_optimized": True,
+                                        "subtitle_style": {
+                                            "preset": "boxed",
+                                            "background_opacity": 0.5,
+                                        },
+                                        "audio_enhancement": {
+                                            "enabled": True,
+                                            "target_lufs": -14.0,
+                                            "true_peak_db": -1.0,
+                                        },
                                     },
-                                    "audio_enhancement": {
-                                        "enabled": True,
-                                        "target_lufs": -14.0,
-                                        "true_peak_db": -1.0,
-                                    },
-                                },
-                            ),
-                            self.user,
-                        )
+                                ),
+                                self.user,
+                            )
 
         insert_payload = insert_mock.call_args.args[0]
         self.assertEqual(insert_payload["export_mode"], "portrait")
@@ -192,6 +194,37 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(response.export_settings.crop_mode, "center_crop")
         self.assertEqual(response.export_settings.subtitle_style.preset, "boxed")
         self.assertEqual(response.export_settings.audio_enhancement.true_peak_db, -1.0)
+
+    def test_prepare_upload_rejects_duplicate_file_uploads(self) -> None:
+        with patch.object(upload_service_module, "inspect_staged_media", return_value=self.inspection):
+            with patch.object(
+                upload_service_module,
+                "get_profile_by_id",
+                return_value=SimpleNamespace(free_trial_used=False),
+            ):
+                with patch.object(upload_service_module, "_compute_file_hash", return_value="hash-123"):
+                    with patch.object(
+                        upload_service_module,
+                        "find_existing_file_upload",
+                        return_value={"id": "podcast-existing", "title": "Existing Episode"},
+                    ):
+                        with self.assertRaises(UploadWorkflowError) as error:
+                            prepare_upload(
+                                UploadPrepareRequest(
+                                    title="Episode 1",
+                                    filename="episode.mp4",
+                                    filesize_bytes=100,
+                                    storage_path="tmp/episode.mp4",
+                                    mime_type="video/mp4",
+                                    duration_seconds=1800.0,
+                                    price=0.0,
+                                    status="free_ready",
+                                ),
+                                self.user,
+                            )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(error.exception.code, "upload_already_exists")
 
     def test_parse_youtube_source_accepts_single_video_links(self) -> None:
         watch_source = parse_youtube_source("https://www.youtube.com/watch?v=abcDEF123_4")
@@ -258,6 +291,17 @@ class UploadServiceTests(unittest.TestCase):
         self.assertEqual(insert_payload["payment_status"], "not_required")
         self.assertEqual(insert_payload["import_metadata"]["channel"], "Insight Lab")
         record_free_trial_usage_mock.assert_called_once_with("user-123", 182.4)
+
+    def test_import_youtube_podcast_rejects_existing_video(self) -> None:
+        with patch.object(upload_service_module, "_get_existing_youtube_import", return_value={"id": "pod-1", "title": "Existing Video"}):
+            with self.assertRaises(UploadWorkflowError) as error:
+                import_youtube_podcast(
+                    YouTubeImportRequest(url="https://www.youtube.com/watch?v=abcDEF123_4"),
+                    self.user,
+                )
+
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertEqual(error.exception.code, "youtube_already_imported")
 
     def test_file_upload_free_usage_blocks_later_youtube_free_import(self) -> None:
         download_result = YouTubeDownloadResult(

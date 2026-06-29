@@ -356,6 +356,7 @@ async def generate_podcast_clips(
         existing_result is not None
         and existing_result.clips
         and len(existing_result.clips) >= generation_settings.number_of_clips
+        and not payload.force_regenerate
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -380,7 +381,8 @@ async def generate_podcast_clips(
         )
         transcription = payload.transcription
         if transcription is None:
-            saved_trans_data = podcast.import_metadata.get("transcription_data")
+            import_metadata = podcast.import_metadata or {}
+            saved_trans_data = import_metadata.get("transcription_data")
             if saved_trans_data:
                 try:
                     transcription = TranscriptionResult.model_validate(saved_trans_data)
@@ -394,7 +396,7 @@ async def generate_podcast_clips(
                     current_user.id,
                     model="base",
                 )
-                updated_metadata = dict(podcast.import_metadata)
+                updated_metadata = dict(podcast.import_metadata or {})
                 updated_metadata["transcription_data"] = transcription.model_dump()
                 update_podcast_import_metadata_for_user(podcast_id, current_user.id, updated_metadata)
 
@@ -497,8 +499,8 @@ async def get_podcast_clip_metrics(
 @router.get("/{podcast_id}/content-calendar", response_model=ContentCalendarResponse)
 async def get_podcast_content_calendar(
     podcast_id: str,
-    platform: str | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    platform: str | None = None,
 ) -> ContentCalendarResponse:
     if not podcast_belongs_to_user(podcast_id, current_user.id):
         raise HTTPException(
@@ -506,6 +508,8 @@ async def get_podcast_content_calendar(
             detail="Podcast not found for the current user.",
         )
     try:
+        if platform is None:
+            return build_content_calendar(podcast_id)
         return build_content_calendar(podcast_id, target_platform=platform)
     except PublishingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

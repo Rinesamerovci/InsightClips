@@ -98,6 +98,7 @@ class GenerateClipsRequest(BaseModel):
     visual_output_mode: VisualOutputMode = "original_people"
     save_generation_settings: bool = False
     use_preferred_generation_settings: bool = False
+    force_regenerate: bool = False
 
     @field_validator("topic_focus")
     @classmethod

@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 import tempfile
 from urllib.parse import urlencode
@@ -22,6 +23,7 @@ from app.services.upload_service import (
     UploadWorkflowError,
     _safe_path_part,
     calculate_upload_price,
+    find_existing_file_upload,
     import_youtube_podcast,
     prepare_upload,
 )
@@ -95,9 +97,24 @@ async def upload_file(
 
         safe_filename = _safe_path_part(Path(original_filename).name)
         target_path = target_dir / safe_filename
+        digest = hashlib.sha256()
         with target_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                buffer.write(chunk)
         filesize_bytes = target_path.stat().st_size
+        file_hash = digest.hexdigest()
+
+        existing = find_existing_file_upload(current_user.id, file_hash)
+        if existing is not None:
+            target_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=409,
+                detail=f'This video already exists in your library as "{existing.get("title") or "an existing podcast"}".',
+            )
 
         source_storage = "local"
         try:

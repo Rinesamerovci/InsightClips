@@ -64,6 +64,23 @@ function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
 }
 
+function isRenderableProfileImage(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  if (value.startsWith("data:image/")) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 /* ─────────────────────── nav item ─────────────────────── */
 function NavItem({ icon: Icon, label, href, active, t, collapsed }:
   { icon: React.ElementType; label: string; href: string; active?: boolean; t: DashboardTheme; collapsed: boolean }) {
@@ -163,6 +180,13 @@ function SignalPill({
 
 
 
+let cachedProfileId: string | null = null;
+let cachedProfile: ProfileResponse | null = null;
+let cachedPodcasts: Podcast[] | null = null;
+let cachedAnalytics: UserPodcastAnalytics | null = null;
+let cachedIsMock: boolean = false;
+let cachedAnalysisByPodcast: Record<string, AnalysisSummary | null> | null = null;
+
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════════════════════════════════ */
@@ -170,11 +194,13 @@ export default function DashboardPage() {
   const router  = useRouter();
   const { backendToken, loading: authLoading, signOut, syncBackendSession, user } = useAuth();
 
-  const [profile,   setProfile]   = useState<ProfileResponse | null>(null);
-  const [podcasts,  setPodcasts]  = useState<Podcast[]>([]);
-  const [analytics, setAnalytics] = useState<UserPodcastAnalytics | null>(null);
-  const [isMock,    setIsMock]    = useState(false);
-  const [loading,   setLoading]   = useState(true);
+  const isCacheValid = Boolean(user?.id && user.id === cachedProfileId);
+
+  const [profile,   setProfile]   = useState<ProfileResponse | null>(isCacheValid ? cachedProfile : null);
+  const [podcasts,  setPodcasts]  = useState<Podcast[]>(isCacheValid ? (cachedPodcasts ?? []) : []);
+  const [analytics, setAnalytics] = useState<UserPodcastAnalytics | null>(isCacheValid ? cachedAnalytics : null);
+  const [isMock,    setIsMock]    = useState(isCacheValid ? cachedIsMock : false);
+  const [loading,   setLoading]   = useState(!isCacheValid || !cachedProfile);
   const [loadingTimeoutReached, setLoadingTimeoutReached] = useState(false);
   const [error,     setError]     = useState("");
   const [dark,      setDark]      = useState(true);
@@ -184,7 +210,7 @@ export default function DashboardPage() {
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showAllLibrary, setShowAllLibrary] = useState(false);
-  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>({});
+  const [analysisByPodcast, setAnalysisByPodcast] = useState<Record<string, AnalysisSummary | null>>(isCacheValid ? (cachedAnalysisByPodcast ?? {}) : {});
   const [analysisLoadingByPodcast, setAnalysisLoadingByPodcast] = useState<Record<string, boolean>>({});
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsSeen, setNotificationsSeen] = useState(false);
@@ -227,7 +253,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (authLoading) return;
     const load = async () => {
-      setLoading(true);
+      if (!isCacheValid || !cachedProfile) setLoading(true);
       try {
         const token = backendToken ?? (await syncBackendSession());
         if (!token) {
@@ -245,7 +271,14 @@ export default function DashboardPage() {
           getPodcastAnalytics(token),
         ]);
         const loadedPodcasts = Array.isArray(pod?.podcasts) ? pod.podcasts : [];
-        setProfile(p); setPodcasts(loadedPodcasts); setIsMock(Boolean(pod?.is_mock)); setAnalytics(overview);
+        
+        cachedProfileId = user?.id ?? null;
+        cachedProfile = p;
+        cachedPodcasts = loadedPodcasts;
+        cachedAnalytics = overview;
+        cachedIsMock = Boolean(pod?.is_mock);
+        
+        setProfile(p); setPodcasts(loadedPodcasts); setIsMock(cachedIsMock); setAnalytics(overview);
         const analysisEntries = await Promise.all(
           loadedPodcasts.map(async (podcast) => {
             if (!["done", "completed"].includes(podcast.status)) {
@@ -260,7 +293,10 @@ export default function DashboardPage() {
             }
           })
         );
-        setAnalysisByPodcast(Object.fromEntries(analysisEntries));
+        const parsedAnalysis = Object.fromEntries(analysisEntries);
+        cachedAnalysisByPodcast = parsedAnalysis;
+        setAnalysisByPodcast(parsedAnalysis);
+        setError("");
       } catch (e) { setError(e instanceof Error ? e.message : "Unable to load."); }
       finally { setLoading(false); }
     };
@@ -654,8 +690,19 @@ export default function DashboardPage() {
                   background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 13, fontWeight: 700, color: "#fff",
+                  overflow: "hidden",
                 }}>
-                  {(profile.full_name?.[0] ?? profile.email[0]).toUpperCase()}
+                  {isRenderableProfileImage(profile.profile_picture_url) ? (
+                    <Image
+                      src={profile.profile_picture_url as string}
+                      alt={profile.full_name || profile.email || "Profile photo"}
+                      width={32}
+                      height={32}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    (profile.full_name?.[0] ?? profile.email[0]).toUpperCase()
+                  )}
                 </div>
                 <div style={{ overflow:"hidden", flex:1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>

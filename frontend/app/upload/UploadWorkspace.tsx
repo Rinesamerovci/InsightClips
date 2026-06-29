@@ -349,7 +349,7 @@ export default function UploadWorkspace({
   const [exportMode, setExportMode] = useState<ExportMode>("portrait");
   const [socialPlatform, setSocialPlatform] = useState<SocialPlatformId>("tiktok");
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(() => buildSubtitleStyleFromPreset("classic"));
-  const [generationTemplateId, setGenerationTemplateId] = useState<GenerationTemplateId>("hook_spotlight");
+  const [generationTemplateId, setGenerationTemplateId] = useState<GenerationTemplateId | null>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
     buildDefaultGenerationSettings(),
   );
@@ -366,6 +366,7 @@ export default function UploadWorkspace({
   const [youtubeImport, setYoutubeImport] = useState<YouTubeImportResponse | null>(null);
   const [youtubeSubmitting, setYoutubeSubmitting] = useState(false);
   const [youtubeAnalyzing, setYoutubeAnalyzing] = useState(false);
+  const preferencesLoadedRef = useRef(false);
 
   const d = dark;
   const theme = getStudioTheme(d);
@@ -402,11 +403,22 @@ export default function UploadWorkspace({
 
   useEffect(() => {
     const savedPreferences = loadSavedGenerationPreferences();
-    const applied = applyGenerationTemplate(
-      savedPreferences.templateId,
-      null,
-      savedPreferences.settings,
-    );
+    const applied = savedPreferences.exportSettings
+      ? {
+          generationSettings:
+            savedPreferences.exportSettings.generation_settings ?? savedPreferences.settings,
+          exportSettings: savedPreferences.exportSettings,
+        }
+      : savedPreferences.templateId
+        ? applyGenerationTemplate(savedPreferences.templateId, null, savedPreferences.settings)
+        : {
+            generationSettings: savedPreferences.settings,
+            exportSettings: buildExportSettings(
+              exportMode,
+              subtitleStyle,
+              generationSettings,
+            ),
+          };
     setGenerationTemplateId(savedPreferences.templateId);
     setGenerationSettings(applied.generationSettings);
     if (applied.exportSettings.subtitle_style) {
@@ -414,7 +426,16 @@ export default function UploadWorkspace({
     }
     setExportMode(applied.exportSettings.export_mode);
     setSocialPlatform(getDefaultPlatformForExportMode(applied.exportSettings.export_mode));
+    preferencesLoadedRef.current = true;
   }, []);
+
+  useEffect(() => {
+    if (!preferencesLoadedRef.current) {
+      return;
+    }
+
+    saveGenerationPreferences(generationTemplateId, generationSettings, exportSettings);
+  }, [exportSettings, generationSettings, generationTemplateId]);
 
   const handleTemplateSelect = (templateId: GenerationTemplateId) => {
     setGenerationTemplateId(templateId);
@@ -425,7 +446,7 @@ export default function UploadWorkspace({
     }
     setExportMode(applied.exportSettings.export_mode);
     setSocialPlatform(getDefaultPlatformForExportMode(applied.exportSettings.export_mode));
-    saveGenerationPreferences(templateId, applied.generationSettings);
+    saveGenerationPreferences(templateId, applied.generationSettings, applied.exportSettings);
   };
 
   const fileMeta = useMemo(() => {
@@ -452,16 +473,6 @@ export default function UploadWorkspace({
       title: "Source",
       detail: sourceMode === "file" ? "Choose the video file." : "Paste the video link.",
       complete: sourceMode === "file" ? Boolean(fileMeta) : Boolean(normalizedYouTubeCandidate || youtubeImport),
-    },
-    {
-      title: "Platform",
-      detail: `${socialPlatformDetails.label} / ${exportDetails.aspect}`,
-      complete: true,
-    },
-    {
-      title: "Defaults",
-      detail: `${subtitleStyleLabel} / ${generationSettings.number_of_clips} clips`,
-      complete: true,
     },
     {
       title: "Review",
@@ -804,7 +815,7 @@ export default function UploadWorkspace({
         return;
       }
       await analyzePodcast(youtubeImport.podcast_id, {}, token);
-      router.push(`/clips/generated?podcastId=${encodeURIComponent(youtubeImport.podcast_id)}&autogen=1`);
+      router.push(`/clips?podcastId=${encodeURIComponent(youtubeImport.podcast_id)}`);
     } catch (error) {
       setErr(error instanceof Error ? error.message : "Unable to analyze the imported video yet.");
     } finally {
@@ -1225,617 +1236,11 @@ export default function UploadWorkspace({
               marginBottom: 16,
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isTablet ? "1fr" : "minmax(0,1.08fr) minmax(300px,.92fr)",
-                gap: 18,
-                alignItems: "start",
-              }}
-            >
-              <div>
-                <div className="ic-step-kicker" style={{ borderColor: subBorder, background: d ? "rgba(90,158,58,.1)" : "rgba(90,158,58,.08)", color: hi, marginBottom: 10 }}>
-                  Step 02 / Platform
-                </div>
-                <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: 26, fontWeight: 400 }}>
-                  Choose where the clip should publish first
-                </h2>
-                <p style={{ fontSize: 13, color: muted, lineHeight: 1.72, margin: "12px 0 16px" }}>
-                  Keep this step light: choose the destination, set the framing, then continue to upload. Fine-tuning happens later in Clips.
-                </p>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile
-                      ? "1fr"
-                      : isTablet
-                        ? "repeat(2,minmax(0,1fr))"
-                        : "repeat(3,minmax(0,1fr))",
-                    gap: 10,
-                    marginBottom: 18,
-                  }}
-                >
-                  {SOCIAL_PLATFORM_OPTIONS.map((option) => {
-                    const active = socialPlatform === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => selectSocialPlatform(option.id)}
-                        className="ic-premium-card"
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 18,
-                          padding: "15px 15px 14px",
-                          border: `1px solid ${active ? hi : subBorder}`,
-                          background: active
-                            ? d
-                              ? "rgba(90,158,58,.16)"
-                              : "rgba(90,158,58,.1)"
-                            : d
-                              ? "rgba(11,18,9,.52)"
-                              : "rgba(248,252,245,.82)",
-                          color: text,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                          <div style={{ fontSize: 15, fontWeight: 700 }}>{option.label}</div>
-                          <div
-                            style={{
-                              borderRadius: 999,
-                              border: `1px solid ${active ? "rgba(255,255,255,.22)" : subBorder}`,
-                              padding: "4px 8px",
-                              fontSize: 9,
-                              fontWeight: 700,
-                              color: active ? "#dff0d8" : hi2,
-                              letterSpacing: ".12em",
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {option.exportMode === "portrait" ? "9:16" : "16:9"}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? (d ? "#dff0d8" : hi) : hi2, marginBottom: 6 }}>
-                          {option.title}
-                        </div>
-                        <div style={{ fontSize: 12, color: active ? (d ? "rgba(232,245,223,.82)" : "rgba(21,36,18,.8)") : muted, lineHeight: 1.6 }}>
-                          {option.detail}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div style={{ fontSize: 10, letterSpacing: ".26em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 8 }}>
-                  Export mode
-                </div>
-                <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: 26, fontWeight: 400 }}>
-                  Choose how your clips should be framed
-                </h2>
-                <p style={{ fontSize: 13, color: muted, lineHeight: 1.72, margin: "12px 0 16px" }}>
-                  Portrait is tuned for TikTok and YouTube Shorts. Landscape keeps the classic widescreen layout.
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile ? "1fr" : "repeat(2,minmax(0,1fr))",
-                    gap: 10,
-                  }}
-                >
-                  {(["portrait", "landscape"] as ExportMode[]).map((mode) => {
-                    const details = EXPORT_MODE_DETAILS[mode];
-                    const Icon = details.icon;
-                    const active = exportMode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => selectExportMode(mode)}
-                        className="ic-premium-card"
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 18,
-                          padding: "16px",
-                          border: `1px solid ${active ? hi : subBorder}`,
-                          background: active
-                            ? d
-                              ? "rgba(90,158,58,.16)"
-                              : "rgba(90,158,58,.1)"
-                            : d
-                              ? "rgba(11,18,9,.52)"
-                              : "rgba(248,252,245,.82)",
-                          color: text,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                          <div
-                            style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 12,
-                              background: active ? "rgba(255,255,255,.14)" : d ? "rgba(90,158,58,.11)" : "rgba(90,158,58,.08)",
-                              border: `1px solid ${active ? "rgba(255,255,255,.2)" : subBorder}`,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Icon size={18} color={active ? "#dff0d8" : hi} />
-                          </div>
-                          <div
-                            style={{
-                              borderRadius: 999,
-                              border: `1px solid ${active ? "rgba(255,255,255,.22)" : subBorder}`,
-                              padding: "4px 10px",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: active ? "#dff0d8" : hi2,
-                            }}
-                          >
-                            {details.aspect}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{details.label}</div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: active ? text : hi2, marginBottom: 6 }}>{details.title}</div>
-                        <div style={{ fontSize: 12, lineHeight: 1.6, color: muted }}>{details.helper}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 14,
-                }}
-              >
-                <div
-                  style={{
-                    borderRadius: 18,
-                    border: `1px solid ${subBorder}`,
-                    background: d ? "rgba(11,18,9,.92)" : "rgba(247,252,243,.96)",
-                    padding: "18px",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 14, alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 5 }}>
-                        Selected output
-                      </div>
-                      <div style={{ fontSize: 20, fontWeight: 700 }}>{exportDetails.label} preview</div>
-                    </div>
-                    <div
-                      style={{
-                        borderRadius: 999,
-                        border: `1px solid ${subBorder}`,
-                        background: d ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
-                        padding: "6px 12px",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: hi,
-                      }}
-                    >
-                      {socialPlatformDetails.label}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      minHeight: isMobile ? 150 : 190,
-                      borderRadius: 18,
-                      border: `1px solid ${subBorder}`,
-                      background: d
-                        ? "linear-gradient(160deg, rgba(18,35,13,.96), rgba(11,18,9,.92))"
-                        : "linear-gradient(160deg, rgba(238,248,231,.96), rgba(248,252,245,.98))",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "20px 16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: exportMode === "portrait" ? 106 : 190,
-                        height: exportMode === "portrait" ? 190 : 106,
-                        borderRadius: 20,
-                        border: `1px solid ${exportMode === "portrait" ? hi : border}`,
-                        background:
-                          exportMode === "portrait"
-                            ? "linear-gradient(180deg, rgba(90,158,58,.22), rgba(122,181,92,.08))"
-                            : "linear-gradient(180deg, rgba(90,158,58,.16), rgba(122,181,92,.06))",
-                        boxShadow:
-                          exportMode === "portrait"
-                            ? "0 18px 42px rgba(90,158,58,.2)"
-                            : "0 14px 30px rgba(90,158,58,.12)",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                        padding: "14px 12px",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ width: 36, height: 5, borderRadius: 999, background: hi, opacity: 0.72 }} />
-                        <div style={{ fontSize: 9, fontWeight: 700, color: hi2 }}>{exportDetails.aspect}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: text, marginBottom: 4 }}>
-                          {exportMode === "portrait" ? "Social-safe framing" : "Original wide framing"}
-                        </div>
-                        <div style={{ fontSize: 11, lineHeight: 1.55, color: muted }}>
-                          {exportMode === "portrait"
-                            ? "Focused for vertical feeds and fullscreen phone playback."
-                            : "Best when you want the full widescreen composition."}
-                        </div>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                        {[1, 2].map((item) => (
-                          <div
-                            key={item}
-                            style={{
-                              height: exportMode === "portrait" ? 34 : 22,
-                              borderRadius: 10,
-                              background: d ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
-                              border: `1px solid ${subBorder}`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    borderRadius: 18,
-                    border: `1px solid ${subBorder}`,
-                    background: d ? "rgba(12,22,10,.9)" : "rgba(249,252,246,.96)",
-                    padding: "18px",
-                  }}
-                >
-                  <div style={{ fontSize: 10, letterSpacing: ".22em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 8 }}>
-                    Workflow split
-                  </div>
-                  <div style={{ fontSize: 21, fontWeight: 700, color: text, marginBottom: 10 }}>
-                    Upload stays simple. Clips handles the creative work.
-                  </div>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {[
-                      "Choose the source, target platform, and framing here.",
-                      "Open Clips after analysis to tune format, subtitles, timing, and final visual feel.",
-                      "This keeps the first step fast for every age and every device.",
-                    ].map((step) => (
-                      <div
-                        key={step}
-                        style={{
-                          borderRadius: 14,
-                          border: `1px solid ${subBorder}`,
-                          background: d ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.05)",
-                          padding: "12px 13px",
-                          fontSize: 12,
-                          lineHeight: 1.65,
-                          color: muted,
-                        }}
-                      >
-                        {step}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
           </section>
 
-          <section
-            className="slide-up ic-premium-card"
-            style={{
-              borderRadius: 16,
-              border: `1px solid ${border}`,
-              background: d ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.74)",
-              padding: "16px",
-              marginBottom: 16,
-            }}
-          >
-            <div className="ic-studio-steps ic-mobile-scroll">
-              {[
-                ["Source", sourceMode === "file" ? "Choose your video file." : "Paste a public video URL."],
-                ["Format", "Pick the social destination."],
-                ["Defaults", "Carry captions and generation settings forward."],
-                ["Continue", "Open analysis and clips when ready."],
-              ].map(([title, copy], index) => (
-                <div key={title} className="ic-studio-step" style={{ borderColor: subBorder, background: d ? "rgba(10,18,8,.54)" : "rgba(255,255,255,.72)" }}>
-                  <span className="ic-studio-step-index" style={{ background: d ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)", color: hi }}>
-                    {index + 1}
-                  </span>
-                  <div className="ic-studio-step-title" style={{ color: text }}>{title}</div>
-                  <div className="ic-studio-step-copy" style={{ color: muted, opacity: 1 }}>{copy}</div>
-                </div>
-              ))}
-            </div>
-          </section>
 
-          <section
-            className="slide-up ic-premium-card"
-            style={{
-              borderRadius: 22,
-              border: `1px solid ${border}`,
-              background: card,
-              padding: isMobile ? "18px 18px 20px" : "22px 24px 24px",
-              marginBottom: 16,
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isTablet ? "1fr" : "minmax(0,.9fr) minmax(0,1.1fr)",
-                gap: 16,
-                alignItems: "start",
-              }}
-            >
-              <div>
-                <div className="ic-step-kicker" style={{ borderColor: subBorder, background: d ? "rgba(90,158,58,.1)" : "rgba(90,158,58,.08)", color: hi, marginBottom: 10 }}>
-                  Step 03 / Defaults
-                </div>
-                <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: 26, fontWeight: 400 }}>
-                  Your starting defaults are ready
-                </h2>
-                <p style={{ fontSize: 13, color: muted, lineHeight: 1.72, margin: "12px 0 0" }}>
-                  Nothing heavy to manage here. These are the defaults that follow the episode into Clips, where you can refine every creative detail later.
-                </p>
-              </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile ? "1fr" : "repeat(3,minmax(0,1fr))",
-                  gap: 10,
-                }}
-              >
-                {[
-                  {
-                    label: "Clip setup",
-                    value: generationSummary,
-                    detail: "Clip count, duration, and subtitles are ready for Clips.",
-                  },
-                  {
-                    label: "Subtitle starter",
-                    value: subtitleStyleLabel,
-                    detail: `${subtitleStyleSummary}. Final font and position can be refined later.`,
-                  },
-                  {
-                    label: "Audio leveling",
-                    value: selectedAudioFeedback.badge,
-                    detail: selectedAudioFeedback.description,
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    style={{
-                      borderRadius: 16,
-                      border: `1px solid ${subBorder}`,
-                      background: d ? "rgba(90,158,58,.08)" : "rgba(90,158,58,.05)",
-                      padding: "14px 14px 15px",
-                    }}
-                  >
-                    <div style={{ fontSize: 9, letterSpacing: ".18em", textTransform: "uppercase", color: muted, fontWeight: 700, marginBottom: 6 }}>
-                      {item.label}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: text, marginBottom: 5, lineHeight: 1.45 }}>{item.value}</div>
-                    <div style={{ fontSize: 12, lineHeight: 1.6, color: muted }}>{item.detail}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ gridColumn: "1 / -1", marginTop: 2 }}>
-                <div
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: ".2em",
-                    textTransform: "uppercase",
-                    color: hi2,
-                    fontWeight: 700,
-                    marginBottom: 10,
-                  }}
-                >
-                  Select Style Template
-                </div>
-                <style>{`
-                  .responsive-template-grid {
-                    display: grid;
-                    grid-template-columns: repeat(4, 1fr);
-                    gap: 32px;
-                    max-width: 850px;
-                    margin: 0 auto;
-                  }
-                  .template-card-seventh {
-                    grid-column: 4;
-                    grid-row: 1 / span 2;
-                    align-self: center;
-                  }
-                  @media (max-width: 1024px) {
-                    .responsive-template-grid {
-                      grid-template-columns: repeat(3, 1fr);
-                      gap: 24px;
-                    }
-                    .template-card-seventh {
-                      grid-column: auto;
-                      grid-row: auto;
-                      align-self: stretch;
-                    }
-                  }
-                  @media (max-width: 768px) {
-                    .responsive-template-grid {
-                      grid-template-columns: repeat(2, 1fr);
-                      gap: 16px;
-                    }
-                  }
-                  @media (max-width: 480px) {
-                    .responsive-template-grid {
-                      grid-template-columns: 1fr;
-                    }
-                  }
-                `}</style>
-                <div
-                  className="responsive-template-grid"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(4, 1fr)",
-                    gridTemplateRows: "1fr 1fr",
-                    gap: "24px",
-                  }}
-                >
-                  {GENERATION_TEMPLATES.map((tpl, index) => {
-                    const active = generationTemplateId === tpl.id;
-                    const clipCountText = tpl.generationSettings.number_of_clips === 1 ? "1 clip" : `${tpl.generationSettings.number_of_clips} clips`;
-                    const isPortrait = tpl.exportMode === "portrait";
-                    const subStyle = tpl.subtitleStyle;
-
-                    let gridCol = "auto";
-                    let gridRow = "auto";
-                    let alignSelf = "stretch";
-
-                    if (index === 6) {
-                      gridCol = "4";
-                      gridRow = "1 / 3";
-                      alignSelf = "center";
-                    } else {
-                      gridCol = `${(index % 3) + 1}`;
-                      gridRow = `${index < 3 ? 1 : 2}`;
-                    }
-                    
-                    return (
-                        <button
-                          key={tpl.id}
-                          type="button"
-                          onClick={() => handleTemplateSelect(tpl.id)}
-                          style={{
-                            gridColumn: gridCol,
-                            gridRow: gridRow,
-                            alignSelf: alignSelf,
-                            position: "relative",
-                            width: "100%",
-                            aspectRatio: "4/5", // Shorter portrait poster ratio for a clean gallery look
-                            borderRadius: "16px",
-                            overflow: "hidden",
-                            border: active ? `2px solid ${hi}` : `1px solid ${d ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-                            boxShadow: active ? `0 0 0 4px ${hi}20, 0 12px 24px rgba(0,0,0,0.3)` : `0 4px 12px ${d ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.05)"}`,
-                            transform: active ? "translateY(-4px) scale(1.02)" : "translateY(0) scale(1)",
-                            transition: "all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)",
-                            cursor: "pointer",
-                            padding: 0,
-                            display: "block",
-                            background: d ? "#111" : "#fff",
-                          }}
-                        >
-                          {/* Background Image with Zoom Effect */}
-                          <div style={{
-                            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                            backgroundImage: `url('${tpl.image || (isPortrait ? '/images/podcast_portrait.png' : '/images/podcast_landscape.png')}')`,
-                            backgroundSize: "cover",
-                            backgroundPosition: "center",
-                            transition: "transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1)",
-                            transform: active ? "scale(1.08)" : "scale(1)",
-                          }} />
-                          
-                          {/* Rich Gradient Overlay */}
-                          <div style={{
-                            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                            background: active 
-                              ? "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.95) 100%)"
-                              : "linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 50%, rgba(0,0,0,0.95) 100%)",
-                            transition: "background 0.4s ease"
-                          }} />
-
-                          {/* Top Badge: Format */}
-                          <div style={{
-                            position: "absolute", top: "12px", left: "12px",
-                            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-                            color: isPortrait ? "#a7f3d0" : "#bfdbfe", // Green tint for portrait, blue tint for landscape
-                            fontSize: "10px", fontWeight: 800, padding: "4px 8px", borderRadius: "8px",
-                            border: "1px solid rgba(255,255,255,0.15)",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                            display: "flex", alignItems: "center", gap: "4px",
-                            textTransform: "uppercase", letterSpacing: "0.5px"
-                          }}>
-                            {isPortrait ? (
-                              <svg width="10" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="3" ry="3"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                            ) : (
-                              <svg width="14" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="3" ry="3"></rect><line x1="18" y1="12" x2="18.01" y2="12"></line></svg>
-                            )}
-                            {isPortrait ? "9:16 Portrait" : "16:9 Landscape"}
-                          </div>
-
-                          {/* Top Badge: Duration */}
-                          <div style={{
-                            position: "absolute", top: "12px", right: "12px",
-                            background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-                            color: "#fff", fontSize: "11px", fontWeight: 700, padding: "4px 8px", borderRadius: "8px",
-                            border: "1px solid rgba(255,255,255,0.15)",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)"
-                          }}>
-                            {tpl.generationSettings.clip_duration_seconds}s
-                          </div>
-
-                          {/* Play Button */}
-                          <div style={{
-                             position: "absolute", top: "45%", left: "50%", transform: "translate(-50%, -50%)",
-                             width: "42px", height: "42px", borderRadius: "50%",
-                             background: active ? hi : "rgba(255,255,255,0.15)",
-                             backdropFilter: "blur(8px)",
-                             display: "flex", alignItems: "center", justifyContent: "center",
-                             border: active ? "none" : "1px solid rgba(255,255,255,0.4)",
-                             boxShadow: active ? `0 8px 24px ${hi}80` : "0 4px 12px rgba(0,0,0,0.2)",
-                             transition: "all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)",
-                          }}>
-                             <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: 3 }}><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                          </div>
-
-                          {/* Content Area at Bottom */}
-                          <div style={{
-                            position: "absolute", bottom: "16px", left: "16px", right: "16px",
-                            textAlign: "left",
-                            display: "flex", flexDirection: "column", alignItems: "center"
-                          }}>
-                            {/* Subtitle Visual Demo */}
-                            <div style={{
-                              fontFamily: subStyle.font_family,
-                              fontSize: isPortrait ? "13px" : "11px",
-                              fontWeight: 900,
-                              color: subStyle.primary_color,
-                              backgroundColor: subStyle.background_opacity > 0 ? subStyle.background_color : "transparent",
-                              padding: subStyle.background_opacity > 0 ? "4px 10px" : "0",
-                              borderRadius: 6,
-                              textAlign: "center",
-                              lineHeight: 1.2,
-                              textTransform: subStyle.font_family === "DM Sans" ? "uppercase" : "none",
-                              textShadow: subStyle.background_opacity === 0 ? `1px 1px 2px ${subStyle.outline_color}, -1px -1px 2px ${subStyle.outline_color}, 1px -1px 2px ${subStyle.outline_color}, -1px 1px 2px ${subStyle.outline_color}` : "none",
-                              marginBottom: "16px",
-                              boxShadow: subStyle.background_opacity > 0 ? "0 4px 12px rgba(0,0,0,0.4)" : "none",
-                              maxWidth: "100%",
-                              wordBreak: "keep-all",
-                            }}>
-                              {tpl.label}
-                            </div>
-                            
-                            <div style={{ color: "#fff", fontSize: "15px", fontWeight: 800, letterSpacing: "-0.01em", marginBottom: "4px", width: "100%", textAlign: "left" }}>
-                               {tpl.label}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
-                              <div style={{ color: active ? hi : "rgba(255,255,255,0.7)", fontSize: "12px", fontWeight: 600, transition: "color 0.3s ease" }}>
-                                 {clipCountText}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-          </section>
 
           {sourceMode === "file" ? (
             <>
@@ -1866,7 +1271,7 @@ export default function UploadWorkspace({
                 onClick={() => inputRef.current?.click()}
               >
                 <div className="ic-step-kicker" style={{ borderColor: subBorder, background: d ? "rgba(90,158,58,.1)" : "rgba(90,158,58,.08)", color: hi, margin: "0 auto 18px" }}>
-                  Step 04 / Review
+                  Step 02 / Analysis & Review
                 </div>
                 <input
                   ref={inputRef}
@@ -2001,41 +1406,7 @@ export default function UploadWorkspace({
                     ))}
                   </div>
 
-                  <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
-                    {[
-                      {
-                        label: "Subtitle style",
-                        value: subtitleStyleLabel,
-                        detail: `${subtitleStyleSummary}. ${activeSubtitlePreset.description}`,
-                      },
-                      {
-                        label: "Clip generation",
-                        value: generationSummary,
-                        detail: "Clip count, duration, and subtitles carry into the clips page.",
-                      },
-                      {
-                        label: "Audio leveling",
-                        value: selectedAudioFeedback.badge,
-                        detail: selectedAudioFeedback.description,
-                      },
-                    ].map((item) => (
-                      <div
-                        key={item.label}
-                        style={{
-                          borderRadius: 14,
-                          border: `1px solid ${subBorder}`,
-                          background: d ? "rgba(90,158,58,.09)" : "rgba(90,158,58,.06)",
-                          padding: "12px 14px",
-                        }}
-                      >
-                        <div style={{ fontSize: 9, letterSpacing: ".18em", textTransform: "uppercase", color: muted, fontWeight: 700, marginBottom: 5 }}>
-                          {item.label}
-                        </div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: text, marginBottom: 4 }}>{item.value}</div>
-                        <div style={{ fontSize: 12, lineHeight: 1.6, color: muted }}>{item.detail}</div>
-                      </div>
-                    ))}
-                  </div>
+
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <button
@@ -2227,58 +1598,28 @@ export default function UploadWorkspace({
                     ))}
                   </div>
                   {prep ? (
-                    <div style={{ marginTop: 14, borderRadius: 14, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.12)", padding: "14px 16px", fontSize: 13 }}>
+                    <div
+                      style={{
+                        marginTop: 14,
+                        borderRadius: 14,
+                        border: "1px solid rgba(255,255,255,.18)",
+                        background: "rgba(255,255,255,.12)",
+                        padding: "14px 16px",
+                        fontSize: 13,
+                      }}
+                    >
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700, marginBottom: 7 }}>
                         <CheckCircle2 size={14} />
                         Record created successfully
                       </div>
                       <div style={{ fontFamily: "monospace", opacity: 0.82 }}>ID: {prep.podcast_id}</div>
-                      <div style={{ opacity: 0.72, marginTop: 4 }}>Status: <strong>{prep.status}</strong></div>
-                      <div style={{ opacity: 0.72, marginTop: 4 }}>Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})</div>
-                      <div style={{ opacity: 0.72, marginTop: 4 }}>{selectedAudioFeedback.description}</div>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                        {prep.checkout_required ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleStartCheckout(prep.podcast_id, result.price)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 8,
-                              borderRadius: 999,
-                              padding: "10px 16px",
-                              background: "#9e8a20",
-                              border: "1px solid rgba(255,255,255,.24)",
-                              color: d ? "#fff" : text,
-                              fontSize: 12,
-                              fontWeight: 800,
-                              cursor: "pointer",
-                            }}
-                          >
-                            <CreditCard size={13} />
-                            Pay & Unlock
-                          </button>
-                        ) : null}
-                        <Link
-                          href={`/clips?podcastId=${prep.podcast_id}&autogen=1`}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            borderRadius: 999,
-                            padding: "10px 16px",
-                            background: d ? "rgba(255,255,255,.18)" : "rgba(90,158,58,.12)",
-                            border: d ? "1px solid rgba(255,255,255,.22)" : `1px solid ${border}`, 
-                            color: d ? "#fff" : text,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            textDecoration: "none",
-                          }}
-                        >
-                          <Play size={13} />
-                          Analyze & generate
-                        </Link>
+                      <div style={{ opacity: 0.72, marginTop: 4 }}>
+                        Status: <strong>{prep.status}</strong>
                       </div>
+                      <div style={{ opacity: 0.72, marginTop: 4 }}>
+                        Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})
+                      </div>
+                      <div style={{ opacity: 0.72, marginTop: 4 }}>{selectedAudioFeedback.description}</div>
                     </div>
                   ) : null}
                 </section>
@@ -2295,7 +1636,7 @@ export default function UploadWorkspace({
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-                    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                    <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                       <div
                         style={{
                           width: 46,
@@ -2312,67 +1653,62 @@ export default function UploadWorkspace({
                         {state === "free_ready" ? <ShieldCheck size={20} color={hi} /> : <Zap size={20} color={hi} />}
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, letterSpacing: ".24em", textTransform: "uppercase", color: hi2, fontWeight: 700, marginBottom: 5 }}>
-                          Next step
-                        </div>
-                        <div style={{ fontFamily: "'DM Serif Display', serif", fontStyle: "italic", fontSize: 20, marginBottom: 4 }}>
-                          {state === "free_ready" ? "Reserve your free upload" : "Create payment record"}
-                        </div>
-                        <div style={{ fontSize: 13, color: muted, lineHeight: 1.65 }}>
-                          <Clock size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />
-                          {exportDetails.label} export with {subtitleStyleLabel} subtitles selected. {generationSummary}.{" "}
-                          {selectedAudioFeedback.tone === "enabled" ? "Audio leveling will be included." : "Audio leveling is currently off."}
+                        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: text }}>
+                          {state === "free_ready" ? "Save your upload" : "Create payment record"}
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => pickFile(null)}
-                        disabled={preparing}
-                        className="ic-action"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          borderRadius: 14,
-                          padding: "12px 22px",
-                          border: `1px solid ${border}`,
-                          background: d ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
-                          color: text,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          opacity: preparing ? 0.65 : 1,
-                        }}
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void reserveRecord()}
-                        disabled={preparing}
-                        className="ic-action"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          borderRadius: 14,
-                          padding: "12px 22px",
-                          border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
-                          background: d ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.08)",
-                          color: d ? "#9dce7a" : "#3a6e25",
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          opacity: preparing ? 0.65 : 1,
-                        }}
-                      >
-                        {preparing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle2 size={14} />}
-                        {preparing ? "Saving..." : "Save upload"}
-                      </button>
-                    </div>
+                    {!prep ? (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => pickFile(null)}
+                          disabled={preparing}
+                          className="ic-action"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 14,
+                            padding: "12px 22px",
+                            border: `1px solid ${border}`,
+                            background: d ? "rgba(255,255,255,.05)" : "rgba(0,0,0,.05)",
+                            color: text,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            opacity: preparing ? 0.65 : 1,
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void reserveRecord()}
+                          disabled={preparing}
+                          className="ic-action"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            borderRadius: 14,
+                            padding: "12px 22px",
+                            border: `1px solid ${d ? "rgba(90,158,58,.5)" : border}`,
+                            background: d ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.08)",
+                            color: d ? "#9dce7a" : "#3a6e25",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            opacity: preparing ? 0.65 : 1,
+                          }}
+                        >
+                          {preparing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle2 size={14} />}
+                          {preparing ? "Saving..." : "Save upload"}
+                        </button>
+                      </div>
+                    ) : null}
+
                     {prep ? (
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         {prep.checkout_required ? (
@@ -2399,7 +1735,7 @@ export default function UploadWorkspace({
                           </button>
                         ) : null}
                         <Link
-                          href={`/clips?podcastId=${prep.podcast_id}&autogen=1`}
+                          href={`/clips?podcastId=${prep.podcast_id}`}
                           className="ic-premium-card"
                           style={{
                             display: "inline-flex",
@@ -2417,26 +1753,7 @@ export default function UploadWorkspace({
                           }}
                         >
                           <Play size={14} />
-                          Analyze & generate clips
-                        </Link>
-                        <Link
-                          href={`/dashboard`}
-                          className="ic-action"
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 8,
-                            borderRadius: 14,
-                            padding: "12px 18px",
-                            border: `1px solid ${border}`,
-                            background: "transparent",
-                            color: muted,
-                            fontSize: 13,
-                            fontWeight: 700,
-                            textDecoration: "none",
-                          }}
-                        >
-                          Save & Return
+                          Open generation setup
                         </Link>
                       </div>
                     ) : null}
@@ -2523,8 +1840,13 @@ export default function UploadWorkspace({
                   >
                     <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: muted, fontWeight: 700 }}>
-                          Video URL
+                        <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                          <span style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: muted, fontWeight: 700 }}>
+                            YouTube Link
+                          </span>
+                          <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: hi, textDecoration: "none", fontWeight: 600 }}>
+                            Open YouTube ↗
+                          </a>
                         </span>
                         <input
                           value={youtubeUrl}
@@ -2622,7 +1944,7 @@ export default function UploadWorkspace({
                           boxShadow: "0 12px 28px rgba(90,158,58,.22)",
                         }}
                       >
-                        {youtubeSubmitting ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Link2 size={14} />}
+                      {youtubeSubmitting ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Link2 size={14} />}
                         {youtubeSubmitting ? "Importing..." : "Import from YouTube"}
                       </button>
                       <button
@@ -2704,10 +2026,10 @@ export default function UploadWorkspace({
                         </div>
                       </div>
                       <div style={{ display: "grid", gap: 9 }}>
-                        {[
-                        "Save video to library",
-                        "Analyze it here",
-                        "Generate clips right away",
+                    {[ 
+                      "Save video to library",
+                      "Analyze it here",
+                      "Open the imported episode",
                         ].map((item, index) => (
                           <div key={item} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, color: muted, lineHeight: 1.5 }}>
                             <span
@@ -2902,7 +2224,7 @@ export default function UploadWorkspace({
                       }}
                     >
                       {youtubeAnalyzing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-                      {youtubeAnalyzing ? "Analyzing..." : youtubeNeedsPayment ? "Payment required" : "Analyze & generate clips"}
+                      {youtubeAnalyzing ? "Analyzing..." : youtubeNeedsPayment ? "Payment required" : "Analyze"}
                     </button>
                     <Link
                       href="/podcasts"

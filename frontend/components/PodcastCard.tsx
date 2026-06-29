@@ -670,7 +670,7 @@ export function PodcastCard({
                   </span>
 
                   <Link
-                    href={hasGeneratedVideos ? `/clips/generated?podcastId=${podcast.id}` : `/clips?podcastId=${podcast.id}`}
+                    href={hasGeneratedVideos ? `/clips/generated?podcastId=${podcast.id}` : `/clips/generate?podcastId=${podcast.id}`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",

@@ -129,6 +129,7 @@ export type GenerateClipsPayload = {
   visual_output_mode?: VisualOutputMode;
   save_generation_settings?: boolean;
   use_preferred_generation_settings?: boolean;
+  force_regenerate?: boolean;
 };
 
 export type ProfileResponse = {
@@ -1028,6 +1029,9 @@ export async function generateClips(
   }
   if (typeof payload?.use_preferred_generation_settings === "boolean") {
     requestBody.use_preferred_generation_settings = payload.use_preferred_generation_settings;
+  }
+  if (typeof payload?.force_regenerate === "boolean") {
+    requestBody.force_regenerate = payload.force_regenerate;
   }
 
   try {

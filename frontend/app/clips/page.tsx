@@ -16,6 +16,7 @@ import {
   SunMedium,
   Wand2,
   Lightbulb,
+  CheckCircle2,
 } from "lucide-react";
 
 import GenerationSettingsPanel from "@/components/GenerationSettingsPanel";
@@ -341,7 +342,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     message: string;
   } | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"setup" | "results">(lockedWorkspaceView);
-  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [showAdvancedControls, setShowAdvancedControls] = useState(true);
   const [generationTemplateId, setGenerationTemplateId] =
     useState<GenerationTemplateId | null>("hook_spotlight");
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(() =>
@@ -1697,77 +1698,23 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     alignItems: "center",
                     gap: 10,
                     fontWeight: 700,
-                    cursor: !selectedPodcastId || generating || loadingClips ? "default" : "pointer",
-                    opacity: !selectedPodcastId || generating || loadingClips ? 0.72 : 1,
-                    boxShadow: `0 14px 30px ${t.accentGlow}`,
+                    cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
+                    opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                    boxShadow: clips.length > 0 ? "none" : `0 14px 30px ${t.accentGlow}`,
                   }}
                 >
-                  {generating ? <Loader2 size={16} className="animate-spin" /> : hasCompleteClipSet ? <PlayCircle size={16} /> : <Wand2 size={16} />}
+                  {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <CheckCircle2 size={16} /> : <Wand2 size={16} />}
                   {generating
                     ? "Rendering clips..."
-                    : mode === "results"
-                      ? "Open generation setup"
-                      : hasCompleteClipSet
-                        ? "View generated clips"
-                        : clips.length > 0
-                          ? "Continue generation"
-                          : "Generate clips"}
+                    : clips.length > 0
+                      ? "Clips generated"
+                      : mode === "results"
+                        ? "Open generation setup"
+                        : "Generate clips"}
                 </button>
               </div>
 
-              <section
-                style={{
-                  borderRadius: 20,
-                  border: `1px solid ${t.borderSub}`,
-                  background: t.cardAlt,
-                  padding: "14px 15px",
-                  marginBottom: 18,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", color: t.textFaint, marginBottom: 6 }}>
-                    Workspace view
-                  </div>
-                  <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.65 }}>
-                    Setup keeps generation controls separate. Results keeps previews, search, planning, and publish actions separate.
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {([
-                    { id: "setup", label: "Generation", href: generationPath },
-                    { id: "results", label: "Results", href: resultsPath },
-                  ] as const).map((item) => {
-                    const active = workspaceView === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => router.push(item.href)}
-                        style={{
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "10px 14px",
-                          background: active
-                            ? `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`
-                            : t.card,
-                          color: active ? "#fff" : t.textSub,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-                </div>
-              </section>
-
-              {workspaceView === "setup" ? (
+              {(!generating && clips.length === 0) ? (
                 <>
                   <GenerationSettingsPanel
                     dark={dark}
@@ -1813,28 +1760,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           Open visual mode and subtitle styling only when you need deeper polishing.
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvancedControls((current) => !current)}
-                        style={{
-                          border: `none`,
-                          borderRadius: 999,
-                          padding: "10px 20px",
-                          background: showAdvancedControls ? t.borderSub : t.accent,
-                          color: showAdvancedControls ? t.text : "#fff",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                          boxShadow: showAdvancedControls ? "none" : `0 4px 12px ${t.accent}60`,
-                          transition: "all 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
-                        }}
-                      >
-                        {showAdvancedControls ? "Hide advanced" : "Open advanced"}
-                      </button>
                     </div>
                   </section>
 
-                  {showAdvancedControls ? (
-                    <div style={{ display: "grid", gap: 16 }}>
               <section
                 className="glass a2"
                 style={{
@@ -2007,12 +1935,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   hi2: t.accentLt,
                 }}
               />
-                    </div>
-                  ) : null}
                 </>
               ) : null}
 
-              {workspaceView === "results" ? (
+              {true ? (
                 <div style={{ display: "grid", gap: 18 }}>
               <div
                 style={{
@@ -2195,31 +2121,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       Reset search
                     </button>
                   ) : null}
-                  {clips.length === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerateClips()}
-                      disabled={generating}
-                      className="ic-action"
-                      style={{
-                        marginTop: 18,
-                        border: "none",
-                        borderRadius: 999,
-                        background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                        color: "#fff",
-                        padding: "12px 18px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 8,
-                        fontWeight: 700,
-                        cursor: generating ? "default" : "pointer",
-                        opacity: generating ? 0.7 : 1,
-                      }}
-                    >
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                      {generating ? "Rendering..." : "Generate now"}
-                    </button>
-                  ) : null}
+
                 </div>
               ) : (
                 <div

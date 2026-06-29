@@ -1,4 +1,4 @@
-import type { GenerationSettings, GenerationTemplateId } from "@/lib/api";
+import type { ContentCalendarPlatform, GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
   CLIP_DURATION_OPTIONS,
@@ -544,7 +544,7 @@ export default function GenerationSettingsPanel({
             value={settings.target_platform ?? "tiktok"}
             onChange={(e) =>
               onSettingsChange({
-                target_platform: e.target.value as any,
+                target_platform: e.target.value as ContentCalendarPlatform,
               })
             }
             style={{

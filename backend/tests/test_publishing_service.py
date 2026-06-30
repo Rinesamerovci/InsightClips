@@ -462,14 +462,15 @@ class PublishingServiceTests(unittest.TestCase):
             result = build_content_calendar("podcast-123", days=7, max_clips=2)
 
         self.assertEqual(result.podcast_id, "podcast-123")
-        self.assertEqual(result.total_suggestions, 6)
+        self.assertEqual(result.total_suggestions, 10)
         self.assertEqual(
-            [suggestion.platform for suggestion in result.suggestions[:3]],
-            ["tiktok", "linkedin", "youtube"],
+            [suggestion.platform for suggestion in result.suggestions[:5]],
+            ["tiktok", "instagram_reels", "facebook", "youtube", "linkedin"],
         )
         self.assertEqual(result.suggestions[0].clip_id, "clip-2")
         self.assertIn("#PodcastClips", result.suggestions[0].hashtags)
-        self.assertEqual(result.suggestions[1].best_time_local, "09:00")
+        self.assertEqual(result.suggestions[1].best_time_local, "18:30")
+        self.assertEqual(result.suggestions[2].best_time_local, "13:00")
 
     def test_build_content_calendar_rejects_invalid_days(self) -> None:
         case_dir = self._workspace_case_dir("publishing-calendar-invalid")

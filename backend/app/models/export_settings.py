@@ -13,7 +13,16 @@ ExportPresetName = Literal[
     "instagram_reels",
     "tiktok_vertical",
 ]
-SubtitleStylePreset = Literal["classic", "bold", "minimal", "boxed"]
+SubtitleStylePreset = Literal[
+    "classic",
+    "bold",
+    "bold_center",
+    "minimal",
+    "boxed",
+    "karaoke",
+    "neon_pop",
+    "lower_third",
+]
 SubtitlePosition = Literal["top", "center", "bottom"]
 AudioEnhancementStatus = Literal["enabled", "disabled", "failed"]
 SubtitleTimingProfile = Literal["compact", "balanced", "extended"]
@@ -75,6 +84,13 @@ class SubtitleStyle(BaseModel):
             "background_opacity": 0.25,
             "bold": True,
         },
+        "bold_center": {
+            "font_family": "DM Sans",
+            "font_size": 26,
+            "background_opacity": 0.32,
+            "bold": True,
+            "position": "center",
+        },
         "minimal": {
             "font_size": 16,
             "outline_color": "#222222",
@@ -84,6 +100,30 @@ class SubtitleStyle(BaseModel):
             "font_size": 20,
             "background_opacity": 0.55,
             "bold": True,
+        },
+        "karaoke": {
+            "font_family": "DM Sans",
+            "font_size": 24,
+            "primary_color": "#FFE66D",
+            "outline_color": "#111111",
+            "background_color": "#000000",
+            "background_opacity": 0.18,
+            "bold": True,
+        },
+        "neon_pop": {
+            "font_family": "DM Sans",
+            "font_size": 24,
+            "primary_color": "#00F5FF",
+            "outline_color": "#07111F",
+            "background_color": "#0A0A0A",
+            "background_opacity": 0.22,
+            "bold": True,
+            "position": "center",
+        },
+        "lower_third": {
+            "font_size": 18,
+            "background_opacity": 0.34,
+            "position": "bottom",
         },
     }
 

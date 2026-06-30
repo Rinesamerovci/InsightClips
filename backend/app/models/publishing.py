@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PublicationStatus = Literal["pending", "published", "failed"]
 PublicationDestination = Literal["download", "tiktok", "instagram", "youtube", "other"]
-ContentCalendarPlatform = Literal["tiktok", "linkedin", "youtube"]
+ContentCalendarPlatform = Literal["tiktok", "instagram_reels", "facebook", "youtube", "linkedin"]
 
 
 class ClipPublicationStatus(BaseModel):

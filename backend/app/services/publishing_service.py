@@ -12,6 +12,7 @@ from app.models.publishing import (
     ClipPublicationStatus,
     ClipPublicationStatusResponse,
     ClipRevocationResult,
+    ContentCalendarPlatform,
     ContentCalendarResponse,
     ContentCalendarSuggestion,
     PublicationDestination,
@@ -339,7 +340,7 @@ def build_content_calendar(
     *,
     days: int = 7,
     max_clips: int = 5,
-    target_platform: str | None = None,
+    target_platform: ContentCalendarPlatform | None = None,
 ) -> ContentCalendarResponse:
     cleaned_podcast_id = podcast_id.strip()
     if not cleaned_podcast_id:
@@ -367,7 +368,11 @@ def build_content_calendar(
     )[:max_clips]
 
     suggestions: list[ContentCalendarSuggestion] = []
-    platforms = (target_platform,) if target_platform else ("tiktok", "linkedin", "youtube")
+    platforms = (
+        (target_platform,)
+        if target_platform
+        else ("tiktok", "instagram_reels", "facebook", "youtube", "linkedin")
+    )
     for clip_index, row in enumerate(ranked_rows):
         for platform_index, platform in enumerate(platforms):
             scheduled_day = ((clip_index + platform_index) % days) + 1
@@ -433,7 +438,7 @@ def _get_calendar_clip_rows(podcast_id: str) -> list[dict[str, Any]]:
 def _build_calendar_suggestion(
     row: dict[str, Any],
     *,
-    platform: str,
+    platform: ContentCalendarPlatform,
     scheduled_day: int,
 ) -> ContentCalendarSuggestion:
     clip_number = int(row.get("clip_number") or 0)
@@ -467,42 +472,58 @@ def _truncate_words(value: str, limit: int) -> str:
     return shortened if len(words) <= limit else f"{shortened}..."
 
 
-def _platform_best_time(platform: str) -> str:
+def _platform_best_time(platform: ContentCalendarPlatform) -> str:
     return {
         "tiktok": "19:30",
+        "instagram_reels": "18:30",
+        "facebook": "13:00",
         "linkedin": "09:00",
         "youtube": "17:00",
     }.get(platform, "12:00")
 
 
-def _platform_title(platform: str, title: str) -> str:
+def _platform_title(platform: ContentCalendarPlatform, title: str) -> str:
     if platform == "linkedin":
         return f"Insight: {title}"
+    if platform == "facebook":
+        return f"{title} | Shared Clip"
+    if platform == "instagram_reels":
+        return f"{title} | Reel"
     if platform == "youtube":
         return f"{title} | Podcast Clip"
     return title
 
 
-def _platform_caption(platform: str, subtitle: str) -> str:
+def _platform_caption(platform: ContentCalendarPlatform, subtitle: str) -> str:
     seed = _truncate_words(subtitle, 18)
     if platform == "linkedin":
         return f"{seed}\n\nA concise takeaway from the full conversation."
+    if platform == "facebook":
+        return f"{seed}\n\nShare this takeaway with someone who would appreciate the full conversation."
+    if platform == "instagram_reels":
+        return f"{seed} Save this reel for later."
     if platform == "youtube":
         return f"{seed}\n\nWatch this highlight and save the full episode for later."
     return f"{seed} Watch until the end for the key takeaway."
 
 
-def _platform_cta(platform: str) -> str:
+def _platform_cta(platform: ContentCalendarPlatform) -> str:
     return {
         "tiktok": "Follow for more short podcast takeaways.",
+        "instagram_reels": "Save this reel and follow for more short podcast takeaways.",
+        "facebook": "Share this clip with someone who would enjoy the conversation.",
         "linkedin": "Comment with the takeaway you would apply first.",
         "youtube": "Subscribe for more clips from this podcast.",
     }.get(platform, "Save this clip for later.")
 
 
-def _platform_angle(platform: str, subtitle: str) -> str:
+def _platform_angle(platform: ContentCalendarPlatform, subtitle: str) -> str:
     if platform == "linkedin":
         return "Frame the clip as a professional lesson or discussion prompt."
+    if platform == "facebook":
+        return "Frame the clip as a shareable discussion starter for a broader audience."
+    if platform == "instagram_reels":
+        return "Lead with the strongest hook and keep the pacing quick."
     if platform == "youtube":
         return "Package the clip as a searchable highlight from the episode."
     if "?" in subtitle:
@@ -510,9 +531,11 @@ def _platform_angle(platform: str, subtitle: str) -> str:
     return "Lead with the strongest hook in the first two seconds."
 
 
-def _platform_hashtags(platform: str, subtitle: str) -> list[str]:
+def _platform_hashtags(platform: ContentCalendarPlatform, subtitle: str) -> list[str]:
     base = {
         "tiktok": ["#PodcastClips", "#CreatorTips", "#InsightClips"],
+        "instagram_reels": ["#InstagramReels", "#Reels", "#PodcastClips"],
+        "facebook": ["#Facebook", "#Podcast", "#Video"],
         "linkedin": ["#Leadership", "#ContentStrategy", "#Podcast"],
         "youtube": ["#Podcast", "#Shorts", "#Highlights"],
     }.get(platform, ["#Podcast"])

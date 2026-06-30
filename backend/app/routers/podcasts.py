@@ -9,8 +9,12 @@ from app.dependencies.auth import AuthenticatedUser, get_current_user, get_curre
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest
 from app.models.clip_insights import PodcastClipMetrics
 from app.models.clipping import ClipGenerationResult, GenerateClipsRequest
-from app.models.publishing import ClipPublicationResult, PublishClipsRequest
-from app.models.publishing import ContentCalendarResponse
+from app.models.publishing import (
+    ClipPublicationResult,
+    ContentCalendarPlatform,
+    ContentCalendarResponse,
+    PublishClipsRequest,
+)
 from app.models.transcription import TranscriptionResult
 from app.models.podcast import (
     DeletePodcastResponse,
@@ -500,7 +504,7 @@ async def get_podcast_clip_metrics(
 async def get_podcast_content_calendar(
     podcast_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
-    platform: str | None = None,
+    platform: ContentCalendarPlatform | None = None,
 ) -> ContentCalendarResponse:
     if not podcast_belongs_to_user(podcast_id, current_user.id):
         raise HTTPException(

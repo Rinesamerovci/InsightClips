@@ -10,7 +10,6 @@ import {
   Loader2,
   Lock,
   Mail,
-  Sparkles,
 } from "lucide-react";
 
 import { AuthScaffold } from "@/components/AuthScaffold";
@@ -307,26 +306,6 @@ function LoginPageContent() {
         <p style={{ color: shell.muted, fontSize: 14, lineHeight: 1.7 }}>
           Continue with your email and password to open dashboard, uploads, and clips.
         </p>
-      </div>
-
-      <div
-        style={{
-          marginBottom: 18,
-          borderRadius: 18,
-          border: `1px solid ${shell.border}`,
-          background: dark ? "rgba(255,255,255,.025)" : "rgba(255,255,255,.72)",
-          padding: "14px 16px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <Sparkles size={14} color={shell.accent} />
-          <span style={{ color: shell.text, fontSize: 13, fontWeight: 700 }}>
-            Streamlined access
-          </span>
-        </div>
-        <div style={{ color: shell.muted, fontSize: 13, lineHeight: 1.65 }}>
-          The sign-in view is intentionally simpler now, with focus on the form instead of heavy presentation blocks.
-        </div>
       </div>
 
       {successMessage ? (

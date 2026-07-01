@@ -3,13 +3,10 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Shield,
-  Globe,
   Cpu,
   Layers,
   BarChart3,
   CheckCircle2,
-  Play,
   MoveRight,
   Sun,
   Moon,
@@ -239,6 +236,14 @@ export default function InsightClipsLanding() {
               Stats
             </button>
 
+            <button
+              className="nav-link"
+              style={{ color:t.textMuted }}
+              onClick={() => document.getElementById("pricing-section")?.scrollIntoView({behavior:"smooth"})}
+            >
+              Pricing
+            </button>
+
             <Link href="/login" className="nav-link" style={{ color:t.textMuted }}>
               Sign In
             </Link>
@@ -369,25 +374,6 @@ export default function InsightClipsLanding() {
                 transition:"all .3s",
               }}>
                 Start for Free <MoveRight size={16} />
-              </Link>
-
-              <Link href="/demo" className="ic-premium-card" style={{
-                display:"flex", alignItems:"center", gap:12,
-                padding:isMobile ? "14px 20px" : "15px 28px", borderRadius:14,
-                border:`1px solid ${t.border}`,
-                background: isDark ? "rgba(255,255,255,.03)" : "rgba(0,0,0,.03)",
-                color:t.text, fontSize:12, fontWeight:600,
-                letterSpacing:".1em", textTransform:"uppercase", cursor:"pointer",
-                transition:"all .3s", textDecoration:"none",
-              }}>
-                <div style={{
-                  width:32, height:32, borderRadius:"50%",
-                  background:`${t.accent}18`,
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                }}>
-                  <Play size={12} color={t.accent} fill={t.accent} style={{ marginLeft:2 }} />
-                </div>
-                Watch Demo
               </Link>
             </div>
           </div>
@@ -549,116 +535,205 @@ export default function InsightClipsLanding() {
         </section>
       </main>
 
-      {/* ═══════════════════════════ FULL FOOTER ═══════════════════════════ */}
-      <footer style={{
-        borderTop:`1px solid ${t.border}`,
-        padding:isMobile ? "60px 20px" : "80px 40px",
-        background: isDark ? "rgba(0,0,0,.3)" : "rgba(0,0,0,.02)",
+      {/* ═══════════════════════════ PRICING ═══════════════════════════ */}
+      <section
+        id="pricing-section"
+        style={{
+          maxWidth: 1280,
+          margin: "0 auto",
+          padding: isMobile ? "76px 18px 90px" : "120px 40px 140px",
+        }}
+      >
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: isMobile ? 48 : 72 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: ".25em",
+            textTransform: "uppercase", color: t.accent, display: "block", marginBottom: 16,
+          }}>
+            — Simple, transparent pricing
+          </span>
+          <h2 style={{
+            fontFamily: "'DM Serif Display', serif",
+            fontSize: "clamp(36px,5vw,60px)",
+            lineHeight: 1.05, letterSpacing: "-.04em", color: t.text,
+            marginBottom: 16,
+          }}>
+            Pay only for what you use.
+          </h2>
+          <p style={{
+            color: t.textMuted, fontSize: isMobile ? 15 : 17,
+            lineHeight: 1.65, maxWidth: 520, margin: "0 auto",
+          }}>
+            No subscriptions, no hidden fees. Your first podcast is always free — then
+            a flat per-upload fee based on length.
+          </p>
+        </div>
+
+        {/* Tier cards */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+          gap: 20,
+          maxWidth: 960,
+          margin: "0 auto",
+        }}>
+          {[
+            {
+              range: "Up to 30 min",
+              price: "Free",
+              sub: "first upload",
+              highlight: true,
+              perks: [
+                "AI clip extraction",
+                "Virality scoring",
+                "Subtitle generation",
+                "Download ready-to-post clips",
+              ],
+            },
+            {
+              range: "31 – 60 min",
+              price: "$2",
+              sub: "per upload",
+              highlight: false,
+              perks: [
+                "Everything in Free",
+                "Longer episode support",
+                "Smart cropping",
+                "Content calendar suggestions",
+              ],
+            },
+            {
+              range: "61 – 120 min",
+              price: "$4",
+              sub: "per upload",
+              highlight: false,
+              perks: [
+                "Everything in Starter",
+                "Extended episode support",
+                "Priority render queue",
+                "Overlay & branding layers",
+              ],
+            },
+          ].map(({ range, price, sub, highlight, perks }) => (
+            <div
+              key={range}
+              className="card-feature"
+              style={{
+                borderRadius: 28,
+                border: `1px solid ${highlight ? t.accent + "55" : t.border}`,
+                background: highlight
+                  ? `linear-gradient(145deg, ${t.accent}18, ${t.accentDark}10)`
+                  : isDark ? "rgba(255,255,255,.02)" : "rgba(0,0,0,.015)",
+                padding: isMobile ? "36px 28px" : "44px 40px",
+                boxShadow: highlight ? `0 8px 48px ${t.accent}22` : "none",
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              {highlight && (
+                <div style={{
+                  position: "absolute", top: 20, right: 20,
+                  borderRadius: 100,
+                  background: `linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
+                  color: isDark ? "#0D1008" : "#fff",
+                  fontSize: 9, fontWeight: 800, letterSpacing: ".2em",
+                  textTransform: "uppercase", padding: "5px 12px",
+                }}>
+                  Most popular
+                </div>
+              )}
+
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: ".22em",
+                textTransform: "uppercase",
+                color: highlight ? t.accent : t.textFaint,
+                marginBottom: 16,
+              }}>
+                {range}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                <span style={{
+                  fontFamily: "'DM Serif Display', serif",
+                  fontSize: "clamp(48px,6vw,72px)",
+                  lineHeight: 1, letterSpacing: "-.04em", color: t.text,
+                }}>
+                  {price}
+                </span>
+                {price !== "Free" && (
+                  <span style={{ color: t.textMuted, fontSize: 14 }}>USD</span>
+                )}
+              </div>
+              <div style={{
+                color: t.textMuted, fontSize: 13, fontWeight: 600,
+                letterSpacing: ".06em", marginBottom: 32,
+              }}>
+                {sub}
+              </div>
+
+              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 40px", display: "flex", flexDirection: "column", gap: 12 }}>
+                {perks.map((perk) => (
+                  <li key={perk} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: t.textMuted }}>
+                    <CheckCircle2 size={15} color={t.accent} style={{ flexShrink: 0 }} />
+                    {perk}
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href="/login"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                  width: "100%",
+                  padding: "14px 22px", borderRadius: 14,
+                  background: highlight
+                    ? `linear-gradient(135deg, ${t.accent}, ${t.accentDark})`
+                    : "transparent",
+                  border: highlight ? "none" : `1px solid ${t.border}`,
+                  color: highlight ? (isDark ? "#0D1008" : "#fff") : t.text,
+                  fontSize: 12, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase",
+                  textDecoration: "none",
+                  boxShadow: highlight ? `0 6px 28px ${t.accent}35` : "none",
+                  transition: "all .3s",
+                }}
+              >
+                Start for Free <MoveRight size={15} />
+              </Link>
+            </div>
+          ))}
+        </div>
+
+        {/* Fine print */}
+        <p style={{
+          textAlign: "center", marginTop: 40,
+          color: t.textFaint, fontSize: 13, lineHeight: 1.65,
+        }}>
+          All plans include unlimited clip downloads, subtitle styling, and virality analytics.
+          <br />No credit card required to start.
+        </p>
+      </section>
+
+      {/* ═══════════════════════════ MINIMAL FOOTER ═══════════════════════════ */}
+      <div style={{
+        borderTop: `1px solid ${t.border}`,
+        padding: "24px 40px",
+        background: isDark ? "rgba(0,0,0,.2)" : "rgba(0,0,0,.02)",
       }}>
         <div style={{
-          maxWidth:1280, margin:"0 auto",
-          display:"grid",
-          gridTemplateColumns:isMobile ? "1fr" : "2fr 1fr 1fr 1fr",
-          gap:isMobile ? 40 : 60,
-          marginBottom: 60,
+          maxWidth: 1280, margin: "0 auto",
+          display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16,
         }}>
-          {/* Brand Info */}
-          <div>
-            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
-              <Image
-                src="/insightclips-logo.svg"
-                alt="InsightClips logo"
-                width={34}
-                height={34}
-                style={{ borderRadius: 10 }}
-              />
-              <span style={{ fontFamily:"'DM Serif Display', serif", fontSize:22, fontStyle:"italic", color:t.text, letterSpacing:"-.02em" }}>
-                Insight<span style={{color:t.accent}}>Clips</span>
-              </span>
-            </div>
-            <p style={{ color:t.textMuted, fontSize:14, lineHeight:1.6, maxWidth:300, marginBottom:24 }}>
-              The unified workspace for analyzing, editing, and publishing your best moments.
-            </p>
-            <div style={{ display:"flex", gap:16, color:t.textFaint }}>
-              <div style={{ padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)", borderRadius: 8, display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500 }}>
-                <Globe size={16} /> Global
-              </div>
-              <div style={{ padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)", borderRadius: 8, display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500 }}>
-                <Shield size={16} /> Secure
-              </div>
-            </div>
-          </div>
-
-          {/* Product Links */}
-          <div>
-            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Product</h4>
-            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
-              {["Features", "Integrations", "Pricing", "Changelog", "API"].map(link => (
-                <li key={link}>
-                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
-                    {link}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Resources Links */}
-          <div>
-            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Resources</h4>
-            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
-              {["Help Center", "Creator Guides", "Community", "Blog", "Status"].map(link => (
-                <li key={link}>
-                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
-                    {link}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Legal Links */}
-          <div>
-            <h4 style={{ color:t.text, fontSize:14, fontWeight:700, marginBottom:20 }}>Legal</h4>
-            <ul style={{ listStyle:"none", padding:0, margin:0, display:"flex", flexDirection:"column", gap:12 }}>
-              {["Privacy Policy", "Terms of Service", "Cookie Policy", "Security"].map(link => (
-                <li key={link}>
-                  <span style={{ color:t.textMuted, fontSize:14, cursor:"default" }}>
-                    {link}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Footer Bottom */}
-        <div style={{
-          maxWidth:1280, margin:"0 auto",
-          paddingTop: 30, borderTop:`1px solid ${t.border}`,
-          display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:20,
-        }}>
-          <p style={{ fontSize:11, fontWeight:600, color:t.textFaint, letterSpacing:".15em", textTransform:"uppercase" }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: t.textFaint, letterSpacing: ".15em", textTransform: "uppercase" }}>
             © 2026 InsightClips, Inc. · All rights reserved
           </p>
-
-          <div style={{ display:"flex", gap:isMobile ? 14 : 28, flexWrap:"wrap" }}>
-            {[
-              { icon:<Globe size={14}/>,       label:"Global delivery" },
-              { icon:<Shield size={14}/>,      label:"Private by default" },
-              { icon:<CheckCircle2 size={14}/>, label:"Built for teams" },
-            ].map(({ icon, label }) => (
-              <div key={label} style={{
-                display:"flex", alignItems:"center", gap:6,
-                color:t.textFaint, fontSize:10, fontWeight:600,
-                letterSpacing:".1em", textTransform:"uppercase", cursor:"default",
-              }}>
-                {icon} {label}
-              </div>
-            ))}
-          </div>
+          <Link href="/login" style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase",
+            color: t.accent, textDecoration: "none",
+          }}>
+            Sign In →
+          </Link>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

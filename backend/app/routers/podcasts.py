@@ -52,7 +52,6 @@ from app.services.clipping_service import (
 from app.services.publishing_service import (
     PublishingError,
     build_content_calendar,
-    get_published_clip_download_content,
     publish_clips,
 )
 from app.services.recommendation_service import RecommendationServiceError, recommend_clips
@@ -556,30 +555,21 @@ async def download_generated_clip(
             detail="Clip not found for the current user.",
         )
 
-    content, file_path, filename = get_published_clip_download_content(clip_id)
-    if content is not None:
-        record_clip_download(clip_id)
-        safe_filename = (filename or f"{clip_id}.mp4").replace('"', "")
-        return Response(
-            content=content,
-            media_type="video/mp4",
-            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
-        )
+    storage_url, file_path = get_clip_download_target(clip_id)
+    filename = file_path.name if file_path else f"{clip_id}.mp4"
     if file_path and file_path.exists():
         record_clip_download(clip_id)
         if request is None:
-            return _build_basic_file_response(file_path, filename=(filename or file_path.name))
-        return _build_local_file_response(request, file_path, filename=(filename or file_path.name))
+            return _build_basic_file_response(file_path, filename=filename)
+        return _build_local_file_response(request, file_path, filename=filename)
 
-    _, preview_file_path = get_clip_download_target(clip_id)
-    if preview_file_path and preview_file_path.exists():
-        if request is None:
-            return _build_basic_file_response(preview_file_path, filename=preview_file_path.name)
-        return _build_local_file_response(request, preview_file_path, filename=preview_file_path.name)
+    if storage_url:
+        record_clip_download(clip_id)
+        return RedirectResponse(url=storage_url)
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="Clip download is unavailable or has been revoked.",
+        detail="Clip download is unavailable.",
     )
 
 

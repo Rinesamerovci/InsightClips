@@ -1046,7 +1046,6 @@ export default function UploadWorkspace({
                       { label: "0 - 30 min", value: "Free *", dot: "#5a9e3a" },
                       { label: "30 - 60 min", value: "$2.00", dot: "#8ab55c" },
                       { label: "60 - 120 min", value: "$4.00", dot: "#d4a83a" },
-                      { label: "120+ min", value: "Blocked", dot: "#e07070" },
                     ].map((item) => (
                       <div key={item.label} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: muted }}>

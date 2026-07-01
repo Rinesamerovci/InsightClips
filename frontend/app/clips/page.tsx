@@ -2015,6 +2015,46 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   hi2: t.accentLt,
                 }}
               />
+
+                  <div style={{ marginTop: 20, width: "100%" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mode === "results") {
+                          router.push(generationPath);
+                          return;
+                        }
+                        void handleGenerateClips();
+                      }}
+                      disabled={!selectedPodcastId || generating || loadingClips}
+                      className="ic-action"
+                      style={{
+                        border: "none",
+                        borderRadius: 18,
+                        background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                        color: "#fff",
+                        padding: "14px 18px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 10,
+                        fontWeight: 700,
+                        width: "100%",
+                        cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
+                        opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
+                        boxShadow: clips.length > 0 ? "none" : `0 14px 30px ${t.accentGlow}`,
+                      }}
+                    >
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : clips.length > 0 ? <CheckCircle2 size={16} /> : <Wand2 size={16} />}
+                      {generating
+                        ? "Rendering clips..."
+                        : clips.length > 0
+                          ? "Clips generated"
+                          : mode === "results"
+                            ? "Open generation setup"
+                            : "Generate clips"}
+                    </button>
+                  </div>
                 </>
               ) : null}
 

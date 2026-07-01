@@ -22,13 +22,10 @@ import { useAuth } from "@/context/AuthContext";
 import {
   getUserExportSettings,
   updateUserExportSettings,
-  type AudioEnhancementSettings,
   type ExportMode,
   type ExportSettings,
 } from "@/lib/api";
-import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 import {
-  buildDefaultAudioEnhancementSettings,
   buildDefaultExportSettings,
   buildSubtitleStyleFromPreset,
   formatCropMode,
@@ -49,22 +46,6 @@ function areSettingsEqual(left: ExportSettings | null, right: ExportSettings | n
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function buildAudioState(
-  current: AudioEnhancementSettings,
-  changes: Partial<AudioEnhancementSettings>,
-): AudioEnhancementSettings {
-  const nextEnabled = changes.enabled ?? current.enabled;
-  const nextNormalize =
-    nextEnabled ? changes.normalize_loudness ?? current.normalize_loudness : false;
-
-  return {
-    ...current,
-    ...changes,
-    enabled: nextEnabled,
-    normalize_loudness: nextNormalize,
-    status: nextEnabled && nextNormalize ? "enabled" : "disabled",
-  };
-}
 
 function ModeCard({
   active,
@@ -333,12 +314,6 @@ export default function ExportSettingsPage() {
   const hasChanges = !areSettingsEqual(settingsForm, savedSettings);
   const subtitleStyle =
     settingsForm.subtitle_style ?? buildSubtitleStyleFromPreset("classic");
-  const audioSettings =
-    settingsForm.audio_enhancement ?? buildDefaultAudioEnhancementSettings();
-  const audioFeedback = getAudioEnhancementFeedback({
-    audioEnhancement: audioSettings,
-    context: savedSettings ? "saved" : "setup",
-  });
 
   const updateSettings = (updater: (current: ExportSettings) => ExportSettings) => {
     setSettingsForm((current) => normalizeExportSettings(updater(current)));
@@ -379,15 +354,6 @@ export default function ExportSettingsPage() {
     }));
   };
 
-  const handleAudioChange = (changes: Partial<AudioEnhancementSettings>) => {
-    updateSettings((current) => ({
-      ...current,
-      audio_enhancement: buildAudioState(
-        current.audio_enhancement ?? buildDefaultAudioEnhancementSettings(),
-        changes,
-      ),
-    }));
-  };
 
   const handleSave = async () => {
     if (saving || !hasChanges) {
@@ -637,10 +603,6 @@ export default function ExportSettingsPage() {
                 {
                   label: "Subtitle preset",
                   value: settingsForm.subtitle_style?.preset ?? "classic",
-                },
-                {
-                  label: "Audio",
-                  value: settingsForm.audio_enhancement?.enabled ? "Enhanced" : "Original",
                 },
               ].map((item) => (
                 <div key={item.label}>
@@ -937,103 +899,6 @@ export default function ExportSettingsPage() {
                   }}
                 />
 
-                <section
-                  className="glass a-up ic-premium-card"
-                  style={{
-                    borderRadius: 24,
-                    background: palette.card,
-                    border: `1px solid ${palette.border}`,
-                    padding: 20,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <Volume2 size={18} color={palette.accent} />
-                    <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: palette.muted }}>
-                      Audio Enhancement
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 12 }}>
-                    <ToggleRow
-                      title="Audio leveling"
-                      text="Smooths volume differences before final export."
-                      checked={audioSettings.enabled}
-                      onToggle={() =>
-                        handleAudioChange({
-                          enabled: !audioSettings.enabled,
-                        })
-                      }
-                      accent={palette.accent}
-                      border={palette.border}
-                      subBorder={palette.subBorder}
-                      dark={dark}
-                    />
-                    <ToggleRow
-                      title="Normalize loudness"
-                      text="Targets a more consistent perceived volume across clips."
-                      checked={audioSettings.normalize_loudness}
-                      disabled={!audioSettings.enabled}
-                      onToggle={() =>
-                        handleAudioChange({
-                          normalize_loudness: !audioSettings.normalize_loudness,
-                        })
-                      }
-                      accent={palette.accent}
-                      border={palette.border}
-                      subBorder={palette.subBorder}
-                      dark={dark}
-                    />
-                    <div
-                      style={{
-                        borderRadius: 18,
-                        border: `1px solid ${palette.subBorder}`,
-                        background: dark ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.76)",
-                        padding: "16px 18px",
-                      }}
-                    >
-                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-                        <label>
-                          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                            Target loudness
-                          </div>
-                          <input
-                            type="range"
-                            min={-24}
-                            max={-8}
-                            step={1}
-                            value={audioSettings.target_lufs}
-                            onChange={(event) =>
-                              handleAudioChange({ target_lufs: Number(event.target.value) })
-                            }
-                            style={{ width: "100%", accentColor: palette.accent }}
-                          />
-                          <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                            {audioSettings.target_lufs} LUFS
-                          </div>
-                        </label>
-                        <label>
-                          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 6 }}>
-                            True peak ceiling
-                          </div>
-                          <input
-                            type="range"
-                            min={-6}
-                            max={0}
-                            step={0.5}
-                            value={audioSettings.true_peak_db}
-                            onChange={(event) =>
-                              handleAudioChange({ true_peak_db: Number(event.target.value) })
-                            }
-                            style={{ width: "100%", accentColor: palette.accent }}
-                          />
-                          <div style={{ marginTop: 6, fontSize: 13, color: palette.text }}>
-                            {audioSettings.true_peak_db} dB
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </section>
               </>
             ) : null}
           </main>
@@ -1064,15 +929,6 @@ export default function ExportSettingsPage() {
                   </div>
                 </div>
 
-                <div style={{ borderRadius: 18, border: `1px solid ${palette.subBorder}`, padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <Sparkles size={16} color={palette.accent} />
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{audioFeedback.title}</div>
-                  </div>
-                  <div style={{ fontSize: 13, lineHeight: 1.65, color: palette.muted }}>
-                    {audioFeedback.description}
-                  </div>
-                </div>
 
                 <div style={{ borderRadius: 18, border: `1px solid ${palette.subBorder}`, padding: "14px 16px" }}>
                   <div style={{ fontSize: 10, letterSpacing: ".16em", textTransform: "uppercase", color: palette.muted, marginBottom: 8 }}>

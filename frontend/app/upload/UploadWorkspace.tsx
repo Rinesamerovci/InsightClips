@@ -29,7 +29,6 @@ import {
   analyzePodcast,
   importYouTubePodcast,
   createCheckoutSession,
-  type AudioEnhancementSettings,
   type ExportMode,
   type ExportSettings,
   type GenerationSettings,
@@ -41,7 +40,6 @@ import {
   type YouTubeImportResponse,
   shouldUseMockUploadFlow,
 } from "@/lib/api";
-import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 import {
   buildDefaultGenerationSettings,
   describeGenerationSettings,
@@ -69,13 +67,6 @@ const YOUTUBE_HOSTS = new Set([
   "youtu.be",
 ]);
 
-const DEFAULT_AUDIO_ENHANCEMENT: AudioEnhancementSettings = {
-  enabled: true,
-  normalize_loudness: true,
-  target_lufs: -16,
-  true_peak_db: -1.5,
-  status: "enabled",
-};
 
 const EXPORT_MODE_DETAILS: Record<
   ExportMode,
@@ -187,7 +178,6 @@ function buildExportSettings(
       face_tracking_enabled: true,
       subtitle_style: subtitleStyle,
       generation_settings: generationSettings,
-      audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
     };
   }
 
@@ -198,7 +188,6 @@ function buildExportSettings(
     face_tracking_enabled: false,
     subtitle_style: subtitleStyle,
     generation_settings: generationSettings,
-    audio_enhancement: DEFAULT_AUDIO_ENHANCEMENT,
   };
 }
 
@@ -396,10 +385,6 @@ export default function UploadWorkspace({
     : activeSubtitlePreset.label;
   const subtitleStyleSummary = `${formatSubtitlePosition(subtitleStyle.position)} aligned | ${subtitleStyle.font_size}px | ${subtitleStyle.primary_color.toUpperCase()}`;
   const generationSummary = describeGenerationSettings(generationSettings);
-  const selectedAudioFeedback = getAudioEnhancementFeedback({
-    audioEnhancement: exportSettings.audio_enhancement,
-    context: "setup",
-  });
 
   useEffect(() => {
     const savedPreferences = loadSavedGenerationPreferences();
@@ -1618,7 +1603,6 @@ export default function UploadWorkspace({
                       <div style={{ opacity: 0.72, marginTop: 4 }}>
                         Export: <strong>{exportDetails.label}</strong> ({exportDetails.aspect})
                       </div>
-                      <div style={{ opacity: 0.72, marginTop: 4 }}>{selectedAudioFeedback.description}</div>
                     </div>
                   ) : null}
                 </section>

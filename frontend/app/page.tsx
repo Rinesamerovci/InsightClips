@@ -713,27 +713,6 @@ export default function InsightClipsLanding() {
         </p>
       </section>
 
-      {/* ═══════════════════════════ MINIMAL FOOTER ═══════════════════════════ */}
-      <div style={{
-        borderTop: `1px solid ${t.border}`,
-        padding: "24px 40px",
-        background: isDark ? "rgba(0,0,0,.2)" : "rgba(0,0,0,.02)",
-      }}>
-        <div style={{
-          maxWidth: 1280, margin: "0 auto",
-          display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16,
-        }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: t.textFaint, letterSpacing: ".15em", textTransform: "uppercase" }}>
-            © 2026 InsightClips, Inc. · All rights reserved
-          </p>
-          <Link href="/login" style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase",
-            color: t.accent, textDecoration: "none",
-          }}>
-            Sign In →
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }

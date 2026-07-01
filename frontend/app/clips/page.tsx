@@ -34,11 +34,8 @@ import {
   getClips,
   getJson,
   getRecommendations,
-  publishClips,
-  revokeClipDownload,
   searchClips,
   type ClipRecommendation,
-  type ClipOverlay,
   type ClipResult,
   type ClipSearchResult,
   type ContentCalendarResponse,
@@ -63,7 +60,6 @@ import {
   buildDiscoveryItem,
   type ClipStatusFilter,
 } from "@/lib/clip-insights";
-import { getAudioEnhancementFeedback } from "@/lib/audio-enhancement";
 import {
   buildSubtitleStyleFromPreset,
   normalizeExportSettings,
@@ -158,121 +154,6 @@ function toDiscoveryClips(clips: ClipResult[], podcast: Podcast | null): ClipSea
   return clips.map((clip) => buildDiscoveryItem(clip, podcast));
 }
 
-function formatOverlayValue(value?: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  return value
-    .split(/[_-]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function mergeOverlayMetadata<T extends { id: string; overlay?: ClipOverlay | null }>(
-  items: T[],
-  overlayByClipId: Map<string, ClipOverlay | null>,
-): T[] {
-  return items.map((item) => {
-    const overlay = item.overlay ?? overlayByClipId.get(item.id) ?? null;
-    return overlay === item.overlay ? item : { ...item, overlay };
-  });
-}
-
-function getOverlayState(overlay?: ClipOverlay | null): {
-  variant: "enabled" | "disabled" | "info";
-  badge: string;
-  title: string;
-  description: string;
-  category: string | null;
-  keyword: string | null;
-  asset: string | null;
-  matchedText: string | null;
-} {
-  if (!overlay) {
-    return {
-      variant: "info",
-      badge: "Overlay info",
-      title: "Auto-B-Roll status unavailable",
-      description: "No overlay metadata is attached to this clip yet.",
-      category: null,
-      keyword: null,
-      asset: null,
-      matchedText: null,
-    };
-  }
-
-  const category = formatOverlayValue(overlay.overlay_category);
-  const keyword = overlay.keyword ?? null;
-  const asset = formatOverlayValue(overlay.overlay_asset);
-  const matchedText = overlay.matched_text ?? null;
-  const renderStatus = overlay.render_status ?? null;
-  const rendered = overlay.rendered ?? overlay.applied;
-
-  if (rendered) {
-    return {
-      variant: "enabled",
-      badge: "Auto-B-Roll on",
-      title: category ? `${category} overlay applied` : "Overlay applied",
-      description: keyword
-        ? `Triggered by "${keyword}".`
-        : category
-          ? `Applied from the ${category} overlay set.`
-          : "An overlay was applied to this clip.",
-      category,
-      keyword,
-      asset,
-      matchedText,
-    };
-  }
-
-  if (overlay.applied && renderStatus === "missing_asset") {
-    return {
-      variant: "info",
-      badge: "Asset missing",
-      title: "Overlay matched but asset was unavailable",
-      description: keyword
-        ? `Matched "${keyword}", but the local overlay file could not be loaded.`
-        : "Overlay metadata matched, but the local overlay file could not be loaded.",
-      category,
-      keyword,
-      asset,
-      matchedText,
-    };
-  }
-
-  if (overlay.applied && renderStatus === "render_fallback") {
-    return {
-      variant: "info",
-      badge: "Fallback export",
-      title: "Overlay was skipped to keep export stable",
-      description: keyword
-        ? `Matched "${keyword}", but the clip was exported without the overlay after a render fallback.`
-        : "The clip was exported without the overlay after a render fallback.",
-      category,
-      keyword,
-      asset,
-      matchedText,
-    };
-  }
-
-  return {
-    variant: "disabled",
-    badge: "Auto-B-Roll off",
-    title: "No overlay applied",
-    description:
-      keyword || category
-        ? `Checked this clip${keyword ? ` for "${keyword}"` : ""}${category ? ` in ${category}` : ""}, but no overlay was used.`
-        : "Checked this clip, but no matching overlay was used.",
-    category,
-    keyword,
-    asset,
-    matchedText,
-  };
-}
-
 function formatGenerationFailureMessage(error: unknown): string {
   const baseMessage =
     error instanceof Error ? error.message : "Clip generation failed.";
@@ -334,8 +215,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const [recommendationsEstimated, setRecommendationsEstimated] = useState(false);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [downloadingClipId, setDownloadingClipId] = useState("");
-  const [publishingClipIds, setPublishingClipIds] = useState<string[]>([]);
-  const [revokingClipIds, setRevokingClipIds] = useState<string[]>([]);
   const [contentCalendar, setContentCalendar] = useState<ContentCalendarResponse | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
     tone: "success" | "error" | "info";
@@ -373,23 +252,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     ? `/clips/generated?podcastId=${selectedPodcastId}`
     : "/clips/generated";
   const activeSearch = searchQuery.trim().length > 0 || filter !== "all";
-  const overlayByClipId = useMemo(
-    () => new Map(clips.map((clip) => [clip.id, clip.overlay ?? null])),
-    [clips],
-  );
 
   const visibleClips = useMemo(
-    () =>
-      mergeOverlayMetadata(
-        activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast),
-        overlayByClipId,
-      ),
-    [activeSearch, clips, overlayByClipId, searchResults, selectedPodcast],
+    () => (activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast)),
+    [activeSearch, clips, searchResults, selectedPodcast],
   );
-  const visibleRecommendations = useMemo(
-    () => mergeOverlayMetadata(recommendations, overlayByClipId),
-    [overlayByClipId, recommendations],
-  );
+  const visibleRecommendations = recommendations;
   const calendarSuggestions = contentCalendar?.suggestions ?? EMPTY_CALENDAR_SUGGESTIONS;
   const contentCalendarByClipId = useMemo(() => {
     const next = new Map<string, ContentCalendarSuggestion[]>();
@@ -400,10 +268,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
     return next;
   }, [calendarSuggestions]);
-  const publishedCount = clips.filter((clip) => clip.published).length;
-  const overlayEnabledCount = clips.filter(
-    (clip) => (clip.overlay?.rendered ?? clip.overlay?.applied) === true,
-  ).length;
   const averageScore =
     clips.length > 0
       ? clips.reduce((sum, clip) => sum + clip.virality_score, 0) / clips.length
@@ -599,24 +463,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
   }, [clips, mode]);
 
-  const syncClipEverywhere = (
-    clipId: string,
-    updater: (clip: ClipResult | ClipSearchResult | ClipRecommendation) => {
-      published?: boolean;
-      download_url?: string | null;
-      published_at?: string | null;
-    },
-  ) => {
-    setClips((current) =>
-      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
-    );
-    setSearchResults((current) =>
-      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
-    );
-    setRecommendations((current) =>
-      current.map((clip) => (clip.id === clipId ? { ...clip, ...updater(clip) } : clip)),
-    );
-  };
+
 
   const handleGenerationSettingsChange = (
     changes: Partial<GenerationSettings>,
@@ -1078,91 +925,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
   };
 
-  const handlePublish = async (clip: ClipSearchResult | ClipResult) => {
-    if (!selectedPodcastId) {
-      return;
-    }
-    if (clip.published) {
-      setActionFeedback({
-        tone: "info",
-        message: `Clip ${clip.clip_number} is already published. Revoke it before publishing again.`,
-      });
-      return;
-    }
 
-    setPublishingClipIds((current) => [...current, clip.id]);
-    setError("");
-    setActionFeedback(null);
-    try {
-      const token = backendToken ?? (await syncBackendSession());
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
-
-      const result = await publishClips(selectedPodcastId, [clip.id], token);
-      const publication = result.published_clips.find((item) => item.clip_id === clip.id);
-      if (!publication) {
-        throw new Error("Publish result did not include the requested clip.");
-      }
-
-      syncClipEverywhere(clip.id, () => ({
-        published: publication.published,
-        download_url: publication.download_url ?? null,
-        published_at: publication.published_at ?? null,
-      }));
-      setActionFeedback({
-        tone: "success",
-        message: `Clip ${clip.clip_number} is now published and ready for download.`,
-      });
-    } catch (publishError) {
-      setActionFeedback({
-        tone: "error",
-        message:
-          publishError instanceof Error ? publishError.message : "Clip publish failed.",
-      });
-      setError(
-        publishError instanceof Error ? publishError.message : "Clip publish failed.",
-      );
-    } finally {
-      setPublishingClipIds((current) => current.filter((item) => item !== clip.id));
-    }
-  };
-
-  const handleRevoke = async (clip: ClipSearchResult | ClipResult) => {
-    setRevokingClipIds((current) => [...current, clip.id]);
-    setError("");
-    setActionFeedback(null);
-    try {
-      const token = backendToken ?? (await syncBackendSession());
-      if (!token) {
-        router.replace("/login");
-        return;
-      }
-
-      const result = await revokeClipDownload(clip.id, token);
-      syncClipEverywhere(clip.id, () => ({
-        published: result.published,
-        download_url: null,
-        published_at: null,
-      }));
-      setActionFeedback({
-        tone: "success",
-        message: `Clip ${clip.clip_number} is private again and downloads are disabled.`,
-      });
-    } catch (revokeError) {
-      setActionFeedback({
-        tone: "error",
-        message:
-          revokeError instanceof Error ? revokeError.message : "Clip revoke failed.",
-      });
-      setError(
-        revokeError instanceof Error ? revokeError.message : "Clip revoke failed.",
-      );
-    } finally {
-      setRevokingClipIds((current) => current.filter((item) => item !== clip.id));
-    }
-  };
 
   if (!mounted) {
     return null;
@@ -1456,7 +1219,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
               {[
                 { label: "Podcasts", value: podcasts.length, sub: "available to review" },
                 { label: "Generated", value: clips.length, sub: "clips in selected show" },
-                { label: "Published", value: publishedCount, sub: "live for download" },
                 { label: "Avg Score", value: clips.length ? averageScore.toFixed(1) : "0.0", sub: "virality average" },
               ].map((item) => (
                 <div key={item.label}>
@@ -1645,8 +1407,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       </div>
                     ) : null}
                     {visibleRecommendations.map((clip) => {
-                      const overlayState = getOverlayState(clip.overlay);
-
                       return (
                         <article
                           key={clip.id}
@@ -1672,42 +1432,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           <div style={{ color: t.textSub, fontSize: 13, lineHeight: 1.7 }}>
                             {clip.subtitle_text}
                           </div>
-                          {overlayState.variant === "enabled" ? (
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                              <span
-                                style={{
-                                  borderRadius: 999,
-                                  background: t.chip,
-                                  border: `1px solid ${t.accent}`,
-                                  color: t.accent,
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  letterSpacing: ".08em",
-                                  textTransform: "uppercase",
-                                  padding: "6px 10px",
-                                }}
-                              >
-                                {overlayState.badge}
-                              </span>
-                              {overlayState.category ? (
-                                <span
-                                  style={{
-                                    borderRadius: 999,
-                                    background: "transparent",
-                                    border: `1px solid ${t.borderSub}`,
-                                    color: t.textSub,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    letterSpacing: ".08em",
-                                    textTransform: "uppercase",
-                                    padding: "6px 10px",
-                                  }}
-                                >
-                                  {overlayState.category}
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
                         </article>
                       );
                     })}
@@ -1752,7 +1476,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   </h2>
                   <p style={{ marginTop: 8, color: t.textSub }}>
                     {selectedPodcast
-                      ? `${formatTime(selectedPodcast.duration)} total length / ${clips.length} generated clip${clips.length === 1 ? "" : "s"} / ${overlayEnabledCount} Auto-B-Roll-enabled clip${overlayEnabledCount === 1 ? "" : "s"}`
+                      ? `${formatTime(selectedPodcast.duration)} total length / ${clips.length} generated clip${clips.length === 1 ? "" : "s"}`
                       : "Select a podcast from the left to begin."}
                   </p>
                 </div>
@@ -2253,10 +1977,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                   }}
                 >
                   {visibleClips.map((clip) => {
-                    const isPublishing = publishingClipIds.includes(clip.id);
-                    const isRevoking = revokingClipIds.includes(clip.id);
                     const isDownloading = downloadingClipId === clip.id;
-                    const overlayState = getOverlayState(clip.overlay);
                     const clipPlanningHashtags =
                       collectPlanningHashtags(contentCalendarByClipId.get(clip.id) ?? []);
                     const effectiveExportSettings =
@@ -2273,35 +1994,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     const previewAspectRatio = getPreviewAspectRatio(
                       effectiveExportSettings,
                     );
-                    const audioFeedback = getAudioEnhancementFeedback({
-                      audioEnhancement: effectiveExportSettings?.audio_enhancement ?? null,
-                      clipStatus: clip.status,
-                      context: "clip",
-                    });
-                    const overlayBadgeColor =
-                      overlayState.variant === "enabled" ? t.accent : t.textSub;
-                    const overlayBadgeBorder =
-                      overlayState.variant === "enabled" ? t.accent : t.borderSub;
-                    const overlayBadgeBackground =
-                      overlayState.variant === "enabled" ? t.chip : "transparent";
-                    const audioBadgeColor =
-                      audioFeedback.tone === "enabled"
-                        ? t.accent
-                        : audioFeedback.tone === "failed"
-                          ? t.errorText
-                          : t.textSub;
-                    const audioBadgeBorder =
-                      audioFeedback.tone === "enabled"
-                        ? t.accent
-                        : audioFeedback.tone === "failed"
-                          ? t.errorBd
-                          : t.borderSub;
-                    const audioBadgeBackground =
-                      audioFeedback.tone === "enabled"
-                        ? t.chip
-                        : audioFeedback.tone === "failed"
-                          ? t.errorBg
-                          : "transparent";
 
                     return (
                       <article
@@ -2366,9 +2058,6 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                             <div style={{ textAlign: "center", color: dark ? "rgba(255,255,255,.88)" : "#365130" }}>
                               <PlayCircle size={34} />
                               <div style={{ marginTop: 10, fontWeight: 600 }}>Protected preview</div>
-                              <div style={{ marginTop: 6, fontSize: 13, opacity: 0.72 }}>
-                                Publish the clip to unlock its authenticated download.
-                              </div>
                             </div>
                           )}
                         </div>
@@ -2400,9 +2089,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                                 <span
                                   style={{
                                     borderRadius: 999,
-                                    background: clip.published ? t.chip : "transparent",
-                                    border: `1px solid ${clip.published ? t.accent : t.borderSub}`,
-                                    color: clip.published ? t.accent : t.textSub,
+                                    background: "transparent",
+                                    border: `1px solid ${t.borderSub}`,
+                                    color: t.textSub,
                                     fontSize: 10,
                                     fontWeight: 700,
                                     letterSpacing: ".08em",
@@ -2410,37 +2099,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                                     padding: "5px 8px",
                                   }}
                                 >
-                                  {clip.published ? "Published" : "Private"}
-                                </span>
-                                <span
-                                  style={{
-                                    borderRadius: 999,
-                                    background: audioBadgeBackground,
-                                    border: `1px solid ${audioBadgeBorder}`,
-                                    color: audioBadgeColor,
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    letterSpacing: ".08em",
-                                    textTransform: "uppercase",
-                                    padding: "5px 8px",
-                                  }}
-                                >
-                                  {audioFeedback.badge}
-                                </span>
-                                <span
-                                  style={{
-                                    borderRadius: 999,
-                                    background: overlayBadgeBackground,
-                                    border: `1px solid ${overlayBadgeBorder}`,
-                                    color: overlayBadgeColor,
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    letterSpacing: ".08em",
-                                    textTransform: "uppercase",
-                                    padding: "5px 8px",
-                                  }}
-                                >
-                                  {overlayState.variant === "enabled" ? "B-roll" : clip.status}
+                                  {clip.status}
                                 </span>
                               </div>
                             </div>
@@ -2615,58 +2274,10 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           ) : null}
 
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>
-                            {clip.published ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleRevoke(clip)}
-                                disabled={isRevoking}
-                                className="ic-premium-card"
-                                style={{
-                                  border: `1px solid ${t.border}`,
-                                  borderRadius: 14,
-                                  background: "transparent",
-                                  color: t.text,
-                                  padding: "10px 14px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  fontWeight: 700,
-                                  cursor: isRevoking ? "default" : "pointer",
-                                  opacity: isRevoking ? 0.75 : 1,
-                                }}
-                              >
-                                {isRevoking ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                                {isRevoking ? "Making private..." : "Revoke"}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handlePublish(clip)}
-                                disabled={isPublishing}
-                                className="ic-action"
-                                style={{
-                                  border: "none",
-                                  borderRadius: 14,
-                                  background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
-                                  color: "#fff",
-                                  padding: "10px 14px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  fontWeight: 700,
-                                  cursor: isPublishing ? "default" : "pointer",
-                                  opacity: isPublishing ? 0.75 : 1,
-                                }}
-                              >
-                                {isPublishing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                                {isPublishing ? "Publishing..." : "Publish"}
-                              </button>
-                            )}
-
                             <button
                               type="button"
                               onClick={() => void handleDownload(clip)}
-                              disabled={isDownloading || !clip.published}
+                              disabled={isDownloading}
                               className="ic-action"
                               style={{
                                 border: "none",
@@ -2678,8 +2289,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                                 alignItems: "center",
                                 gap: 8,
                                 fontWeight: 700,
-                                cursor: isDownloading || !clip.published ? "default" : "pointer",
-                                opacity: isDownloading || !clip.published ? 0.6 : 1,
+                                cursor: isDownloading ? "default" : "pointer",
+                                opacity: isDownloading ? 0.6 : 1,
                               }}
                             >
                               {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}

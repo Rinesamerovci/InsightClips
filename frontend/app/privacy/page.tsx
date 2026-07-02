@@ -1,9 +1,13 @@
 "use client";
 
+// Next.js Link component for client-side navigation
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useAppTheme } from "../../lib/theme";
-
+/**
+ * Privacy Policy Page Component
+ * This is a static informational page that displays privacy policy content.
+ */
 export default function PrivacyPolicy() {
   const { isDark, t } = useAppTheme();
 

@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.config import get_settings
-
+# Load application settings
 settings = get_settings()
 
 logging.basicConfig(level=logging.INFO)
@@ -51,6 +51,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled server error: %s", exc)
+          # Return safe generic response to client
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error."},

@@ -88,7 +88,7 @@ function LoginPageContent() {
       ? candidate
       : "/dashboard";
   }, [searchParams]);
-
+ // Show success message after registration redirect
   const successMessage = useMemo(() => {
     if (searchParams.get("registered") === "true") {
       return "Account verified. You can now sign in directly with your email and password.";
@@ -96,7 +96,7 @@ function LoginPageContent() {
 
     return "";
   }, [searchParams]);
-
+ // Load theme + remembered email on first render
   useEffect(() => {
     try {
       setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
@@ -107,7 +107,7 @@ function LoginPageContent() {
       }
     } catch {}
   }, []);
-
+// If user already logged in, sync backend session and redirect
   useEffect(() => {
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
@@ -140,7 +140,7 @@ function LoginPageContent() {
       cancelled = true;
     };
   }, [authLoading, backendToken, nextPath, router, syncBackendSession, user]);
-
+  // Main login handler (Supabase + backend sync)
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);

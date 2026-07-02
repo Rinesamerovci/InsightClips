@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
+# Model: TranscriptWord
+# (Single word-level transcription with timing)
 class TranscriptWord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -25,7 +26,8 @@ class TranscriptWord(BaseModel):
             raise ValueError("Word end timestamp must be greater than or equal to start timestamp.")
         return self
 
-
+# Model: TranscriptionResult
+# (Full transcript output from ASR model)
 class TranscriptionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

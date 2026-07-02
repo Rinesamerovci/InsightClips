@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.clip_insights import ReferenceMentionType
 
-
+# Overlay position options on video frame
 OverlayPosition = Literal[
     "top_left",
     "top_center",
@@ -17,7 +17,8 @@ OverlayPosition = Literal[
     "center",
 ]
 
-
+# Model: OverlayDecision
+# (Represents decision to apply an overlay on a clip)
 class OverlayDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -89,7 +90,8 @@ class OverlayDecision(BaseModel):
             raise ValueError("Overlay render end must be greater than or equal to render start.")
         return self
 
-
+# Model: OverlayMappingResult
+# (Result of overlay detection/mapping across podcast)
 class OverlayMappingResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

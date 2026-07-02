@@ -10,7 +10,7 @@ from app.models.export_settings import ExportSettings, ExportSettingsInput
 UploadStatus = Literal["draft", "free_ready", "awaiting_payment", "ready_for_processing", "blocked"]
 UploadPreflightStatus = Literal["free_ready", "awaiting_payment", "blocked"]
 
-
+# Pricing Calculation
 class UploadCalculatePriceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -43,7 +43,7 @@ class UploadCalculatePriceRequest(BaseModel):
     def normalize_mime_type(cls, value: str | None) -> str | None:
         return value.strip().lower() if value else value
 
-
+# Upload Preparation
 class UploadCalculatePriceResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -133,7 +133,7 @@ class YouTubeImportRequest(BaseModel):
             raise ValueError("Field cannot be empty.")
         return cleaned
 
-
+# YouTube Import
 class YouTubeImportResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

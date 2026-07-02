@@ -1,5 +1,5 @@
 "use client";
-
+// Next.js navigation + routing
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -627,7 +627,7 @@ function AnalyticsPageContent() {
     </div>
   );
 }
-
+// Suspense wrapper for Next.js router hooks
 export default function AnalyticsPage() {
   return (
     <Suspense fallback={null}>

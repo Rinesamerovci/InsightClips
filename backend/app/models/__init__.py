@@ -1,7 +1,10 @@
 """Pydantic models for the backend API."""
 
+# Analysis related models for processing and scoring podcast content
 from app.models.analysis import AnalysisResult, AnalysisSummary, AnalyzePodcastRequest, ScoreSegment
+# Clipping models for managing the generation and results of video/audio clips
 from app.models.clipping import ClipGenerationResult, ClipResult, GenerateClipsRequest
+# Clip insights and metrics models for performance tracking and recommendations
 from app.models.clip_insights import (
     ClipPlanningInsight,
     ClipMetricRow,
@@ -46,7 +49,8 @@ from app.models.upload import (
     UploadPrepareRequest,
     UploadPrepareResponse,
 )
-
+# Public API exports
+# (Defines what this module exposes)
 __all__ = [
     "AnalysisResult",
     "AnalysisSummary",

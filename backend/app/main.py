@@ -35,7 +35,7 @@ app = FastAPI(
 
 add_common_middleware(app)
 register_exception_handlers(app)
-
+# Register API routes
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -43,4 +43,5 @@ app.include_router(podcasts.router)
 app.include_router(clips.router)
 app.include_router(upload.router)
 
+# Enable CORS configuration
 app = wrap_with_cors(app)

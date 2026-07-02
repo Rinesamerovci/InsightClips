@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
-from typing import Iterator
+﻿from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 import httpx
 from psycopg import connect
@@ -7,7 +7,7 @@ from psycopg_pool import ConnectionPool
 from supabase import Client, ClientOptions, create_client
 
 from app.config import get_settings
-
+# Load application settings from environment
 settings = get_settings()
 
 class UnconfiguredSupabaseClient:
@@ -27,7 +27,7 @@ def _create_supabase_client(url: str, key: str) -> Client | UnconfiguredSupabase
         key,
         ClientOptions(httpx_client=httpx.Client(trust_env=False, timeout=600.0)),
     )
-
+# Supabase clients (service role + public anon)
 service_supabase: Client | UnconfiguredSupabaseClient = _create_supabase_client(
     settings.supabase_url,
     settings.supabase_service_role_key or settings.supabase_anon_key,
@@ -66,7 +66,7 @@ def run_db_healthcheck() -> bool:
                     return cursor.fetchone() == (1,)
         except Exception:
             pass
-
+    # Fallback: Supabase health check
     if settings.supabase_url and (settings.supabase_service_role_key or settings.supabase_anon_key):
         try:
             service_supabase.table("profiles").select("id").limit(1).execute()
@@ -77,7 +77,7 @@ def run_db_healthcheck() -> bool:
     return False
 
 @asynccontextmanager
-async def lifespan(_: object) -> Iterator[None]:
+async def lifespan(_: object) -> AsyncGenerator[None, None]:
     open_db_pool()
     try:
         if not isinstance(service_supabase, UnconfiguredSupabaseClient):
@@ -88,3 +88,4 @@ async def lifespan(_: object) -> Iterator[None]:
         yield
     finally:
         close_db_pool()
+

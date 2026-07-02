@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.transcription import TranscriptionResult
 
-
+# Model: ScoreSegment
+# (Represents a scored segment of a podcast transcription)
 class ScoreSegment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,7 +49,8 @@ class ScoreSegment(BaseModel):
             raise ValueError("Duration must match the segment timestamp range.")
         return self
 
-
+# Model: AnalysisResult
+# (Final output of podcast analysis pipeline)
 class AnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,7 +69,8 @@ class AnalysisResult(BaseModel):
             raise ValueError("Podcast id cannot be empty.")
         return cleaned
 
-
+# Model: AnalysisSummary
+# (Lightweight summary for dashboards / previews)
 class AnalyzePodcastRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -87,7 +90,8 @@ class AnalyzePodcastRequest(BaseModel):
             return None
         return cleaned
 
-
+# Model: AnalysisSummary
+# (Lightweight summary for dashboards / previews)
 class AnalysisSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

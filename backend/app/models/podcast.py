@@ -5,7 +5,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.export_settings import ExportSettings
-
+# Model: PodcastRecord
+# (Database-level podcast entity - full internal representation)
 
 class PodcastRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -26,7 +27,8 @@ class PodcastRecord(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-
+# Model: PodcastResponse
+# (API response version of PodcastRecord)
 class PodcastResponse(BaseModel):
     id: str
     user_id: str
@@ -55,7 +57,8 @@ class UpdatePaymentStatusRequest(BaseModel):
 
     payment_status: Literal["paid", "failed"]
 
-
+# Model: DeletePodcastResponse
+# (Result after deleting a podcast)
 class DeletePodcastResponse(BaseModel):
     deleted: bool
     podcast_id: str
@@ -63,7 +66,8 @@ class DeletePodcastResponse(BaseModel):
     clip_objects_removed: int = 0
     database_rows_removed: int = 0
 
-
+# Model: TopPerformingClip
+# (Analytics: best performing clips for a podcast)
 class TopPerformingClip(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,7 +89,8 @@ class TopPerformingClip(BaseModel):
             raise ValueError("Field cannot be empty.")
         return cleaned
 
-
+# Model: PodcastAnalyticsSummary
+# (Per-podcast analytics overview)
 class PodcastAnalyticsSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

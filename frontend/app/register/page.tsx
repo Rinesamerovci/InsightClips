@@ -72,7 +72,9 @@ function ProgressStep({
     </div>
   );
 }
-
+/* -------------------------
+   Register Page Component
+   ------------------------- */
 export default function RegisterPage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
@@ -133,7 +135,9 @@ export default function RegisterPage() {
       : step === 2
         ? "We only use one code during registration, so future sign-ins stay direct with email and password."
         : "Verification is complete. The next step is simply signing in and opening your workspace.";
-
+ /* -------------------------
+     Send OTP (resend signup code)
+     ------------------------- */
   const sendRegisterCode = async () => {
     const { error: otpError } = await supabase.auth.resend({
       type: "signup",

@@ -20,7 +20,7 @@ from app.services.auth_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
+# Authentication Endpoints
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
 async def register(payload: RegisterRequest) -> AuthResponse:

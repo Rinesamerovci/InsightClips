@@ -1,5 +1,5 @@
 """Service layer for InsightClips."""
-
+# Handles podcast transcription, scoring, and AI analysis of content
 from app.services.analysis_service import (
     analyze_and_score,
     build_analysis_result,
@@ -14,12 +14,13 @@ from app.services.overlay_mapping_service import (
     get_overlay_decisions_for_podcast,
     persist_overlay_mappings,
 )
+# Handles AI recommendations and clip planning insights
 from app.services.publishing_service import publish_clips, revoke_clip_download
 from app.services.recommendation_service import recommend_clips
 from app.services.recommendation_service import build_clip_planning_insight
 from app.services.search_service import search_clips
 from app.services.transcription_service import transcribe_media
-
+# Defines what other modules can import from this service layer
 __all__ = [
     "analyze_and_score",
     "build_analysis_result",

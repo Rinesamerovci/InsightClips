@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.clip_insights import ClipPlanningInsight, RankingFactor
 from app.models.overlay import OverlayDecision
 
-
+# Base model: ClipDiscoveryBase
+# (Shared structure for search + recommendation results)
 class _ClipDiscoveryBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,7 +55,8 @@ class _ClipDiscoveryBase(BaseModel):
                 seen.add(cleaned)
         return normalized
 
-
+# Model: ClipSearchHit
+# (Search result item with scoring + match metadata)
 class ClipSearchHit(_ClipDiscoveryBase):
     search_score: float = Field(ge=0)
     matched_fields: list[str] = Field(default_factory=list)

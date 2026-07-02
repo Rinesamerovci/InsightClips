@@ -18,7 +18,9 @@ import { getPasswordPolicyError } from "@/lib/password-policy";
 import { supabase } from "@/lib/supabase";
 
 export default function ResetPasswordPage() {
+  // Password inputs
   const [password, setPassword] = useState("");
+    // UI state
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,11 +51,13 @@ export default function ResetPasswordPage() {
 
     void checkSession();
   }, []);
-
+  /**
+   * Handle password update request
+   */
   const handleUpdatePassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-
+ // Validate password policy
     const passwordError = getPasswordPolicyError(password);
     if (passwordError) {
       setError(passwordError);

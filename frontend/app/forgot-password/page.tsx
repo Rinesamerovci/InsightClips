@@ -61,6 +61,9 @@ export default function ForgotPasswordPage() {
       ? undefined
       : `${window.location.origin}/auth/confirm?next=/reset-password`;
 
+        /**
+   * Load theme from localStorage on mount
+   */
   useEffect(() => {
     try {
       setDark(window.localStorage.getItem(THEME_STORAGE_KEY) !== "light");
@@ -86,7 +89,9 @@ export default function ForgotPasswordPage() {
       throw new Error(otpError.message || "Unable to send password recovery instructions.");
     }
   };
-
+/**
+   * Handle sending reset email
+   */
   const handleSendReset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);

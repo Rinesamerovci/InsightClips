@@ -1,8 +1,9 @@
 "use client";
-
+// Importimi i Next.js routing dhe hooks
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+// Ikonat nga lucide-react për UI
 import {
   ArrowLeft,
   BookOpen,
@@ -32,7 +33,9 @@ import {
 import { studioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
 
 const T = studioTheme;
-
+/**
+ * Formaton kohën e podcast-it (sekonda → minuta/orë)
+ */
 function fmtDur(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
@@ -47,7 +50,9 @@ function getEffectivePodcastStatus(
   if (analysis && analysis.total_scored_segments > 0) return "done";
   return podcast.status;
 }
-
+/**
+ * CACHE global (që mos me bo fetch çdo herë)
+ */
 let cachedPodcastsUserId: string | null = null;
 let cachedPodcastsList: Podcast[] | null = null;
 let cachedPodcastsAnalytics: Record<string, PodcastAnalyticsSummary> | null = null;

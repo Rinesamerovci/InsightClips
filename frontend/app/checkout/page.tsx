@@ -13,7 +13,7 @@ function CheckoutPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading, backendToken, syncBackendSession } = useAuth();
-
+// Dark mode state (ruhet në localStorage)
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -23,7 +23,7 @@ function CheckoutPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [redirecting, setRedirecting] = useState(false);
-
+ // Theme i UI (dark/light)
   const t = useMemo(() => getStudioTheme(dark), [dark]);
   const podcastId = searchParams.get("podcastId")?.trim() ?? "";
   const amountValue = Number(searchParams.get("amount") ?? 0);

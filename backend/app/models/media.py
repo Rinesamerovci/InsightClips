@@ -9,7 +9,8 @@ OverlayRenderPolicy = Literal["full", "limited", "disabled"]
 SubtitleRenderPolicy = Literal["spoken_captions", "narrative_cards", "stylized_captions"]
 RenderingProfile = Literal["live_action", "editorial_frame", "motion_graphic"]
 
-
+# Model: MediaInspectionResult
+# (Result of validating / inspecting uploaded media)
 class MediaInspectionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -20,7 +21,8 @@ class MediaInspectionResult(BaseModel):
     mime_type: str | None = None
     validation_flags: dict[str, bool] = Field(default_factory=dict)
 
-
+# Model: SubtitleTimingContract
+# (Rules for subtitle segmentation & timing)
 class SubtitleTimingContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -29,7 +31,8 @@ class SubtitleTimingContract(BaseModel):
     gap_seconds: float = Field(ge=0, le=2)
     max_lines: int = Field(ge=1, le=3)
 
-
+# Model: MediaRenderContract
+# (Defines how media should be rendered/exported)
 class MediaRenderContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

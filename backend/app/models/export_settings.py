@@ -4,7 +4,7 @@ import re
 from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-
+# Type definitions (strict enums for export system)
 ExportMode = Literal["landscape", "portrait"]
 CropMode = Literal["none", "center_crop", "smart_crop"]
 ExportPresetName = Literal[
@@ -51,7 +51,7 @@ VALID_EXPORT_MODES = {"landscape", "portrait"}
 VALID_CROP_MODES = {"none", "center_crop", "smart_crop"}
 VALID_SUBTITLE_TIMING_PROFILES = {"compact", "balanced", "extended"}
 
-
+# Helper functions (preset resolution logic)
 def default_preset_name_for_mode(export_mode: ExportMode) -> ExportPresetName:
     return "youtube_shorts" if export_mode == "portrait" else "youtube_landscape"
 
@@ -73,7 +73,8 @@ def default_timing_profile_for_preset(
     resolved_preset = preset_name or default_preset_name_for_mode(export_mode)
     return EXPORT_PRESET_DEFAULT_TIMING.get(resolved_preset, "balanced")
 
-
+# Model: SubtitleStyle
+# (Controls subtitle appearance and styling presets)
 class SubtitleStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,7 +175,8 @@ class SubtitleStyle(BaseModel):
     def for_preset(cls, preset: SubtitleStylePreset) -> "SubtitleStyle":
         return cls(preset=preset, **cls.PRESET_OVERRIDES[preset])
 
-
+# Model: AudioEnhancementSettings
+# (Audio normalization and loudness control)
 class AudioEnhancementSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -197,7 +199,8 @@ class AudioEnhancementSettings(BaseModel):
             self.status = "enabled" if self.normalize_loudness else "disabled"
         return self
 
-
+# Model: GenerationSettings
+# (Core clip generation configuration)
 class GenerationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

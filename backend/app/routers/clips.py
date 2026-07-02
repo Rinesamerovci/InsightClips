@@ -24,7 +24,7 @@ from app.services.publishing_service import (
 )
 
 router = APIRouter(prefix="/clips", tags=["clips"])
-
+# Generation Settings
 
 @router.get("/generation-settings/defaults", response_model=GenerationSettings)
 async def get_generation_settings_defaults(
@@ -107,7 +107,7 @@ async def revoke_clip_download_route(
     except PublishingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-
+# Clip Metrics
 @router.get("/{clip_id}/metrics", response_model=ClipMetricResponse)
 async def get_clip_metrics_route(
     clip_id: str,

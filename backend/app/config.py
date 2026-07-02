@@ -5,11 +5,11 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+# Project directory structure
 APP_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = APP_DIR.parent
 ROOT_DIR = BACKEND_DIR.parent
-
+# Default allowed frontend origins (CORS)
 DEFAULT_FRONTEND_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -110,6 +110,7 @@ class Settings(BaseSettings):
         default=600,
         validation_alias=AliasChoices("TRANSCRIPTION_CHUNK_DURATION_SECONDS"),
     )
+    # YouTube downloading settings
     youtube_cookies_path: str = Field(
         default="",
         validation_alias=AliasChoices("YOUTUBE_COOKIES_PATH"),
@@ -118,8 +119,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("YOUTUBE_PROXY"),
     )
+    # Payments (Stripe)
     stripe_secret_key: str = Field(default="", validation_alias=AliasChoices("STRIPE_SECRET_KEY"))
     stripe_webhook_secret: str = Field(default="", validation_alias=AliasChoices("STRIPE_WEBHOOK_SECRET"))
+      # Video clipping / FFmpeg settings
     clip_ffmpeg_preset: str = Field(
         default="veryfast",
         validation_alias=AliasChoices("CLIP_FFMPEG_PRESET", "FFMPEG_PRESET"),

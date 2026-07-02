@@ -6,10 +6,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.export_settings import ExportSettings, ExportSettingsInput
 
+# Enums: User message classification
 UserMessageType = Literal["feedback", "support", "contact"]
 UserMessageCategory = Literal["bug", "feature_request", "general", "billing", "technical_support"]
 
 
+# Model: ProfileRecord
+# (Database-level user profile representation)
 class ProfileRecord(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -33,7 +36,8 @@ class ProfileResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-
+# Model: UpdateProfileRequest
+# (Request to update user profile fields)
 class UpdateProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,7 +89,8 @@ class UserMessageRequest(BaseModel):
             raise ValueError("message must contain at least 10 characters.")
         return cleaned
 
-
+# Model: UserMessageResponse
+# (Stored/support ticket response)
 class UserMessageResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

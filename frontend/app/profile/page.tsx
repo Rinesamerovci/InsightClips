@@ -19,8 +19,9 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-
+// Custom UI component for displaying user profile
 import { UserProfileCard } from "@/components/UserProfileCard";
+// Authentication context (user, token, logout, sync session)
 import { useAuth } from "@/context/AuthContext";
 import { deleteUserAccount, getUserProfile, updateUserProfile, type ProfileResponse } from "@/lib/api";
 import { getStudioTheme, THEME_STORAGE_KEY } from "@/lib/brand";
@@ -113,6 +114,9 @@ export default function ProfilePage() {
   });
   const [loading, setLoading] = useState(!isCacheValid || !cachedProfileData);
   const [saving, setSaving] = useState(false);
+    /**
+   * Track screen size for responsive UI
+   */
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") {

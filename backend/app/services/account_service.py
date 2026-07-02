@@ -48,6 +48,7 @@ def delete_account(profile_id: str, *, email: str | None = None) -> AccountDelet
     clip_objects_removed = _remove_clip_objects(podcast_ids)
     _remove_local_generated_clip_dirs(podcast_ids)
 
+  # Send confirmation email if available
     email_notification_sent = _send_account_deleted_email(email)
 
     return AccountDeletionResult(

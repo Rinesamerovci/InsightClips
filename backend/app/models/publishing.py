@@ -4,12 +4,13 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+# Publication enums (status + destinations + platforms)
 PublicationStatus = Literal["pending", "published", "failed"]
 PublicationDestination = Literal["download", "tiktok", "instagram", "youtube", "other"]
 ContentCalendarPlatform = Literal["tiktok", "instagram_reels", "facebook", "youtube", "linkedin"]
 
-
+# Model: ClipPublicationStatus
+# (Current publication state of a clip)
 class ClipPublicationStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -29,7 +30,8 @@ class ClipPublicationStatus(BaseModel):
             raise ValueError("clip_id cannot be empty.")
         return cleaned
 
-
+# Model: ClipPublicationStatusResponse
+# (Extended status with podcast context)
 class ClipPublicationStatusResponse(ClipPublicationStatus):
     model_config = ConfigDict(extra="forbid")
 
@@ -100,7 +102,8 @@ class ClipMetricResponse(BaseModel):
             raise ValueError("Field cannot be empty.")
         return cleaned
 
-
+# Model: PublishClipsRequest
+# (Batch publish request)
 class PublishClipsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -143,7 +146,8 @@ class PublishClipRequest(BaseModel):
             raise ValueError("metadata cannot contain more than 25 fields.")
         return value
 
-
+# Model: PublishClipRequest
+# (Single clip publish request)
 class ContentCalendarSuggestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -184,7 +188,8 @@ class ContentCalendarSuggestion(BaseModel):
                 seen.add(lowered)
         return normalized[:8]
 
-
+# Model: ContentCalendarSuggestion
+# (AI-generated posting schedule suggestion)
 class ContentCalendarResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

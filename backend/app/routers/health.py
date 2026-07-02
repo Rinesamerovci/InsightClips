@@ -4,7 +4,7 @@ from app.database import db_pool, run_db_healthcheck
 
 router = APIRouter(tags=["health"])
 
-
+# Health Check
 @router.get("/")
 async def root() -> dict[str, str]:
     return {"message": "InsightClips Backend", "status": "running"}

@@ -16,7 +16,8 @@ from app.models.media import VisualOutputMode
 from app.models.overlay import OverlayDecision
 from app.models.transcription import TranscriptionResult
 
-
+# Model: ClipResult
+# (Represents a single generated video/audio clip)
 class ClipResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -63,7 +64,8 @@ class ClipResult(BaseModel):
     def normalize_subtitle_text(cls, value: str) -> str:
         return " ".join(value.split()) if value.strip() else ""
 
-
+# Model: ClipGenerationResult
+# (Result of generating multiple clips for a podcast)
 class ClipGenerationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -83,7 +85,8 @@ class ClipGenerationResult(BaseModel):
             raise ValueError("Field cannot be empty.")
         return cleaned
 
-
+# Model: GenerateClipsRequest
+# (Input request for clip generation pipeline)
 class GenerateClipsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

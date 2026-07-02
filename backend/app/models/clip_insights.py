@@ -5,7 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
+# Model: RankingFactor
+# (Represents factors that influence clip ranking/score)
 class RankingFactor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -25,7 +26,8 @@ class RankingFactor(BaseModel):
 
 
 ReferenceMentionType = Literal["book", "source", "concept", "named_reference"]
-
+# Type: ReferenceMentionType
+# (Defines allowed types of references)
 
 class ReferenceMention(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -203,7 +205,8 @@ class ClipMetricRow(BaseModel):
             raise ValueError("Field cannot be empty.")
         return cleaned
 
-
+# Model: PodcastClipMetrics
+# (Aggregated metrics for a podcast)
 class PodcastClipMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

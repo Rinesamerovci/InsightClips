@@ -53,11 +53,14 @@ import {
   buildDefaultGenerationSettings,
   loadSavedGenerationPreferences,
   normalizeGenerationSettings,
+  resolveSavedGenerationPreferences,
   saveGenerationPreferences,
   applyGenerationTemplate,
 } from "@/lib/generation-settings";
 import {
   buildDiscoveryItem,
+  clipMatchesQuery,
+  clipMatchesStatus,
   type ClipStatusFilter,
 } from "@/lib/clip-insights";
 import {
@@ -70,8 +73,6 @@ const T = studioTheme;
 
 const FILTERS: Array<{ value: ClipStatusFilter; label: string }> = [
   { value: "all", label: "All clips" },
-  { value: "published", label: "Published" },
-  { value: "unpublished", label: "Private" },
   { value: "ready", label: "Ready" },
   { value: "processing", label: "Processing" },
   { value: "failed", label: "Failed" },
@@ -253,10 +254,17 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     : "/clips/generated";
   const activeSearch = searchQuery.trim().length > 0 || filter !== "all";
 
-  const visibleClips = useMemo(
-    () => (activeSearch ? searchResults : toDiscoveryClips(clips, selectedPodcast)),
-    [activeSearch, clips, searchResults, selectedPodcast],
-  );
+  const visibleClips = useMemo(() => {
+    const discoveryClips = toDiscoveryClips(clips, selectedPodcast);
+    if (!activeSearch) {
+      return discoveryClips;
+    }
+    return discoveryClips.filter(
+      (clip) =>
+        clipMatchesStatus(clip, filter) &&
+        clipMatchesQuery(clip, selectedPodcast?.title ?? "", searchQuery)
+    );
+  }, [activeSearch, clips, filter, searchQuery, selectedPodcast]);
   const visibleRecommendations = recommendations;
   const calendarSuggestions = contentCalendar?.suggestions ?? EMPTY_CALENDAR_SUGGESTIONS;
   const contentCalendarByClipId = useMemo(() => {
@@ -305,15 +313,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     }
 
     const savedPreferences = loadSavedGenerationPreferences();
-    generationTemplateIdRef.current = savedPreferences.templateId;
-    generationSettingsRef.current = savedPreferences.settings;
-    setGenerationTemplateId(savedPreferences.templateId);
-    setGenerationSettings(savedPreferences.settings);
-    setGenerationExportSettings(
-      savedPreferences.templateId
-        ? applyGenerationTemplate(savedPreferences.templateId, null, savedPreferences.settings).exportSettings
-        : savedPreferences.exportSettings,
-    );
+    const resolvedPreferences = resolveSavedGenerationPreferences(savedPreferences);
+    generationTemplateIdRef.current = resolvedPreferences.templateId;
+    generationSettingsRef.current = resolvedPreferences.generationSettings;
+    setGenerationTemplateId(resolvedPreferences.templateId);
+    setGenerationSettings(resolvedPreferences.generationSettings);
+    setGenerationExportSettings(resolvedPreferences.exportSettings);
     setVisualOutputMode("original_people");
   }, [mounted]);
 
@@ -468,8 +473,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   const handleGenerationSettingsChange = (
     changes: Partial<GenerationSettings>,
   ) => {
+    const wasTemplateActive = Boolean(generationTemplateIdRef.current);
     setGenerationTemplateId(null);
     generationTemplateIdRef.current = null;
+    if (wasTemplateActive) {
+      setGenerationExportSettings(resolveManualExportSettings(selectedPodcast?.export_settings ?? null));
+    }
     setGenerationSettings((current) => {
       const normalized = normalizeGenerationSettings({
         ...current,
@@ -513,13 +522,37 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
     return baseExportSettings ? normalizeExportSettings(baseExportSettings) : normalizeExportSettings(null);
   }, [generationExportSettings, selectedPodcast]);
 
+  const resolveActiveGenerationSettings = useCallback(() => {
+    if (generationTemplateIdRef.current) {
+      return applyGenerationTemplate(
+        generationTemplateIdRef.current,
+        generationExportSettings ?? selectedPodcast?.export_settings ?? null,
+        generationSettingsRef.current,
+      ).generationSettings;
+    }
+
+    return generationSettingsRef.current;
+  }, [generationExportSettings, selectedPodcast]);
+
+  const resolveManualExportSettings = useCallback(
+    (current?: ExportSettings | null) => {
+      if (generationTemplateIdRef.current) {
+        return normalizeExportSettings(selectedPodcast?.export_settings ?? null);
+      }
+
+      return normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null);
+    },
+    [selectedPodcast?.export_settings],
+  );
+
   const handleVisualOutputModeChange = (mode: VisualOutputMode) => {
+    const wasTemplateActive = Boolean(generationTemplateIdRef.current);
     setGenerationTemplateId(null);
     generationTemplateIdRef.current = null;
     setVisualOutputMode(mode);
     if (mode === "stylized_animated") {
       setGenerationExportSettings((current) => ({
-        ...normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null),
+        ...resolveManualExportSettings(wasTemplateActive ? selectedPodcast?.export_settings ?? null : current),
         export_mode: "portrait",
         crop_mode: "smart_crop",
         mobile_optimized: true,
@@ -533,6 +566,9 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       );
     }
     if (mode === "book_like") {
+      setGenerationExportSettings((current) =>
+        resolveManualExportSettings(wasTemplateActive ? selectedPodcast?.export_settings ?? null : current),
+      );
       setGenerationSettings((current) =>
         normalizeGenerationSettings({
           ...current,
@@ -550,11 +586,12 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
       >
     >,
   ) => {
+    const wasTemplateActive = Boolean(generationTemplateIdRef.current);
     setGenerationTemplateId(null);
     generationTemplateIdRef.current = null;
     setVisualOutputMode("original_people");
     setGenerationExportSettings((current) => {
-      const resolved = normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null);
+      const resolved = resolveManualExportSettings(wasTemplateActive ? selectedPodcast?.export_settings ?? null : current);
       return {
         ...resolved,
         subtitle_style: {
@@ -590,11 +627,16 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
         return;
       }
 
+      const activeGenerationSettings = resolveActiveGenerationSettings();
       const generated = await generateClips(
         selectedPodcastId,
         {
           score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
-          generation_settings: buildGenerationRequestPayload(generationSettings),
+          generation_settings: buildGenerationRequestPayload(activeGenerationSettings),
+          clip_duration_seconds: activeGenerationSettings.clip_duration_seconds,
+          number_of_clips: activeGenerationSettings.number_of_clips,
+          topic_focus: activeGenerationSettings.topic_focus,
+          subtitles_enabled: activeGenerationSettings.subtitles_enabled,
           export_settings: resolveGenerationExportSettings(),
           visual_output_mode: visualOutputMode,
           save_generation_settings: true,
@@ -663,6 +705,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
   }, [
     backendToken,
     generationSettings,
+    resolveActiveGenerationSettings,
     selectedPodcast,
     selectedPodcastId,
     mode,
@@ -757,11 +800,16 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
           setPodcasts(updatedPodcasts.podcasts);
         }
 
+        const activeGenerationSettings = resolveActiveGenerationSettings();
         const generated = await generateClips(
           selectedPodcastId,
           {
             score_segments: pendingAutoGenerateScoreSegmentsRef.current ?? undefined,
-            generation_settings: buildGenerationRequestPayload(generationSettings),
+            generation_settings: buildGenerationRequestPayload(activeGenerationSettings),
+            clip_duration_seconds: activeGenerationSettings.clip_duration_seconds,
+            number_of_clips: activeGenerationSettings.number_of_clips,
+            topic_focus: activeGenerationSettings.topic_focus,
+            subtitles_enabled: activeGenerationSettings.subtitles_enabled,
             export_settings: resolveGenerationExportSettings(),
             visual_output_mode: visualOutputMode,
             save_generation_settings: true,
@@ -1567,155 +1615,18 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                     </div>
                   </section>
 
-              <section
-                className="glass a2"
-                style={{
-                  borderRadius: 22,
-                  border: `1px solid ${t.border}`,
-                  background: dark ? "rgba(14,24,11,.88)" : "rgba(255,255,255,.9)",
-                  padding: "24px 24px 22px",
-                  marginBottom: 16,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 16,
-                    flexWrap: "wrap",
-                    marginBottom: 16,
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        letterSpacing: ".26em",
-                        textTransform: "uppercase",
-                        color: t.accentLt,
-                        fontWeight: 700,
-                        marginBottom: 8,
-                      }}
-                    >
-                      Visual output mode
-                    </div>
-                    <h2
-                      style={{
-                        fontFamily: "'DM Serif Display',serif",
-                        fontStyle: "italic",
-                        fontSize: 24,
-                        fontWeight: 400,
-                        marginBottom: 10,
-                      }}
-                    >
-                      Choose how the rendered clip should feel
-                    </h2>
-                    <p style={{ fontSize: 13, color: t.textSub, lineHeight: 1.72, maxWidth: 620 }}>
-                      The mode is sent with generation and controls overlay, subtitle, and fallback behavior in the render pipeline.
-                    </p>
-                  </div>
-                  <div
-                    style={{
-                      borderRadius: 999,
-                      border: `1px solid ${t.borderSub}`,
-                      background: dark ? "rgba(90,158,58,.12)" : "rgba(90,158,58,.08)",
-                      padding: "8px 12px",
-                      color: t.accent,
-                      fontSize: 11,
-                      fontWeight: 800,
-                    }}
-                  >
-                    {VISUAL_OUTPUT_MODES.find((mode) => mode.value === visualOutputMode)?.label}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,210px),1fr))",
-                    gap: 10,
-                  }}
-                >
-                  {VISUAL_OUTPUT_MODES.map((mode) => {
-                    const active = visualOutputMode === mode.value;
-                    return (
-                      <button
-                        key={mode.value}
-                        type="button"
-                        onClick={() => handleVisualOutputModeChange(mode.value)}
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 18,
-                          padding: "16px 16px 15px",
-                          border: `1px solid ${active ? t.accent : t.borderSub}`,
-                          background: active
-                            ? dark
-                              ? "rgba(90,158,58,.16)"
-                              : "rgba(90,158,58,.1)"
-                            : dark
-                              ? "rgba(11,18,9,.55)"
-                              : "rgba(248,252,245,.82)",
-                          color: t.text,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            marginBottom: 10,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 800,
-                              letterSpacing: ".16em",
-                              textTransform: "uppercase",
-                              color: active ? t.accent : t.accentLt,
-                            }}
-                          >
-                            {mode.label}
-                          </div>
-                          <span
-                            style={{
-                              borderRadius: 999,
-                              border: `1px solid ${active ? "rgba(255,255,255,.22)" : t.borderSub}`,
-                              padding: "4px 8px",
-                              fontSize: 9,
-                              fontWeight: 800,
-                              letterSpacing: ".14em",
-                              textTransform: "uppercase",
-                              color: active ? t.accent : t.textSub,
-                            }}
-                          >
-                            {mode.badge}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-                          {mode.title}
-                        </div>
-                        <div style={{ fontSize: 12, lineHeight: 1.6, color: t.textSub }}>
-                          {mode.description}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
 
               <SubtitleStylePanel
                 dark={dark}
                 exportMode={activeGenerationExportSettings.export_mode}
                 styleValue={activeSubtitleStyle}
                 onPresetChange={(preset) => {
+                  const wasTemplateActive = Boolean(generationTemplateIdRef.current);
                   setGenerationTemplateId(null);
                   generationTemplateIdRef.current = null;
+                  setVisualOutputMode("original_people");
                   setGenerationExportSettings((current) => ({
-                    ...normalizeExportSettings(current ?? selectedPodcast?.export_settings ?? null),
+                    ...resolveManualExportSettings(wasTemplateActive ? selectedPodcast?.export_settings ?? null : current),
                     subtitle_style: buildSubtitleStyleFromPreset(preset),
                   }));
                 }}
@@ -1740,7 +1651,7 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                 }}
               />
 
-                  <div style={{ marginTop: 20, width: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "center", marginTop: 32, marginBottom: 32 }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -1754,16 +1665,15 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                       className="ic-action"
                       style={{
                         border: "none",
-                        borderRadius: 18,
+                        borderRadius: 999,
                         background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
                         color: "#fff",
-                        padding: "14px 18px",
+                        padding: "14px 32px",
                         display: "inline-flex",
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 10,
                         fontWeight: 700,
-                        width: "100%",
                         cursor: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? "default" : "pointer",
                         opacity: !selectedPodcastId || generating || loadingClips || clips.length > 0 ? 0.72 : 1,
                         boxShadow: clips.length > 0 ? "none" : `0 14px 30px ${t.accentGlow}`,
@@ -2048,8 +1958,8 @@ export function ClipsPageContent({ mode = "results" }: ClipsPageContentProps = {
                           {isPreviewable(previewUrl) ? (
                             <ClipVideoPreview
                               src={previewUrl}
-                              subtitleUrl={subtitlePreviewUrl}
-                              subtitleText={clip.subtitle_text}
+                              subtitleUrl={""}
+                              subtitleText={""}
                               subtitleStyle={effectiveExportSettings?.subtitle_style ?? null}
                               aspectRatio={previewAspectRatio}
                               dark={dark}

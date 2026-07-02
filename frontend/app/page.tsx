@@ -363,7 +363,7 @@ export default function InsightClipsLanding() {
             </p>
 
             {/* CTAs */}
-            <div className="hero-cta" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
+            <div className="hero-cta" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap", marginBottom: 60 }}>
               <Link href="/register" className="ic-action" style={{
                 background:`linear-gradient(135deg, ${t.accent}, ${t.accentDark})`,
                 color: isDark ? "#0D1008" : "#fff",
@@ -376,16 +376,15 @@ export default function InsightClipsLanding() {
                 Start for Free <MoveRight size={16} />
               </Link>
             </div>
-          </div>
 
-          {/* Scroll hint */}
-          <div className="scroll-indicator" style={{
-            position:"absolute", bottom:36, left:"50%", transform:"translateX(-50%)",
-            display:"flex", flexDirection:"column", alignItems:"center", gap:8,
-            color:t.textFaint,
-          }}>
-            <span style={{ fontSize:9, letterSpacing:".25em", textTransform:"uppercase", fontWeight:700 }}>Scroll</span>
-            <ChevronDown size={16} />
+            {/* Scroll hint */}
+            <div className="scroll-indicator" style={{
+              display:"flex", flexDirection:"column", alignItems:"center", gap:8,
+              color:t.textFaint,
+            }}>
+              <span style={{ fontSize:9, letterSpacing:".25em", textTransform:"uppercase", fontWeight:700 }}>Scroll</span>
+              <ChevronDown size={16} />
+            </div>
           </div>
         </section>
 
@@ -614,7 +613,7 @@ export default function InsightClipsLanding() {
                 "Overlay & branding layers",
               ],
             },
-          ].map(({ range, price, sub, highlight, perks }) => (
+          ].map(({ range, price, sub, highlight, perks }, idx) => (
             <div
               key={range}
               className="card-feature"
@@ -697,7 +696,7 @@ export default function InsightClipsLanding() {
                   transition: "all .3s",
                 }}
               >
-                Start for Free <MoveRight size={15} />
+                {idx === 0 ? "Start for Free" : "Start"} <MoveRight size={15} />
               </Link>
             </div>
           ))}
@@ -713,6 +712,85 @@ export default function InsightClipsLanding() {
         </p>
       </section>
 
+      {/* ═══════════════════════════ FOOTER ═══════════════════════════ */}
+      <footer style={{
+        borderTop: `1px solid ${t.border}`,
+        padding: isMobile ? "60px 18px 40px" : "80px 40px 40px",
+        background: isDark ? "rgba(255,255,255,.015)" : "rgba(0,0,0,.01)",
+      }}>
+        <div style={{
+          maxWidth: 1280, margin: "0 auto",
+          display: "grid", gridTemplateColumns: isMobile ? "1fr" : "3fr 1fr 1fr", gap: 40
+        }}>
+          {/* Left: Logo & description */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 300 }}>
+            <button
+              onClick={() => window.scrollTo({top:0,behavior:"smooth"})}
+              style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:12, padding: 0 }}
+            >
+              <Image
+                src="/insightclips-logo.svg"
+                alt="InsightClips logo"
+                width={36}
+                height={36}
+                style={{ borderRadius: 10 }}
+              />
+              <span style={{
+                fontFamily:"'DM Serif Display', serif",
+                fontSize: 22, fontStyle:"italic", color:t.text, letterSpacing:"-.02em",
+              }}>
+                Insight<span style={{ color:t.accent }}>Clips</span>
+              </span>
+            </button>
+            <p style={{ color: t.textMuted, fontSize: 14, lineHeight: 1.6, textAlign: "left" }}>
+              The smartest way to turn long-form videos into viral short clips. Let AI do the heavy lifting.
+            </p>
+          </div>
+
+          {/* Right: Links */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "flex-start" }}>
+            <span style={{ color: t.text, fontSize: 12, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" }}>Product</span>
+            <button
+              style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 14, padding: 0, textAlign: "left" }}
+              onClick={() => document.getElementById("features-section")?.scrollIntoView({behavior:"smooth"})}
+            >
+              Features
+            </button>
+            <button
+              style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 14, padding: 0, textAlign: "left" }}
+              onClick={() => document.getElementById("pricing-section")?.scrollIntoView({behavior:"smooth"})}
+            >
+              Pricing
+            </button>
+          </div>
+          
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "flex-start" }}>
+            <span style={{ color: t.text, fontSize: 12, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" }}>App</span>
+            <Link href="/login" style={{ textDecoration: "none", color: t.textMuted, fontSize: 14 }}>
+              Log in
+            </Link>
+            <Link href="/register" style={{ textDecoration: "none", color: t.textMuted, fontSize: 14 }}>
+              Sign up
+            </Link>
+          </div>
+        </div>
+
+        {/* Bottom: Copyright */}
+        <div style={{
+          maxWidth: 1280, margin: "60px auto 0", paddingTop: 24,
+          borderTop: `1px solid ${t.border}`,
+          display: "flex", flexDirection: isMobile ? "column" : "row",
+          justifyContent: "space-between", alignItems: "center", gap: 16
+        }}>
+          <div style={{ color: t.textFaint, fontSize: 13 }}>
+            © {new Date().getFullYear()} InsightClips. All rights reserved.
+          </div>
+          <div style={{ display: "flex", gap: 20 }}>
+            <Link href="/privacy" style={{ color: t.textFaint, fontSize: 13, textDecoration: "none" }}>Privacy Policy</Link>
+            <Link href="/terms" style={{ color: t.textFaint, fontSize: 13, textDecoration: "none" }}>Terms of Service</Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -666,9 +666,9 @@ export default function DashboardPage() {
                 Account
               </div>
             )}
+            <NavItem icon={CreditCard}       label="Pricing"   href="/settings/billing"  t={t} collapsed={collapsed}/>
             <NavItem icon={User}             label="Profile"   href="/profile"   t={t} collapsed={collapsed}/>
             <NavItem icon={Settings}         label="Settings"  href="/settings"  t={t} collapsed={collapsed}/>
-            <NavItem icon={CreditCard}       label="Billing"   href="/settings/billing"  t={t} collapsed={collapsed}/>
           </nav>
 
           {/* Profile + sign out */}
@@ -1497,12 +1497,26 @@ export default function DashboardPage() {
               </div>
 
               {/* Clips workspace */}
-              <div style={{
-                padding:"26px 28px", borderRadius:18,
-                border:`1px solid ${t.border}`,
-                background:t.card, backdropFilter:"blur(14px)",
-                animation:"slideUp .55s .52s cubic-bezier(.22,1,.36,1) both",
-              }}>
+              <Link
+                href="/clips"
+                style={{
+                  display: "block",
+                  padding:"26px 28px", borderRadius:18,
+                  border:`1px solid ${t.border}`,
+                  background:t.card, backdropFilter:"blur(14px)",
+                  animation:"slideUp .55s .52s cubic-bezier(.22,1,.36,1) both",
+                  textDecoration: "none",
+                  transition: "transform .2s ease, border-color .2s ease, box-shadow .2s ease",
+                }}
+                onMouseEnter={e=>{
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow = dark ? "0 14px 36px rgba(0,0,0,.18)" : "0 14px 36px rgba(90,158,58,.08)";
+                }}
+                onMouseLeave={e=>{
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              >
                 <Play size={22} color={t.textFaint} style={{ marginBottom:12 }} strokeWidth={1.8}/>
                 <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:20, fontStyle:"italic", color:t.text, marginBottom:6 }}>Clips workspace</div>
                 <p style={{ fontSize:13, color:t.textSub, lineHeight:1.65, marginBottom:16 }}>Analysis ranks the best moments first. Open Clips to generate the rendered videos.</p>
@@ -1510,7 +1524,7 @@ export default function DashboardPage() {
                   <div className="pdot" style={{ width:6, height:6, borderRadius:"50%", background:t.accent, flexShrink:0 }}/>
                   <span style={{ fontSize:10, fontWeight:700, letterSpacing:".2em", textTransform:"uppercase", color:t.textFaint }}>Ready after analysis</span>
                 </div>
-              </div>
+              </Link>
             </div>
           </main>
         </div>

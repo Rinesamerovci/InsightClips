@@ -188,17 +188,22 @@ export default function ClipVideoPreview({
   }, [currentTime, subtitleCues]);
 
   const subtitleLayerStyle: CSSProperties = useMemo(
-    () => ({
-      position: "absolute",
-      left: 10,
-      right: 10,
-      bottom: 52,
-      display: "flex",
-      justifyContent: "center",
-      pointerEvents: "none",
-      zIndex: 3,
-    }),
-    [],
+    () => {
+      const position = subtitleStyle?.position ?? "bottom";
+      return {
+        position: "absolute",
+        left: 10,
+        right: 10,
+        top: position === "top" ? 52 : position === "center" ? "50%" : "auto",
+        bottom: position === "bottom" ? 52 : "auto",
+        transform: position === "center" ? "translateY(-50%)" : "none",
+        display: "flex",
+        justifyContent: "center",
+        pointerEvents: "none",
+        zIndex: 3,
+      };
+    },
+    [subtitleStyle?.position],
   );
 
   const subtitleBoxStyle: CSSProperties = useMemo(
@@ -221,7 +226,7 @@ export default function ClipVideoPreview({
       fontStyle: subtitleStyle?.italic ? "italic" : "normal",
       textAlign: "center",
       letterSpacing: subtitleStyle?.font_family === "DM Sans" ? "0.01em" : "0",
-      textTransform: subtitleStyle?.font_family === "DM Sans" ? "uppercase" : "none",
+      textTransform: subtitleStyle?.force_uppercase ? "uppercase" : "none",
       overflow: "hidden",
       textOverflow: "ellipsis",
       display: "-webkit-box",
@@ -254,6 +259,8 @@ export default function ClipVideoPreview({
         <video
           ref={videoRef}
           controls
+          controlsList="nodownload noplaybackrate"
+          disablePictureInPicture
           preload="metadata"
           crossOrigin="anonymous"
           src={src}

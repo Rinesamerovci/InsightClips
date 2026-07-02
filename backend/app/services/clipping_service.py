@@ -63,12 +63,14 @@ def build_ffmpeg_clip_command(
 ) -> list[str]:
     settings = get_settings()
     resolved_export_settings = export_settings or ExportSettings()
-    command = [
+    command: list[str] = [
         "ffmpeg",
+        "-y",
         "-v",
         "error",
         "-nostdin",
-        "-y",
+        "-ss",
+        f"{start_seconds:.3f}",
         "-i",
         str(source_path),
     ]
@@ -83,8 +85,6 @@ def build_ffmpeg_clip_command(
         )
     command.extend(
         [
-            "-ss",
-            f"{start_seconds:.3f}",
             "-t",
             f"{duration_seconds:.3f}",
         ]
@@ -172,6 +172,135 @@ def build_srt_content(
     return "\n".join(srt_lines).strip(), subtitle_text
 
 
+def build_ass_content(
+    transcription: TranscriptionResult,
+    subtitle_style: "SubtitleStyle",
+    *,
+    clip_start_seconds: float,
+    clip_end_seconds: float,
+    export_mode: str = "landscape",
+    subtitle_timing_profile: str = "balanced",
+) -> tuple[str, str]:
+    max_words_per_cue, max_duration_seconds, gap_seconds = _resolve_subtitle_timing(
+        export_mode=export_mode,
+        subtitle_timing_profile=subtitle_timing_profile,
+    )
+    clip_words = _collect_clip_words(
+        transcription.words,
+        clip_start_seconds=clip_start_seconds,
+        clip_end_seconds=clip_end_seconds,
+    )
+    if not clip_words:
+        raise ClippingError("No transcript words overlapped the requested clip window.")
+
+    cues = _build_subtitle_cues(
+        clip_words,
+        clip_start_seconds=clip_start_seconds,
+        export_mode=export_mode,
+        max_words_per_cue=max_words_per_cue,
+        max_duration_seconds=max_duration_seconds,
+        gap_seconds=gap_seconds,
+    )
+    if not cues:
+        raise ClippingError("Unable to build readable subtitles for the requested clip.")
+
+    def to_ass_color(hex_color: str, opacity: float = 1.0) -> str:
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) != 6:
+            hex_color = "FFFFFF"
+        r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
+        alpha = int((1.0 - opacity) * 255)
+        return f"&H{alpha:02X}{b}{g}{r}"
+
+    primary = to_ass_color(subtitle_style.primary_color)
+    bg = to_ass_color(subtitle_style.background_color, subtitle_style.background_opacity)
+    
+    if subtitle_style.background_opacity > 0:
+        border_style = 3
+        # In libass, BorderStyle=3 uses OutlineColour for the box color.
+        outline = to_ass_color(subtitle_style.background_color, subtitle_style.background_opacity)
+        outline_thickness = 15
+    else:
+        border_style = 1
+        outline = to_ass_color(subtitle_style.outline_color)
+        outline_thickness = 5
+
+    bold = -1 if subtitle_style.bold else 0
+    italic = -1 if subtitle_style.italic else 0
+
+    if export_mode == "portrait":
+        playres_x, playres_y = 720, 1280
+        scale_factor = 720 / 360.0
+    else:
+        playres_x, playres_y = 1280, 720
+        scale_factor = 1280 / 640.0
+
+    ass_font_size = int(subtitle_style.font_size * 3.0)
+    margin_v_base = int(64 * scale_factor)
+    margin_h = int(28 * scale_factor)
+
+    if subtitle_style.position == "top":
+        alignment = 8
+        margin_v = margin_v_base
+    elif subtitle_style.position == "center":
+        alignment = 5
+        margin_v = 0
+    else:
+        alignment = 2
+        margin_v = margin_v_base
+
+    ass_lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        f"PlayResX: {playres_x}",
+        f"PlayResY: {playres_y}",
+        "WrapStyle: 0",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,{subtitle_style.font_family},{ass_font_size},{primary},&H000000FF,{outline},{bg},{bold},{italic},0,0,100,100,0,0,{border_style},{outline_thickness},0,{alignment},{margin_h},{margin_h},{margin_v},1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    ]
+
+    def format_ass_time(seconds: float) -> str:
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        cs = int(round((seconds % 1) * 100))
+        if cs >= 100:
+            cs = 99
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    current_t = 0.0
+    for i, cue in enumerate(cues):
+        start_t = max(cue.start, current_t)
+        end_t = cue.end
+        
+        if end_t < start_t + 0.05:
+            end_t = start_t + 0.05
+            
+        if i + 1 < len(cues):
+            next_start = cues[i + 1].start
+            if end_t > next_start:
+                end_t = next_start
+                if end_t < start_t + 0.05:
+                    end_t = start_t + 0.05
+                    
+        current_t = end_t
+        
+        start_time = format_ass_time(start_t)
+        end_time = format_ass_time(end_t)
+        text = _format_subtitle_text(cue.text).replace("\n", "\\N")
+        if getattr(subtitle_style, "force_uppercase", False):
+            text = text.upper()
+        ass_lines.append(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}")
+
+    subtitle_text = _format_subtitle_text(_join_transcript_tokens(word.word for word in clip_words))
+    return "\n".join(ass_lines).strip(), subtitle_text
+
+
 from app.models.export_settings import GenerationSettings
 
 def generate_clips(
@@ -211,15 +340,16 @@ def generate_clips(
             continue
 
         clip_filename = f"clip-{clip_number:02d}.mp4"
-        subtitle_filename = f"clip-{clip_number:02d}.srt"
+        subtitle_filename = f"clip-{clip_number:02d}.ass"
         clip_path = output_dir / clip_filename
         subtitle_path = output_dir / subtitle_filename
         clip_path.parent.mkdir(parents=True, exist_ok=True)
         subtitle_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            srt_content, subtitle_text = build_srt_content(
+            ass_content, subtitle_text = build_ass_content(
                 transcription,
+                subtitle_style=resolved_export_settings.subtitle_style,
                 clip_start_seconds=clip_start,
                 clip_end_seconds=clip_end,
                 export_mode=resolved_export_settings.export_mode,
@@ -250,7 +380,7 @@ def generate_clips(
                 draft_clip,
                 segment,
             )
-            subtitle_path.write_text(srt_content, encoding="utf-8")
+            subtitle_path.write_text(ass_content, encoding="utf-8-sig")
             clip_path.parent.mkdir(parents=True, exist_ok=True)
             subtitle_path.parent.mkdir(parents=True, exist_ok=True)
             final_overlay = _render_clip_with_optional_overlay(
@@ -707,43 +837,10 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def _build_subtitle_filter(subtitle_path: Path, subtitle_style: "SubtitleStyle", export_mode: str) -> str:
+def _build_subtitle_filter(subtitle_path: Path) -> str:
     normalized = subtitle_path.resolve().as_posix().replace(":", r"\:")
     safe_path = normalized.replace("'", r"\'")
-
-    def to_ass_color(hex_color: str, opacity: float = 1.0) -> str:
-        hex_color = hex_color.lstrip('#')
-        if len(hex_color) != 6:
-            hex_color = "FFFFFF"
-        r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
-        alpha = int((1.0 - opacity) * 255)
-        return f"&H{alpha:02X}{b}{g}{r}"
-
-    primary = to_ass_color(subtitle_style.primary_color)
-    outline = to_ass_color(subtitle_style.outline_color)
-    bg = to_ass_color(subtitle_style.background_color, subtitle_style.background_opacity)
-    bold = -1 if subtitle_style.bold else 0
-    italic = -1 if subtitle_style.italic else 0
-    if subtitle_style.position == "top":
-        alignment = 8
-        margin_v = 72 if export_mode == "portrait" else 32
-    elif subtitle_style.position == "center":
-        alignment = 5
-        margin_v = 0
-    else:
-        alignment = 2
-        margin_v = 72 if export_mode == "portrait" else 32
-
-    style = (
-        f"FontName={subtitle_style.font_family},Fontsize={subtitle_style.font_size},"
-        f"PrimaryColour={primary},OutlineColour={outline},"
-        f"BackColour={bg},BorderStyle=3,Outline=1,Shadow=0,WrapStyle=2,Alignment={alignment},"
-        f"MarginL={56 if export_mode == 'portrait' else 28},"
-        f"MarginR={56 if export_mode == 'portrait' else 28},"
-        f"MarginV={margin_v},"
-        f"Bold={bold},Italic={italic}"
-    )
-    return f"subtitles='{safe_path}':force_style='{style}'"
+    return f"subtitles='{safe_path}'"
 
 
 def _build_export_filter(export_settings: ExportSettings) -> str | None:
@@ -764,8 +861,11 @@ def _build_clip_filter_chain(subtitle_path: Path, export_settings: ExportSetting
     export_filter = _build_export_filter(export_settings)
     if export_filter:
         filters.append(export_filter)
-    filters.append(_build_subtitle_filter(subtitle_path, export_settings.subtitle_style, export_settings.export_mode))
-    return ",".join(filters)
+    
+    if export_settings.generation_settings.subtitles_enabled:
+        filters.append(_build_subtitle_filter(subtitle_path))
+        
+    return ",".join(filters) if filters else "null"
 
 
 def _build_base_video_chain(export_settings: ExportSettings) -> str:
@@ -781,23 +881,26 @@ def _build_video_filter_graph(
     export_settings: ExportSettings,
 ) -> str:
     base_video_chain = _build_base_video_chain(export_settings)
-    subtitle_filter = _build_subtitle_filter(
-        subtitle_path,
-        export_settings.subtitle_style,
-        export_settings.export_mode,
-    )
     opacity = max(0.0, min(float(overlay.opacity or 1.0), 1.0))
     scale = max(0.05, min(float(overlay.scale or 0.18), 0.95))
     start = max(0.0, float(overlay.render_start_seconds or 0.0))
     end = max(start + 0.6, float(overlay.render_end_seconds or (start + 2.0)))
     x_expr, y_expr = _resolve_overlay_coordinates(overlay)
-    return (
+    
+    graph = (
         f"{base_video_chain};"
         f"[1:v]format=rgba,colorchannelmixer=aa={opacity:.3f}[ovsrc];"
         f"[ovsrc][base]scale2ref=w=oh*mdar:h=trunc(main_h*{scale:.3f}/2)*2[ov][base2];"
-        f"[base2][ov]overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{start:.3f},{end:.3f})'[overlaid];"
-        f"[overlaid]{subtitle_filter}[vout]"
+        f"[base2][ov]overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{start:.3f},{end:.3f})'[overlaid]"
     )
+    
+    if export_settings.generation_settings.subtitles_enabled:
+        subtitle_filter = _build_subtitle_filter(subtitle_path)
+        graph += f";[overlaid]{subtitle_filter}[vout]"
+    else:
+        graph += ";[overlaid]copy[vout]"
+        
+    return graph
 
 
 def _resolve_overlay_coordinates(overlay: OverlayDecision) -> tuple[str, str]:

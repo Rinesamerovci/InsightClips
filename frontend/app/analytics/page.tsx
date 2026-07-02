@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   BarChart2,
+  ChevronDown,
   Loader2,
   Moon,
   Sparkles,
@@ -362,6 +363,47 @@ function AnalyticsPageContent() {
               <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 700 }}>
                 This analytics board shows the selected podcast&apos;s downloads, click trend, and top clip performance so publishing decisions stay visible.
               </p>
+
+              {podcasts.length > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: t.accent, marginBottom: 8 }}>
+                    Select Podcast
+                  </div>
+                  <div style={{ position: "relative", maxWidth: 400 }}>
+                    <select
+                      value={selectedPodcastId}
+                      onChange={(e) => {
+                        setSelectedPodcastId(e.target.value);
+                        router.push(`/analytics?podcastId=${e.target.value}`);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "12px 44px 12px 16px",
+                        borderRadius: 14,
+                        border: "none",
+                        background: `linear-gradient(135deg, ${t.accent}, ${t.accentLt})`,
+                        color: "#fff",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        outline: "none",
+                        cursor: "pointer",
+                        appearance: "none",
+                        boxShadow: `0 8px 24px ${t.accentGlow}`,
+                      }}
+                    >
+                      {podcasts.map((p) => (
+                        <option key={p.id} value={p.id} style={{ background: t.card, color: t.text }}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Custom arrow indicator */}
+                    <div style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#fff", display: "flex", alignItems: "center" }}>
+                      <ChevronDown size={22} strokeWidth={2.5} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div

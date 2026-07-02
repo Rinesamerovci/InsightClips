@@ -289,23 +289,7 @@ export default function SettingsPage() {
               <ArrowLeft size={16} />
               Dashboard
             </Link>
-            <Link
-              href="/settings/export"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                textDecoration: "none",
-                color: "inherit",
-                border: `1px solid ${palette.border}`,
-                borderRadius: 999,
-                padding: "10px 16px",
-                background: palette.card,
-              }}
-            >
-              <Settings2 size={16} />
-              Export settings
-            </Link>
+
             <Link
               href="/settings/billing"
               style={{
@@ -321,7 +305,7 @@ export default function SettingsPage() {
               }}
             >
               <CreditCard size={16} />
-              Billing
+              Pricing
             </Link>
             <button
               type="button"
@@ -415,7 +399,7 @@ export default function SettingsPage() {
               </p>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-                {["Fast product notes", "Support follow-up", "Separate export controls"].map((item) => (
+                {["Fast product notes", "Support follow-up"].map((item) => (
                   <div
                     key={item}
                     style={{
@@ -457,10 +441,6 @@ export default function SettingsPage() {
                 {
                   title: "Reply-ready",
                   text: "Leave an email only if you want a follow-up from the team.",
-                },
-                {
-                  title: "Export settings moved out",
-                  text: "Advanced subtitle, framing, and audio controls now live in their own page.",
                 },
               ].map((item) => (
                 <div
@@ -584,21 +564,7 @@ export default function SettingsPage() {
               ))}
             </div>
 
-            <Link
-              href="/settings/export"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                textDecoration: "none",
-                color: palette.accent,
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              <Settings2 size={15} />
-              Open export settings separately
-            </Link>
+
           </aside>
 
           <div

@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import type { ContentCalendarPlatform, GenerationSettings, GenerationTemplateId } from "@/lib/api";
 import {
   CLIP_COUNT_OPTIONS,
@@ -24,6 +25,19 @@ type GenerationSettingsPanelProps = {
   storageHint?: string | null;
 };
 
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) {
+    return `rgba(0,0,0,${alpha})`;
+  }
+
+  const red = Number.parseInt(clean.slice(0, 2), 16);
+  const green = Number.parseInt(clean.slice(2, 4), 16);
+  const blue = Number.parseInt(clean.slice(4, 6), 16);
+
+  return `rgba(${red},${green},${blue},${alpha})`;
+}
+
 export default function GenerationSettingsPanel({
   dark,
   settings,
@@ -35,6 +49,8 @@ export default function GenerationSettingsPanel({
   description = "Use Topic to guide clip selection from this video. Keep fixed output settings in the controls below.",
   storageHint = null,
 }: GenerationSettingsPanelProps) {
+  const topicFocus = settings.topic_focus ?? "";
+
   return (
     <section
       className="glass a2 ic-premium-card"
@@ -189,6 +205,10 @@ export default function GenerationSettingsPanel({
               const active = selectedTemplateId === tpl.id;
               const isPortrait = tpl.exportMode === "portrait";
               const subStyle = tpl.subtitleStyle;
+              const accent = subStyle.primary_color;
+              const accentGlow = hexToRgba(accent, active ? 0.4 : 0.22);
+              const accentSoft = hexToRgba(accent, active ? 0.24 : 0.14);
+              const panelBg = hexToRgba(subStyle.background_color, Math.max(0.12, subStyle.background_opacity * 0.9));
 
               let gridCol = "auto";
               let gridRow = "auto";
@@ -217,8 +237,8 @@ export default function GenerationSettingsPanel({
                     aspectRatio: "4/5", // Shorter poster ratio
                     borderRadius: "12px",
                     overflow: "hidden",
-                    border: active ? `2px solid ${palette.hi}` : `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-                    boxShadow: active ? `0 0 0 4px ${palette.hi}30, 0 8px 16px rgba(0,0,0,0.2)` : `0 2px 8px ${dark ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.05)"}`,
+                    border: active ? `2px solid ${accent}` : `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
+                    boxShadow: active ? `0 0 0 4px ${accentGlow}, 0 8px 16px rgba(0,0,0,0.2)` : `0 2px 8px ${dark ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.05)"}`,
                     transform: active ? "translateY(-2px) scale(1.02)" : "translateY(0) scale(1)",
                     transition: "all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
                     cursor: "pointer",
@@ -249,10 +269,10 @@ export default function GenerationSettingsPanel({
                   {/* Format Badge (Portrait vs Landscape) */}
                   <div style={{
                     position: "absolute", top: "6px", left: "6px",
-                    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-                    color: isPortrait ? "#a7f3d0" : "#bfdbfe", // Green tint for portrait, blue tint for landscape
+                    background: active ? accentSoft : "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                    color: accent,
                     fontSize: "8px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px",
-                    border: "1px solid rgba(255,255,255,0.15)",
+                    border: `1px solid ${active ? accentGlow : "rgba(255,255,255,0.15)"}`,
                     boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
                     display: "flex", alignItems: "center", gap: "2px",
                     textTransform: "uppercase", letterSpacing: "0.5px",
@@ -269,9 +289,9 @@ export default function GenerationSettingsPanel({
                   {/* Top Badge: Duration */}
                   <div style={{
                     position: "absolute", top: "6px", right: "6px",
-                    background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-                    color: "#fff", fontSize: "9px", fontWeight: 700, padding: "2px 4px", borderRadius: "4px",
-                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: active ? panelBg : "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
+                    color: active ? subStyle.primary_color : "#fff", fontSize: "9px", fontWeight: 700, padding: "2px 4px", borderRadius: "4px",
+                    border: `1px solid ${active ? accentGlow : "rgba(255,255,255,0.15)"}`,
                     zIndex: 2
                   }}>
                     {tpl.generationSettings.clip_duration_seconds}s
@@ -282,7 +302,7 @@ export default function GenerationSettingsPanel({
                     <div style={{
                       position: "absolute", top: "24px", left: "6px",
                       width: "16px", height: "16px", borderRadius: "50%",
-                      background: palette.hi,
+                      background: accent,
                       display: "flex", alignItems: "center", justifyContent: "center",
                       boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
                       zIndex: 3
@@ -297,14 +317,47 @@ export default function GenerationSettingsPanel({
                   <div style={{
                     position: "absolute", top: "45%", left: "50%", transform: "translate(-50%, -50%)",
                     width: "28px", height: "28px", borderRadius: "50%",
-                    background: active ? palette.hi : "rgba(255,255,255,0.15)",
+                    background: active ? accent : "rgba(255,255,255,0.15)",
                     backdropFilter: "blur(8px)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    border: active ? "none" : "1px solid rgba(255,255,255,0.4)",
-                    boxShadow: active ? `0 4px 12px ${palette.hi}80` : "0 4px 12px rgba(0,0,0,0.2)",
+                    border: active ? "none" : `1px solid ${accentGlow}`,
+                    boxShadow: active ? `0 4px 12px ${accentGlow}` : "0 4px 12px rgba(0,0,0,0.2)",
                     transition: "all 0.3s ease",
                   }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff" style={{ marginLeft: 2 }}><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                  </div>
+
+                  {/* Subtitle Visual Demo - Positioned according to style */}
+                  <div style={{
+                    position: "absolute",
+                    left: "8px",
+                    right: "8px",
+                    top: subStyle.position === "top" ? "28px" : subStyle.position === "center" ? "50%" : "auto",
+                    bottom: subStyle.position === "bottom" ? "42px" : "auto",
+                    transform: subStyle.position === "center" ? "translateY(-50%)" : "none",
+                    display: "flex",
+                    justifyContent: "center",
+                    zIndex: 2,
+                    pointerEvents: "none"
+                  }}>
+                    <div style={{
+                      fontFamily: subStyle.font_family,
+                      fontSize: isPortrait ? "9px" : "8px",
+                      fontWeight: 900,
+                      color: subStyle.primary_color,
+                      backgroundColor: subStyle.background_opacity > 0 ? panelBg : "transparent",
+                      padding: subStyle.background_opacity > 0 ? "2px 5px" : "0",
+                      borderRadius: 4,
+                      textAlign: "center",
+                      lineHeight: 1.2,
+                      textTransform: subStyle.force_uppercase ? "uppercase" : "none",
+                      textShadow: subStyle.background_opacity === 0 ? `1px 1px 2px ${subStyle.outline_color}, -1px -1px 2px ${subStyle.outline_color}, 1px -1px 2px ${subStyle.outline_color}, -1px 1px 2px ${subStyle.outline_color}` : "none",
+                      boxShadow: subStyle.background_opacity > 0 ? "0 2px 8px rgba(0,0,0,0.4)" : "none",
+                      maxWidth: "100%",
+                      wordBreak: "keep-all",
+                    }}>
+                      {tpl.label}
+                    </div>
                   </div>
 
                   {/* Content Area at Bottom */}
@@ -313,31 +366,11 @@ export default function GenerationSettingsPanel({
                     textAlign: "left",
                     display: "flex", flexDirection: "column", alignItems: "center"
                   }}>
-                    {/* Subtitle Visual Demo */}
-                    <div style={{
-                      fontFamily: subStyle.font_family,
-                      fontSize: isPortrait ? "8px" : "7px",
-                      fontWeight: 900,
-                      color: subStyle.primary_color,
-                      backgroundColor: subStyle.background_opacity > 0 ? subStyle.background_color : "transparent",
-                      padding: subStyle.background_opacity > 0 ? "2px 4px" : "0",
-                      borderRadius: 4,
-                      textAlign: "center",
-                      lineHeight: 1.2,
-                      textTransform: subStyle.font_family === "DM Sans" ? "uppercase" : "none",
-                      textShadow: subStyle.background_opacity === 0 ? `1px 1px 2px ${subStyle.outline_color}, -1px -1px 2px ${subStyle.outline_color}, 1px -1px 2px ${subStyle.outline_color}, -1px 1px 2px ${subStyle.outline_color}` : "none",
-                      marginBottom: "8px",
-                      boxShadow: subStyle.background_opacity > 0 ? "0 2px 8px rgba(0,0,0,0.4)" : "none",
-                      maxWidth: "100%",
-                      wordBreak: "keep-all",
-                    }}>
-                      {tpl.label}
-                    </div>
 
-                    <div style={{ color: "#fff", fontSize: "11px", fontWeight: 800, letterSpacing: "-0.01em", marginBottom: "2px", width: "100%", textAlign: "left" }}>
+                    <div style={{ color: accent, fontSize: "11px", fontWeight: 800, letterSpacing: "-0.01em", marginBottom: "2px", width: "100%", textAlign: "left", textShadow: "0 1px 3px rgba(0,0,0,0.75)" }}>
                       {tpl.label}
                     </div>
-                    <div style={{ color: active ? palette.hi : "rgba(255,255,255,0.7)", fontSize: "9px", fontWeight: 600, transition: "color 0.3s ease", width: "100%", textAlign: "left" }}>
+                    <div style={{ color: active ? accent : "rgba(255,255,255,0.7)", fontSize: "9px", fontWeight: 600, transition: "color 0.3s ease", width: "100%", textAlign: "left" }}>
                       {tpl.generationSettings.number_of_clips} {tpl.generationSettings.number_of_clips === 1 ? "clip" : "clips"}
                     </div>
                   </div>
@@ -489,35 +522,50 @@ export default function GenerationSettingsPanel({
           >
             Spoken language (optional)
           </div>
-          <select
-            value={settings.language ?? "auto"}
-            onChange={(e) =>
-              onSettingsChange({
-                language: e.target.value === "auto" ? undefined : e.target.value,
-              })
-            }
-            style={{
-              width: "100%",
-              borderRadius: 12,
-              border: `1px solid ${palette.subBorder}`,
-              background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
-              color: dark ? "#dff0d8" : "#1e3418",
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "10px 14px",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-            }}
-          >
-            <option value="auto">Auto-Detect Language</option>
-            <option value="en">English</option>
-            <option value="sq">Albanian (Shqip)</option>
-            <option value="de">German (Deutsch)</option>
-            <option value="it">Italian (Italiano)</option>
-            <option value="fr">French (Français)</option>
-            <option value="es">Spanish (Español)</option>
-          </select>
+          <div style={{ position: "relative" }}>
+            <select
+              value={settings.language ?? "auto"}
+              onChange={(e) =>
+                onSettingsChange({
+                  language: e.target.value === "auto" ? undefined : e.target.value,
+                })
+              }
+              style={{
+                width: "100%",
+                borderRadius: 12,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
+                color: dark ? "#dff0d8" : "#1e3418",
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "10px 44px 10px 14px",
+                cursor: "pointer",
+                outline: "none",
+                appearance: "none",
+              }}
+            >
+              <option value="auto">Auto-Detect Language</option>
+              <option value="en">English</option>
+              <option value="sq">Albanian (Shqip)</option>
+              <option value="de">German (Deutsch)</option>
+              <option value="it">Italian (Italiano)</option>
+              <option value="fr">French (Français)</option>
+              <option value="es">Spanish (Español)</option>
+            </select>
+            <ChevronDown
+              size={22}
+              strokeWidth={2.5}
+              style={{
+                position: "absolute",
+                right: 14,
+                top: "50%",
+                transform: "translateY(-50%)",
+                pointerEvents: "none",
+                color: dark ? "#dff0d8" : "#1e3418",
+                opacity: 0.8,
+              }}
+            />
+          </div>
         </div>
 
         <div
@@ -540,31 +588,46 @@ export default function GenerationSettingsPanel({
           >
             Target Platform
           </div>
-          <select
-            value={settings.target_platform ?? "tiktok"}
-            onChange={(e) =>
-              onSettingsChange({
-                target_platform: e.target.value as ContentCalendarPlatform,
-              })
-            }
-            style={{
-              width: "100%",
-              borderRadius: 12,
-              border: `1px solid ${palette.subBorder}`,
-              background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
-              color: dark ? "#dff0d8" : "#1e3418",
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "10px 14px",
-              cursor: "pointer",
-              outline: "none",
-              appearance: "none",
-            }}
-          >
-            <option value="tiktok">TikTok</option>
-            <option value="youtube">YouTube Shorts</option>
-            <option value="linkedin">LinkedIn</option>
-          </select>
+          <div style={{ position: "relative" }}>
+            <select
+              value={settings.target_platform ?? "tiktok"}
+              onChange={(e) =>
+                onSettingsChange({
+                  target_platform: e.target.value as ContentCalendarPlatform,
+                })
+              }
+              style={{
+                width: "100%",
+                borderRadius: 12,
+                border: `1px solid ${palette.subBorder}`,
+                background: dark ? "rgba(90,158,58,.14)" : "rgba(90,158,58,.1)",
+                color: dark ? "#dff0d8" : "#1e3418",
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "10px 44px 10px 14px",
+                cursor: "pointer",
+                outline: "none",
+                appearance: "none",
+              }}
+            >
+              <option value="tiktok">TikTok</option>
+              <option value="youtube">YouTube Shorts</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+            <ChevronDown
+              size={22}
+              strokeWidth={2.5}
+              style={{
+                position: "absolute",
+                right: 14,
+                top: "50%",
+                transform: "translateY(-50%)",
+                pointerEvents: "none",
+                color: dark ? "#dff0d8" : "#1e3418",
+                opacity: 0.8,
+              }}
+            />
+          </div>
         </div>
 
         <button
@@ -673,11 +736,11 @@ export default function GenerationSettingsPanel({
             Topic
           </div>
           <div style={{ fontSize: 11, color: palette.muted }}>
-            {settings.topic_focus.trim().length}/{MAX_TOPIC_LENGTH}
+            {topicFocus.trim().length}/{MAX_TOPIC_LENGTH}
           </div>
         </div>
         <textarea
-          value={settings.topic_focus}
+          value={topicFocus}
           onChange={(event) =>
             onSettingsChange({
               topic_focus: event.target.value.slice(0, MAX_TOPIC_LENGTH),
@@ -714,7 +777,7 @@ export default function GenerationSettingsPanel({
               key={topic}
               type="button"
               onClick={() => {
-                const current = settings.topic_focus.trim();
+                const current = topicFocus.trim();
                 const newTopic = current ? `${current}, ${topic}` : topic;
                 onSettingsChange({ topic_focus: newTopic.slice(0, MAX_TOPIC_LENGTH) });
               }}

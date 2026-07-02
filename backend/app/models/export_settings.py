@@ -137,6 +137,7 @@ class SubtitleStyle(BaseModel):
     position: SubtitlePosition = "bottom"
     bold: bool = False
     italic: bool = False
+    force_uppercase: bool = False
 
     @field_validator("font_family")
     @classmethod

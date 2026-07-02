@@ -468,54 +468,7 @@ export default function PodcastsPage() {
           ))}
         </section>
 
-        <section style={{ marginTop: 20, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.15fr .85fr", gap: 16 }}>
-          <div className="lift-card" style={{ borderRadius: 24, background: t.card, border: `1px solid ${t.border}`, padding: 20 }}>
-            <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
-              Library Health
-            </div>
-            <div style={{ display: "grid", gap: 14 }}>
-              {[
-                { label: "Analyzed coverage", current: doneCount, total: Math.max(1, podcasts.length) },
-                { label: "Processing queue", current: processingCount, total: Math.max(1, podcasts.length) },
-                { label: "Visible in filter", current: filtered.length, total: Math.max(1, podcastsWithStatus.length) },
-              ].map((item) => {
-                const percent = Math.round((item.current / item.total) * 100);
-                return (
-                  <div key={item.label}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13, marginBottom: 8 }}>
-                      <span style={{ color: t.text }}>{item.label}</span>
-                      <span style={{ color: t.textSub }}>{percent}%</span>
-                    </div>
-                    <div className="hero-grid-bar" style={{ height: 10, borderRadius: 999, background: t.cardAlt, border: `1px solid ${t.borderSub}` }}>
-                      <span style={{ width: `${Math.max(10, percent)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          <div className="lift-card" style={{ borderRadius: 24, background: t.card, border: `1px solid ${t.border}`, padding: 20 }}>
-            <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: t.textFaint, marginBottom: 12 }}>
-              Strongest Episode
-            </div>
-            {strongestPodcast ? (
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, lineHeight: 1.05 }}>
-                  {strongestPodcast.title}
-                </div>
-                <div style={{ fontSize: 14, color: t.textSub, lineHeight: 1.7 }}>
-                  Peak score {analysisByPodcast[strongestPodcast.id]?.highest_score.toFixed(1)} with{" "}
-                  {analysisByPodcast[strongestPodcast.id]?.total_scored_segments ?? 0} scored segments.
-                </div>
-              </div>
-            ) : (
-              <div style={{ color: t.textSub, lineHeight: 1.8 }}>
-                Run analysis on at least one episode and the strongest candidate will surface here.
-              </div>
-            )}
-          </div>
-        </section>
 
         <section style={{ marginTop: 20, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.2fr .8fr", gap: 16 }}>
           <div style={{ borderRadius: 22, background: t.card, border: `1px solid ${t.border}`, padding: 16 }}>

@@ -256,7 +256,7 @@ export default function SubtitleStylePanel({
                         fontWeight: 700,
                         letterSpacing: ".16em",
                         textTransform: "uppercase",
-                        color: active ? "#dff0d8" : palette.hi2,
+                        color: active ? (dark ? "#dff0d8" : "#285019") : palette.hi2,
                       }}
                     >
                       {details.label}
@@ -265,12 +265,12 @@ export default function SubtitleStylePanel({
                       style={{
                         borderRadius: 999,
                         padding: "4px 8px",
-                        border: `1px solid ${active ? "rgba(255,255,255,.22)" : palette.subBorder}`,
+                        border: `1px solid ${active ? (dark ? "rgba(255,255,255,.22)" : "rgba(40,80,25,.3)") : palette.subBorder}`,
                         fontSize: 9,
                         fontWeight: 700,
                         letterSpacing: ".14em",
                         textTransform: "uppercase",
-                        color: active ? "#dff0d8" : palette.hi2,
+                        color: active ? (dark ? "#dff0d8" : "#285019") : palette.hi2,
                       }}
                     >
                       {active ? "Active" : "Preset"}

@@ -2,8 +2,6 @@ import type { ClipOverlay, ExportSettings } from "./api";
 
 export type ClipStatusFilter =
   | "all"
-  | "published"
-  | "unpublished"
   | "ready"
   | "processing"
   | "failed";
@@ -78,7 +76,6 @@ export function clipMatchesQuery(clip: ClipInsightInput, podcastTitle: string, q
     podcastTitle,
     clip.subtitle_text,
     `clip ${clip.clip_number}`,
-    clip.published ? "published" : "unpublished",
     clip.status,
   ]
     .join(" ")
@@ -90,14 +87,6 @@ export function clipMatchesQuery(clip: ClipInsightInput, podcastTitle: string, q
 export function clipMatchesStatus(clip: ClipInsightInput, filter: ClipStatusFilter): boolean {
   if (filter === "all") {
     return true;
-  }
-
-  if (filter === "published") {
-    return Boolean(clip.published);
-  }
-
-  if (filter === "unpublished") {
-    return !clip.published;
   }
 
   return clip.status === filter;

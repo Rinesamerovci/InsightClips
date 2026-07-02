@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CheckCircle2,
   CreditCard,
   HelpCircle,
   Loader2,
@@ -275,13 +276,10 @@ export default function BillingSettingsPage() {
               <Settings2 size={16} />
               Feedback
             </Link>
-            <Link href="/settings/export" style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", color: t.textSub, border: `1px solid ${t.border}`, borderRadius: 999, padding: "10px 16px", background: t.card }}>
-              <Settings2 size={16} />
-              Export settings
-            </Link>
+
             <Link href="/settings/billing" style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", color: t.text, border: `1px solid ${t.accent}`, borderRadius: 999, padding: "10px 16px", background: t.chip }}>
               <CreditCard size={16} />
-              Billing
+              Pricing
             </Link>
             <button type="button" onClick={() => setDark((value) => !value)} style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${t.border}`, borderRadius: 999, padding: "10px 14px", background: t.card, color: t.textSub, cursor: "pointer" }}>
               {dark ? <SunMedium size={15} /> : <Moon size={15} />}
@@ -290,150 +288,153 @@ export default function BillingSettingsPage() {
           </div>
         </header>
 
-        <section className="a-up glass ic-premium-card" style={{ borderRadius: 30, border: `1px solid ${t.border}`, background: t.shell, padding: isMobile ? "24px 20px" : "30px 32px", marginBottom: 22 }}>
+        <section className="a-up glass ic-premium-card" style={{ borderRadius: 30, border: `1px solid ${t.border}`, background: t.shell, padding: isMobile ? "24px 20px" : "30px 32px", marginBottom: 40 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 999, padding: "7px 12px", background: t.chip, color: t.accentLt, fontSize: 11, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase" }}>
             <CreditCard size={14} />
-            Billing
+            Pricing
           </div>
           <h1 style={{ marginTop: 16, marginBottom: 12, fontFamily: "'DM Serif Display', serif", fontSize: "clamp(34px, 4vw, 58px)", lineHeight: 1.02, letterSpacing: "-.04em" }}>
-            Payment controls for pay-as-you-go processing.
+            Simple, transparent pricing.
           </h1>
           <p style={{ fontSize: 15, lineHeight: 1.8, color: t.textSub, maxWidth: 720 }}>
-            Manage mock payment methods, review simulated charges, and keep the pricing model visible before real payment rails are added.
+            No subscriptions, no hidden fees. Your first podcast is always free — then a flat per-upload fee based on length.
           </p>
         </section>
 
-        <main style={{ display: "grid", gap: 18 }}>
-          <section className="glass a-up ic-premium-card" style={{ borderRadius: 20, border: `1px solid ${t.border}`, background: t.card, padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub, marginBottom: 6 }}>
-                  Payment Methods
-                </div>
-                <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 30, lineHeight: 1.05 }}>Saved Payment Methods</h2>
-              </div>
-              <button type="button" onClick={() => setShowAddCard(true)} style={{ borderRadius: 999, border: `1px solid ${t.border}`, background: "transparent", color: t.text, padding: "10px 14px", display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, cursor: "pointer" }}>
-                <Plus size={16} />
-                Add payment method
-              </button>
-            </div>
-
-            {savedCards.length === 0 ? (
-              <div style={{ borderRadius: 18, border: `1px dashed ${t.border}`, background: t.cardAlt, padding: 26, textAlign: "center", color: t.textSub }}>
-                <CreditCard size={34} style={{ margin: "0 auto 12px" }} />
-                No payment methods saved yet
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {savedCards.map((card) => (
-                  <div key={card.id} style={{ borderRadius: 16, border: `1px solid ${t.borderSub}`, background: t.cardAlt, padding: "14px 16px", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                        <strong>{card.brand}</strong>
-                        {card.isDefault ? <span style={{ borderRadius: 999, background: t.chip, color: t.accent, padding: "3px 8px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>Default</span> : null}
-                      </div>
-                      <div style={{ color: t.textSub, fontSize: 13 }}>.... .... .... {card.last4} - Expires {card.expiry}</div>
-                    </div>
-                    <button type="button" onClick={() => setSavedCards((current) => current.filter((item) => item.id !== card.id))} style={{ border: "none", background: "transparent", color: "#c0392b", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 700, cursor: "pointer" }}>
-                      <Trash2 size={14} />
-                      Remove
-                    </button>
+        <main className="a-up">
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+            gap: 20,
+            maxWidth: 1000,
+            margin: "0 auto",
+          }}>
+            {[
+              {
+                range: "Up to 30 min",
+                price: "Free",
+                sub: "first upload",
+                highlight: true,
+                perks: [
+                  "AI clip extraction",
+                  "Virality scoring",
+                  "Subtitle generation",
+                  "Download ready-to-post clips",
+                ],
+              },
+              {
+                range: "31 – 60 min",
+                price: "$2",
+                sub: "per upload",
+                highlight: false,
+                perks: [
+                  "Everything in Free",
+                  "Longer episode support",
+                  "Smart cropping",
+                  "Content calendar suggestions",
+                ],
+              },
+              {
+                range: "61 – 120 min",
+                price: "$4",
+                sub: "per upload",
+                highlight: false,
+                perks: [
+                  "Everything in Starter",
+                  "Extended episode support",
+                  "Priority render queue",
+                  "Overlay & branding layers",
+                ],
+              },
+            ].map(({ range, price, sub, highlight, perks }, idx) => (
+              <div
+                key={range}
+                style={{
+                  borderRadius: 28,
+                  border: `1px solid ${highlight ? t.accent + "55" : t.border}`,
+                  background: highlight
+                    ? `linear-gradient(145deg, ${t.accent}18, ${t.accent}05)`
+                    : t.cardAlt,
+                  padding: isMobile ? "36px 28px" : "44px 40px",
+                  boxShadow: highlight ? `0 8px 48px ${t.accent}22` : "none",
+                  position: "relative",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {highlight && (
+                  <div style={{
+                    position: "absolute", top: 20, right: 20,
+                    borderRadius: 100,
+                    background: `linear-gradient(135deg, ${t.accent}, ${t.accent})`,
+                    color: dark ? "#0D1008" : "#fff",
+                    fontSize: 9, fontWeight: 800, letterSpacing: ".2em",
+                    textTransform: "uppercase", padding: "5px 12px",
+                  }}>
+                    Most popular
                   </div>
-                ))}
+                )}
+
+                <div style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: ".22em",
+                  textTransform: "uppercase",
+                  color: highlight ? t.accent : t.textSub,
+                  marginBottom: 16,
+                }}>
+                  {range}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                  <span style={{
+                    fontFamily: "'DM Serif Display', serif",
+                    fontSize: "clamp(48px,6vw,72px)",
+                    lineHeight: 1, letterSpacing: "-.04em", color: t.text,
+                  }}>
+                    {price}
+                  </span>
+                  {price !== "Free" && (
+                    <span style={{ color: t.textSub, fontSize: 14 }}>USD</span>
+                  )}
+                </div>
+                <div style={{
+                  color: t.textSub, fontSize: 13, fontWeight: 600,
+                  letterSpacing: ".06em", marginBottom: 32,
+                }}>
+                  {sub}
+                </div>
+
+                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 40px", display: "flex", flexDirection: "column", gap: 12, flexGrow: 1 }}>
+                  {perks.map((perk) => (
+                    <li key={perk} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: t.textSub }}>
+                      <CheckCircle2 size={15} color={t.accent} style={{ flexShrink: 0 }} />
+                      {perk}
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href="/upload"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                    width: "100%",
+                    padding: "14px 22px", borderRadius: 14,
+                    background: highlight
+                      ? `linear-gradient(135deg, ${t.accent}, ${t.accent})`
+                      : "transparent",
+                    border: highlight ? "none" : `1px solid ${t.border}`,
+                    color: highlight ? (dark ? "#0D1008" : "#fff") : t.text,
+                    fontSize: 12, fontWeight: 700, letterSpacing: ".14em", textTransform: "uppercase",
+                    textDecoration: "none",
+                    boxShadow: highlight ? `0 6px 28px ${t.accent}35` : "none",
+                    transition: "all .3s",
+                  }}
+                >
+                  {idx === 0 ? "Start for Free" : "Start"} <ArrowLeft size={15} style={{ transform: "rotate(180deg)" }} />
+                </Link>
               </div>
-            )}
-
-            {showAddCard ? (
-              <form onSubmit={handleSaveCard} style={{ marginTop: 16, borderRadius: 18, border: `1px solid ${t.borderSub}`, background: t.cardAlt, padding: 18, display: "grid", gap: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub }}>
-                  Add card
-                </div>
-                <label htmlFor="billing-card">
-                  <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub, marginBottom: 6 }}>Card Number</div>
-                  <input id="billing-card" value={cardNumber} required inputMode="numeric" placeholder="1234 5678 9012 3456" className={inputClass("cardNumber")} aria-describedby="billing-card-error" onBlur={() => setTouched((current) => ({ ...current, cardNumber: true }))} onChange={(event) => setCardNumber(formatCardNumber(event.target.value))} />
-                  <div id="billing-card-error" style={{ fontSize: 12, color: "#c0392b", marginTop: 4, minHeight: 16 }}>{visibleError("cardNumber") ?? ""}</div>
-                </label>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-                  <label htmlFor="billing-expiry">
-                    <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub, marginBottom: 6 }}>Expiry Date</div>
-                    <input id="billing-expiry" value={expiry} required inputMode="numeric" placeholder="MM / YY" className={inputClass("expiry")} aria-describedby="billing-expiry-error" onBlur={() => setTouched((current) => ({ ...current, expiry: true }))} onChange={(event) => setExpiry(formatExpiry(event.target.value))} />
-                    <div id="billing-expiry-error" style={{ fontSize: 12, color: "#c0392b", marginTop: 4, minHeight: 16 }}>{visibleError("expiry") ?? ""}</div>
-                  </label>
-                  <label htmlFor="billing-cvv">
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub }}>CVV</span>
-                      <span title="3 digits on the back of your card (4 for Amex)">
-                        <HelpCircle size={14} color={t.textSub} aria-hidden="true" />
-                      </span>
-                    </div>
-                    <input id="billing-cvv" value={cvv} required inputMode="numeric" maxLength={4} placeholder="123" className={inputClass("cvv")} aria-describedby="billing-cvv-error" onBlur={() => setTouched((current) => ({ ...current, cvv: true }))} onChange={(event) => setCvv(digitsOnly(event.target.value).slice(0, 4))} />
-                    <div id="billing-cvv-error" style={{ fontSize: 12, color: "#c0392b", marginTop: 4, minHeight: 16 }}>{visibleError("cvv") ?? ""}</div>
-                  </label>
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <button type="submit" disabled={savingCard} style={{ border: "none", borderRadius: 999, background: t.accent, color: "#fff", padding: "11px 16px", display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 800, cursor: savingCard ? "default" : "pointer", opacity: savingCard ? 0.72 : 1 }}>
-                    {savingCard ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
-                    {savingCard ? "Saving..." : "Save card"}
-                  </button>
-                  <button type="button" onClick={() => { setShowAddCard(false); resetCardForm(); }} style={{ border: "none", background: "transparent", color: t.textSub, fontWeight: 700, cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : null}
-          </section>
-
-          <section className="glass a-up ic-premium-card" style={{ borderRadius: 20, border: `1px solid ${t.border}`, background: t.card, padding: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub, marginBottom: 6 }}>
-              Payment History
-            </div>
-            {/* INTEGRATION POINT: Replace with GET /users/billing-history endpoint returning real Stripe charges */}
-            <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-              {billingHistory.map((item) => {
-                const badge = statusStyle(item.status);
-                return (
-                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "120px minmax(0,1fr) 110px 100px", gap: 12, alignItems: "center", borderRadius: 16, border: `1px solid ${t.borderSub}`, background: t.cardAlt, padding: "13px 15px" }}>
-                    <div style={{ color: t.textSub, fontSize: 13 }}>{item.date}</div>
-                    <div style={{ fontWeight: 700 }}>{item.description}</div>
-                    <div style={{ fontFamily: "var(--font-app-mono)", fontSize: 13 }}>{item.currency} {item.amount.toFixed(2)}</div>
-                    <span style={{ justifySelf: isMobile ? "start" : "end", borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.background, color: badge.color, padding: "4px 9px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>
-                      {item.status}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="glass a-up ic-premium-card" style={{ borderRadius: 20, border: `1px solid ${t.border}`, background: t.card, padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: t.textSub, marginBottom: 6 }}>
-                  Current Plan
-                </div>
-                <h2 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: 30, lineHeight: 1.05 }}>Pay-as-you-go</h2>
-              </div>
-              <span style={{ borderRadius: 999, background: profile?.free_trial_used ? "rgba(158,138,32,.12)" : "rgba(90,158,58,.12)", color: profile?.free_trial_used ? "#9e8a20" : t.accent, border: `1px solid ${profile?.free_trial_used ? "rgba(158,138,32,.28)" : "rgba(90,158,58,.28)"}`, padding: "7px 11px", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
-                {profile?.free_trial_used ? "Free trial used" : "Free trial available"}
-              </span>
-            </div>
-            {/* INTEGRATION POINT: Replace static pricing with GET /users/plan endpoint when subscription tiers are added */}
-            <p style={{ margin: "0 0 16px", color: t.textSub, lineHeight: 1.7 }}>
-              You are charged per podcast processed. First podcast (&lt;=30 min) is always free.
-            </p>
-            <div style={{ display: "grid", gap: 10 }}>
-              {[
-                ["Up to 30 min", "Free (first upload)"],
-                ["31-60 min", "$2.00"],
-                ["61-120 min", "$4.00"],
-              ].map(([label, value]) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderRadius: 14, border: `1px solid ${t.borderSub}`, background: t.cardAlt, padding: "12px 14px" }}>
-                  <span style={{ color: t.textSub }}>{label}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
+            ))}
+          </div>
         </main>
       </div>
     </div>

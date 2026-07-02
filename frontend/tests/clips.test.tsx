@@ -7,6 +7,7 @@ import {
   describeGenerationSettings,
   GENERATION_TEMPLATES,
   normalizeGenerationSettings,
+  resolveSavedGenerationPreferences,
 } from "../lib/generation-settings";
 import { buildEstimatedContentCalendar, type ClipResult } from "../lib/api";
 import {
@@ -163,11 +164,32 @@ export function runClipsTests(): void {
     "1 clip | 15s | Subtitles on",
   );
 
-  const template = applyGenerationTemplate("story_arc", discoveryItems[0]?.export_settings);
+  const template = applyGenerationTemplate("story_arc", {
+    ...discoveryItems[0]?.export_settings,
+    export_mode: "landscape",
+    crop_mode: "center_crop",
+    mobile_optimized: false,
+    face_tracking_enabled: false,
+    subtitle_style: {
+      preset: "minimal",
+      font_family: "Trebuchet MS",
+      font_size: 16,
+      primary_color: "#00FF00",
+      outline_color: "#123456",
+      background_color: "#654321",
+      background_opacity: 0,
+      position: "top",
+      bold: false,
+      italic: false,
+    },
+  });
 
   assert.equal(template.generationSettings.clip_duration_seconds, 45);
   assert.equal(template.generationSettings.number_of_clips, 3);
   assert.equal(template.exportSettings.export_mode, "portrait");
+  assert.equal(template.exportSettings.crop_mode, "smart_crop");
+  assert.equal(template.exportSettings.mobile_optimized, true);
+  assert.equal(template.exportSettings.face_tracking_enabled, true);
   assert.equal(template.exportSettings.subtitle_style?.preset, "boxed");
   assert.equal(template.exportSettings.generation_settings?.number_of_clips, 3);
 
@@ -183,6 +205,58 @@ export function runClipsTests(): void {
   assert.equal(templateWithPrompt.exportSettings.crop_mode, "smart_crop");
   assert.equal(templateWithPrompt.exportSettings.face_tracking_enabled, true);
   assert.equal(templateWithPrompt.exportSettings.generation_settings?.topic_focus, "strongest audience hook");
+
+  const landscapeTemplate = applyGenerationTemplate("deep_conversation", {
+    ...discoveryItems[0]?.export_settings,
+    export_mode: "portrait",
+    crop_mode: "smart_crop",
+    mobile_optimized: true,
+    face_tracking_enabled: true,
+  });
+
+  assert.equal(landscapeTemplate.exportSettings.export_mode, "landscape");
+  assert.equal(landscapeTemplate.exportSettings.crop_mode, "none");
+  assert.equal(landscapeTemplate.exportSettings.mobile_optimized, false);
+  assert.equal(landscapeTemplate.exportSettings.face_tracking_enabled, false);
+
+  const expertTake = applyGenerationTemplate("expert_take");
+  assert.equal(expertTake.generationSettings.clip_duration_seconds, 20);
+  assert.equal(expertTake.generationSettings.number_of_clips, 5);
+  assert.equal(expertTake.exportSettings.subtitle_style?.font_family, "Trebuchet MS");
+  assert.equal(expertTake.exportSettings.subtitle_style?.force_uppercase, false);
+
+  const restoredTemplate = resolveSavedGenerationPreferences({
+    templateId: "single_gem",
+    settings: normalizeGenerationSettings({
+      clip_duration_seconds: 30,
+      number_of_clips: 4,
+      topic_focus: "manual leftovers",
+      subtitles_enabled: true,
+    }),
+    exportSettings: {
+      export_mode: "landscape",
+      crop_mode: "none",
+      mobile_optimized: false,
+      face_tracking_enabled: false,
+      subtitle_style: {
+        preset: "minimal",
+        font_family: "Arial",
+        font_size: 16,
+        primary_color: "#00FF00",
+        outline_color: "#123456",
+        background_color: "#654321",
+        background_opacity: 0,
+        position: "top",
+        bold: false,
+        italic: false,
+      },
+    },
+  });
+
+  assert.equal(restoredTemplate.templateId, "single_gem");
+  assert.equal(restoredTemplate.exportSettings.subtitle_style?.preset, "boxed");
+  assert.equal(restoredTemplate.exportSettings.export_mode, "portrait");
+  assert.equal(restoredTemplate.generationSettings.clip_duration_seconds, 15);
 
   const singleGem = applyGenerationTemplate("single_gem", null, {
     topic_focus: "one decisive quote",

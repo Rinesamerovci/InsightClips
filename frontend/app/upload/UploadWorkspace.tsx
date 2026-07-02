@@ -44,9 +44,9 @@ import {
   buildDefaultGenerationSettings,
   describeGenerationSettings,
   loadSavedGenerationPreferences,
+  resolveSavedGenerationPreferences,
   saveGenerationPreferences,
   applyGenerationTemplate,
-  GENERATION_TEMPLATES,
 } from "@/lib/generation-settings";
 import {
   SUBTITLE_PRESET_DETAILS,
@@ -388,29 +388,14 @@ export default function UploadWorkspace({
 
   useEffect(() => {
     const savedPreferences = loadSavedGenerationPreferences();
-    const applied = savedPreferences.exportSettings
-      ? {
-          generationSettings:
-            savedPreferences.exportSettings.generation_settings ?? savedPreferences.settings,
-          exportSettings: savedPreferences.exportSettings,
-        }
-      : savedPreferences.templateId
-        ? applyGenerationTemplate(savedPreferences.templateId, null, savedPreferences.settings)
-        : {
-            generationSettings: savedPreferences.settings,
-            exportSettings: buildExportSettings(
-              exportMode,
-              subtitleStyle,
-              generationSettings,
-            ),
-          };
-    setGenerationTemplateId(savedPreferences.templateId);
-    setGenerationSettings(applied.generationSettings);
-    if (applied.exportSettings.subtitle_style) {
-      setSubtitleStyle(applied.exportSettings.subtitle_style);
+    const resolvedPreferences = resolveSavedGenerationPreferences(savedPreferences);
+    setGenerationTemplateId(resolvedPreferences.templateId);
+    setGenerationSettings(resolvedPreferences.generationSettings);
+    if (resolvedPreferences.exportSettings.subtitle_style) {
+      setSubtitleStyle(resolvedPreferences.exportSettings.subtitle_style);
     }
-    setExportMode(applied.exportSettings.export_mode);
-    setSocialPlatform(getDefaultPlatformForExportMode(applied.exportSettings.export_mode));
+    setExportMode(resolvedPreferences.exportSettings.export_mode);
+    setSocialPlatform(getDefaultPlatformForExportMode(resolvedPreferences.exportSettings.export_mode));
     preferencesLoadedRef.current = true;
   }, []);
 

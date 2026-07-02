@@ -42,7 +42,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "single_gem",
     label: "Single Gem",
     title: "One sharp standout clip",
-    description: "Finds one polished 15-second moment when you want the safest, strongest post.",
+    description: "Finds one polished 15-second moment when you want the safest, strongest post. (Titrat: Në qendër)",
     badge: "1 clip",
     generationSettings: {
       clip_duration_seconds: 15,
@@ -67,7 +67,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "hook_spotlight",
     label: "Hook Spotlight",
     title: "Fast social openers",
-    description: "Optimized for quick hook-led clips with bold on-screen captions.",
+    description: "Optimized for quick hook-led clips with bold on-screen captions. (Titrat: Poshtë)",
     badge: "Scroll stop",
     generationSettings: {
       clip_duration_seconds: 30,
@@ -85,6 +85,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_color: "#2F6B1F",
       background_opacity: 0.28,
       position: "bottom",
+      force_uppercase: true,
     },
     image: "/images/hook_spotlight.png",
   },
@@ -92,7 +93,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "highlight_pair",
     label: "Highlight Pair",
     title: "Two ready-to-test angles",
-    description: "Creates two clean clips so you can compare a hook-heavy version against a calmer insight.",
+    description: "Creates two clean clips so you can compare a hook-heavy version against a calmer insight. (Titrat: Poshtë)",
     badge: "A/B test",
     generationSettings: {
       clip_duration_seconds: 30,
@@ -117,7 +118,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "story_arc",
     label: "Story Arc",
     title: "Context with payoff",
-    description: "Leaves more room for setup and punchline when a clip needs narrative flow.",
+    description: "Leaves more room for setup and punchline when a clip needs narrative flow. (Titrat: Poshtë)",
     badge: "Narrative",
     generationSettings: {
       clip_duration_seconds: 45,
@@ -142,7 +143,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "expert_take",
     label: "Expert Take",
     title: "Concise insight bursts",
-    description: "Best for punchy takeaways, practical advice, and clean talking-head cuts.",
+    description: "Best for punchy takeaways, practical advice, and clean talking-head cuts. (Titrat: Lart)",
     badge: "Authority",
     generationSettings: {
       clip_duration_seconds: 20,
@@ -167,7 +168,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "tiktok_viral",
     label: "TikTok Viral",
     title: "High-energy scroll stoppers",
-    description: "Ultra-short clips with bold captions in the center, tuned for maximum mobile virality.",
+    description: "Ultra-short clips with bold captions in the center, tuned for maximum mobile virality. (Titrat: Në qendër)",
     badge: "Scroll Stop",
     generationSettings: {
       clip_duration_seconds: 15,
@@ -185,6 +186,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
       background_color: "#8B5CF6",
       background_opacity: 0.58,
       position: "center",
+      force_uppercase: true,
     },
     image: "/images/tiktok_viral.png",
   },
@@ -192,7 +194,7 @@ export const GENERATION_TEMPLATES: GenerationTemplateDefinition[] = [
     id: "deep_conversation",
     label: "Deep Conversation",
     title: "Insightful storytelling",
-    description: "Longer widescreen segments with classic subtitles at the bottom, perfect for detailed discussions.",
+    description: "Longer widescreen segments with classic subtitles at the bottom, perfect for detailed discussions. (Titrat: Poshtë)",
     badge: "Deep Dive",
     generationSettings: {
       clip_duration_seconds: 60,
@@ -297,9 +299,10 @@ export function applyGenerationTemplate(
       template.exportMode,
       template.subtitleStyle,
       {
-        ...resolvedBaseExportSettings,
         export_mode: template.exportMode,
-        face_tracking_enabled: template.exportMode === "portrait" ? true : resolvedBaseExportSettings.face_tracking_enabled,
+        audio_enhancement: resolvedBaseExportSettings.audio_enhancement,
+        mobile_optimized: template.exportMode === "portrait",
+        face_tracking_enabled: template.exportMode === "portrait",
         subtitle_style: template.subtitleStyle,
         generation_settings: generationSettings,
       },
@@ -351,6 +354,50 @@ export function loadSavedGenerationPreferences(): {
       exportSettings: null,
     };
   }
+}
+
+export function resolveSavedGenerationPreferences(preferences: {
+  templateId: GenerationTemplateId | null;
+  settings: GenerationSettings;
+  exportSettings: ExportSettings | null;
+}): {
+  templateId: GenerationTemplateId | null;
+  generationSettings: GenerationSettings;
+  exportSettings: ExportSettings;
+} {
+  if (preferences.templateId) {
+    const applied = applyGenerationTemplate(
+      preferences.templateId,
+      preferences.exportSettings,
+      preferences.settings,
+    );
+
+    return {
+      templateId: preferences.templateId,
+      ...applied,
+    };
+  }
+
+  if (preferences.exportSettings) {
+    return {
+      templateId: null,
+      generationSettings:
+        preferences.exportSettings.generation_settings ?? preferences.settings,
+      exportSettings: preferences.exportSettings,
+    };
+  }
+
+  return {
+    templateId: null,
+    generationSettings: preferences.settings,
+    exportSettings: buildDefaultExportSettings(
+      "portrait",
+      buildSubtitleStyleFromPreset("classic"),
+      {
+        generation_settings: preferences.settings,
+      },
+    ),
+  };
 }
 
 export function saveGenerationPreferences(

@@ -93,6 +93,7 @@ export type SubtitleStyle = {
   position: SubtitlePosition;
   bold: boolean;
   italic: boolean;
+  force_uppercase?: boolean;
 };
 
 export type AudioEnhancementSettings = {
@@ -125,6 +126,10 @@ export type GenerationSettings = {
 export type GenerateClipsPayload = {
   score_segments?: ScoreSegment[];
   generation_settings?: GenerationSettings;
+  clip_duration_seconds?: number;
+  number_of_clips?: number;
+  topic_focus?: string;
+  subtitles_enabled?: boolean;
   export_settings?: ExportSettings;
   visual_output_mode?: VisualOutputMode;
   save_generation_settings?: boolean;
@@ -1018,6 +1023,18 @@ export async function generateClips(
   if (payload?.generation_settings) {
     requestBody.generation_settings = payload.generation_settings;
   }
+  if (typeof payload?.clip_duration_seconds === "number") {
+    requestBody.clip_duration_seconds = payload.clip_duration_seconds;
+  }
+  if (typeof payload?.number_of_clips === "number") {
+    requestBody.number_of_clips = payload.number_of_clips;
+  }
+  if (typeof payload?.topic_focus === "string") {
+    requestBody.topic_focus = payload.topic_focus;
+  }
+  if (typeof payload?.subtitles_enabled === "boolean") {
+    requestBody.subtitles_enabled = payload.subtitles_enabled;
+  }
   if (payload?.export_settings) {
     requestBody.export_settings = payload.export_settings;
   }
@@ -1046,7 +1063,13 @@ export async function generateClips(
     }
 
     const legacyBody = payload.export_settings
-      ? ({ export_settings: payload.export_settings } as JsonRecord)
+      ? ({
+          export_settings: payload.export_settings,
+          clip_duration_seconds: payload.clip_duration_seconds,
+          number_of_clips: payload.number_of_clips,
+          topic_focus: payload.topic_focus,
+          subtitles_enabled: payload.subtitles_enabled,
+        } as JsonRecord)
       : {};
 
     return postJson<ClipGenerationResult>(

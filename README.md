@@ -1,190 +1,119 @@
-# InsightClips
+# InsightClips  
+An AI-Powered Podcast Clip Generation Platform  
 
-AI-powered podcast clipping platform for uploading long-form audio/video, analyzing the strongest moments, and generating short clips with captions.
+Transform long-form audio and video podcasts into viral, social-media-ready short clips with a single click.
 
-## Current Architecture
+---
 
-```text
-Frontend: Next.js / React
-Backend: FastAPI / Python
-Auth + Database: Supabase
-Source media: Supabase Storage bucket podcast-sources
-Generated clips: Supabase Storage bucket clips
-Email: Resend SMTP through backend settings
-Video processing: FFmpeg
-```
+## Project Status  
+Completed
 
-For production-like video processing, the backend needs enough RAM/CPU for FFmpeg. Render/Vercel free tiers are useful for small demos, but long videos should run on a stronger backend host such as a DigitalOcean Droplet.
+---
 
-## Project Structure
+## Team Members  
+Pënar Kera  
+Rinesa Merovci  
+Rinesa Bislim  
 
-```text
-InsightClips/
-  backend/
-    app/
-      models/
-      routers/
-      services/
-      utils/
-    sql/
-    tests/
-  frontend/
-    app/
-    components/
-    context/
-    lib/
-    tests/
-  docs/
-  planning/
-  scripts/
-```
+---
 
-## Main Features
+## Overview  
+InsightClips is an advanced AI-driven web platform designed to automate the extraction and generation of short-form content from long-form media.
 
-- Supabase authentication and profile sync
-- Upload from local file or YouTube import
-- One-time free upload logic with persistent email ledger
-- Media inspection and duration-based upload gating
-- Podcast analysis and virality scoring
-- FFmpeg clip generation with subtitle rendering
-- Clip publishing, revoke/download tracking, and analytics
-- Feedback, support, and contact forms with optional SMTP email
-- Delete podcast with storage/database cleanup
-- Delete account with email confirmation and final browser confirmation
+By synthesizing cutting-edge Natural Language Processing (NLP), Whisper-based speech-to-text, and automated FFmpeg media rendering, InsightClips detects high-potential "viral" moments within a recording. It transforms these selections into engaging clips enhanced with dynamic burned-in subtitles, intelligent cropping, smart hooks, and social-media metadata.
 
-## Backend Setup
+---
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r ..\requirements.txt
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+## Core Features  
 
-Health check:
+Smart Ingestion: Upload large video files directly or paste a YouTube URL (powered by yt-dlp).  
+AI Transcription & NLP: High-speed speech-to-text using the Groq Whisper model. Evaluates virality potential and detects highlights using spaCy sentiment analysis.  
+Smart Hooks & Metadata: Automatically generates titles, hooks, and trending hashtags using Large Language Models (LLMs).  
+Dynamic Subtitles & Templates: Users can customize subtitle fonts, colors, and layout configurations via an interactive UI.  
+Automated Video Generation: FFmpeg pipeline cuts clips, applies 9:16 portrait cropping, normalizes audio, and hardcodes ASS subtitles.  
+Analytics Dashboard: Tracks processing states, historical clip generation, and engagement metrics.  
+SaaS Monetization: Stripe checkout sessions and secure webhooks for premium user tiers.  
+Secure Architecture: Multi-tenant isolation using Supabase Auth and PostgreSQL Row-Level Security (RLS).
 
-```text
-http://127.0.0.1:8000/health
-```
+---
 
-## Frontend Setup
+## Technology Stack  
 
-```powershell
-cd frontend
-npm install
-npm run dev
-```
+Frontend (Client):  
+Next.js (App Router), React, TypeScript, Tailwind CSS, React Context & Hooks, Stripe.js  
 
-Open:
+Backend (Server):  
+Python, FastAPI, Groq API (Whisper + LLM), spaCy, FFmpeg, yt-dlp, Resend API  
 
-```text
-http://localhost:3000
-```
+Database & Cloud:  
+Supabase (Auth, PostgreSQL, Cloud Storage)  
+Local fallback: DigitalOcean NVMe storage  
 
-## Required Environment Variables
+---
 
-Backend:
+## Installation & Local Development  
 
-```env
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-DATABASE_URL=
-JWT_SECRET=
-GROQ_API_KEY=
-FRONTEND_ORIGINS=http://localhost:3000,https://insightclips.dev
+### Prerequisites  
+Python 3.10+  
+Node.js (v18+)  
+FFmpeg  
+yt-dlp  
 
-SUPPORT_INBOX_EMAIL=
-RESEND_API_KEY=
-SMTP_HOST=smtp.resend.com
-SMTP_PORT=587
-SMTP_USERNAME=resend
-SMTP_PASSWORD=
-SMTP_FROM_EMAIL=noreply@insightclips.dev
-SMTP_FROM_NAME=InsightClips
-SMTP_USE_TLS=true
-```
+---
 
-Frontend:
+### Environment Variables (.env)  
 
-```env
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-```
+Create `.env` files in `/frontend` and `/backend`:
 
-Never commit `.env`, `.env.local`, service role keys, API keys, or SMTP passwords.
+Supabase: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY  
+Groq AI: GROQ_API_KEY  
+Stripe: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET  
+Resend: RESEND_API_KEY  
 
-## Supabase Setup
+---
 
-Run the SQL files from `backend/sql` in the order listed in:
+### Backend Setup (FastAPI)
 
-```text
-backend/sql/00_SUPABASE_RUN_ORDER.sql
-```
+cd backend  
+python -m venv venv  
+source venv/bin/activate  
 
-Important files:
+pip install -r requirements.txt  
 
-- `schema_init.sql`
-- `auth_schema.sql`
-- `analysis_schema.sql`
-- `clips_schema.sql`
-- `publication_schema.sql`
-- `free_trial_usage_ledger.sql`
-- `storage_policies.sql`
-- `99_final_rls_policies.sql`
+uvicorn app.main:app --reload  
 
-Required buckets:
+Backend runs on: http://localhost:8000  
 
-```text
-podcast-sources
-clips
-```
+---
 
-The buckets should be private. Backend operations that manage source videos and generated clips require `SUPABASE_SERVICE_ROLE_KEY`.
+### Frontend Setup (Next.js)
 
-## Testing
+cd frontend  
+npm install  
+npm run dev  
 
-Backend:
+Frontend runs on: http://localhost:3000  
 
-```powershell
-python -m unittest discover backend.tests
-python -m compileall backend\app
-```
+---
 
-Frontend:
+## Testing the Application  
 
-```powershell
-cd frontend
-npm run test
-npm run lint
-```
+Open http://localhost:3000  
 
-## Deployment Notes
+Create a test user account (Supabase Auth)  
+Upload video or paste YouTube URL  
+Test Stripe payments using Stripe CLI  
+Monitor FFmpeg processing in backend logs  
+View generated clips in dashboard  
 
-Recommended stable setup:
+### Stripe Webhook Test  
 
-```text
-Frontend: Vercel or DigitalOcean
-Backend + FFmpeg worker: DigitalOcean Droplet
-Database/Auth: Supabase
-Storage: Supabase Storage or DigitalOcean Spaces
-Email: Resend
-Domain: insightclips.dev
-```
+stripe login  
+stripe listen --forward-to localhost:8000/api/webhooks/stripe  
 
-For long videos, avoid relying on `/tmp` as permanent storage. Source media and generated clips should live in object storage, while the backend only uses temporary local files during processing.
+---
 
-## Team Workflow
+## About  
+InsightClips was developed as a comprehensive university software engineering project.
 
-- Work in feature branches.
-- Do not commit secrets.
-- Open pull requests into `develop`.
-- Test `develop` before merging to `main`.
-- Keep payment-specific work isolated from non-payment backend/data-pipeline changes.
-
-## Useful Docs
-
-- Backend completion notes: `docs/rinesa-bislimi-backend-completion.md`
-- Lista 2 audit: `docs/rinesa-bislimi-lista-2-audit.md`
+© 2026
